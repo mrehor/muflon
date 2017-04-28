@@ -76,7 +76,7 @@ project „IT4Innovations National Supercomputing Center – LM2015070“.
 Links
 =====
 
-- Homepage http://gitlab.karlin.mff.cuni.cz/mr-dev/muflon
+- Homepage http://gitlab.karlin.mff.cuni.cz/rehor/muflon
 - Testing **TODO**
 - Documentation **TODO**
-- Bug reports http://gitlab.karlin.mff.cuni.cz/mr-dev/muflon/issues
+- Bug reports http://gitlab.karlin.mff.cuni.cz/rehor/muflon/issues
