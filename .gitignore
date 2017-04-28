@@ -1,0 +1,11 @@
+*.pyc
+
+*.xml.gz
+*.xdmf
+*.h5
+
+*.pdf
+
+/MUFLON.egg-info/
+
+.cache/
