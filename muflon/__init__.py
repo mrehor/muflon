@@ -24,4 +24,4 @@ __version__ = "2017.1.0.dev0"
 __license__ = "GNU LGPL v3"
 
 # Import public API
-# TODO
+from muflon.common.parameters import mpset
