@@ -1,9 +1,5 @@
-import pytest
-
 from dolfin import mpi_comm_world, set_log_level, DEBUG
 from muflon.common.parameters import mpset, _MuflonParameterSet
-
-import os
 
 def test_mpset(tmpdir):
     set_log_level(DEBUG)
