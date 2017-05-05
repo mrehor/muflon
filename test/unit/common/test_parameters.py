@@ -1,35 +1,44 @@
-from dolfin import mpi_comm_world, set_log_level, DEBUG
+from dolfin import mpi_comm_world, MPI, set_log_level, DEBUG, INFO
 from muflon.common.parameters import mpset, _MuflonParameterSet
 
-def test_mpset(tmpdir):
-    set_log_level(DEBUG)
+import os
+
+def test_mpset():
+    #set_log_level(DEBUG)
 
     # Print parameters and their values
-    mpset.show()
+    #mpset.show()
 
     # Try to add parameter
     mpset.add("foo", "bar")
-    foo_info = mpset.get("foo") # 1st access
-    assert foo_info[-1] == 0 # check 'change' value
-    assert foo_info[-2] == 1 # check 'access' value
+    assert mpset["foo"] == "bar"
 
     # Try direct access to a parameter
-    mpset["foo"] = "bar_" # 1st change
-    foo_info = mpset.get("foo") # 2nd access
-    assert foo_info[-1] == 1 # check 'change' value
-    assert foo_info[-2] == 2 # check 'access' value
+    mpset["foo"] = "bar_"
+    assert mpset["foo"] == "bar_"
 
     # Try to write parameters to a file
-    mpset.write(mpi_comm_world(), str(tmpdir)+"/foo.xml") # 3rd access
-    foo_info = mpset.get("foo") # 4th access
-    assert foo_info[-1] == 1 # check 'change' value
-    assert foo_info[-2] == 4 # check 'access' value
+    comm = mpi_comm_world()
+    tempdir = "/tmp/pytest-of-fenics"
+    fname = tempdir+"/foo.xml"
+    mpset.write(comm, fname)
+    if MPI.rank(comm) == 0:
+        assert os.path.isfile(fname)
+    MPI.barrier(comm) # wait until the file is written
+
+    # Change back value of parameter 'foo'
+    mpset["foo"] = "bar"
+    assert mpset["foo"] == "bar"
 
     # Try to read parameters back
-    mpset.read(str(tmpdir)+"/foo.xml") # 2nd change
-    foo_info = mpset.get("foo") # 5th access
-    assert foo_info[-1] == 2 # check 'change' value
-    assert foo_info[-2] == 5 # check 'access' value
+    mpset.read(fname)
+    assert mpset["foo"] == "bar_"
+    MPI.barrier(comm) # wait until each process finishes reading
+    if MPI.rank(comm) == 0:
+        os.remove(fname)
+    del fname
 
     # Check that every other call points to the same object
     assert id(_MuflonParameterSet()) == id(mpset)
+
+    #set_log_level(INFO)
