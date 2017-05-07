@@ -18,14 +18,25 @@ schemes."""
 # You should have received a copy of the GNU Lesser General Public License
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
+from ufl.tensors import ListTensor
 from dolfin import (Parameters, VectorElement, MixedElement,
-                    Function, FunctionSpace)
+                    Function, FunctionSpace, as_vector)
 from muflon.common.parameters import mpset
 
-__all__ = ['DiscretizationMono', 'DiscretizationSemi', 'DiscretizationFull']
+__all__ = ['MonoDS', 'SemiDS', 'FullDS']
 
 
-class _DiscretizationBase(object):
+class _BaseDS(object):
+    """
+    Abstract class for creating discretization schemes.
+
+    Users need to implement private methods ``_prepare_solution_fcns``
+    and ``_split_solution_fcns``. For examples of implementation see
+
+    * :py:class:`MonoDS`
+    * :py:class:`SemiDS`
+    * :py:class:`FullDS`
+    """
 
     def __init__(self, mesh,
                  FE_c, FE_mu, FE_v, FE_p, FE_th=None):
@@ -64,19 +75,18 @@ class _DiscretizationBase(object):
         # Initialize solution variable(s) and store primitive variables
         self._solution = self._prepare_solution_fcns()
         self._pv = self._split_solution_fcns()
-        self._rename_pv()
 
-    def solution_mixed(self):
+    def solution(self):
         """
         Provides access to functions representing the discrete solution at the
-        current time level. (Functions can live in the mixed space.)
+        current time level.
 
         :returns: vector of :py:class:`dolfin.Function` objects
         :rtype: tuple
         """
         return self._solution
 
-    def solution_split(self):
+    def primitive_vars(self):
         """
         Provides access to primitive variables ``c, mu, v, p, th``
         (or allowable subset).
@@ -89,14 +99,8 @@ class _DiscretizationBase(object):
 
     def _prepare_solution_fcns(self):
         """
-        Prepare functions representing the discrete solution at the
+        Prepares functions representing the discrete solution at the
         current time level. (Functions can live in the mixed space.)
-
-        * Examples:
-
-          * :py:class:`DiscretizationMono`
-          * :py:class:`DiscretizationSemi`
-          * :py:class:`DiscretizationFull`
 
         :returns: vector of :py:class:`dolfin.Function` objects
         :rtype: tuple
@@ -114,19 +118,6 @@ class _DiscretizationBase(object):
         """
         self._not_implemented_msg()
 
-    def _rename_pv(self):
-        """
-        Renames stored primitive variables.
-        """
-        self._pv[0].rename("c", "volfract")
-        self._pv[1].rename("mu", "chempot")
-        self._pv[2].rename("v", "velocity")
-        self._pv[3].rename("p", "pressure")
-        try:
-            self._pv[4].rename("th", "temperature")
-        except IndexError:
-            pass
-
     def _not_implemented_msg(self):
         import inspect
         caller = inspect.stack()[1][3]
@@ -135,14 +126,17 @@ class _DiscretizationBase(object):
         raise NotImplementedError(msg)
 
 # -----------------------------------------------------------------------------
-# MONOLITHIC DISCRETIZATION
+# Monolithic Discretization Scheme
 # -----------------------------------------------------------------------------
 
-class DiscretizationMono(_DiscretizationBase):
+class MonoDS(_BaseDS):
+    """
+    Monolithic Discretization Scheme
+    """
 
     def _prepare_solution_fcns(self):
         """
-        Solution variable wraps ``c, mu, v, p, th`` (or its allowable subset)
+        Solution variable wraps ``c, mu, v, p, th`` (or allowable subset)
         in a single :py:class:`dolfin.Function` object.
 
         :returns: vector containing single solution variable
@@ -154,20 +148,19 @@ class DiscretizationMono(_DiscretizationBase):
         # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
 
-        # Create vector elements for c, mu, v
-        VE_c = VectorElement(self._FE["c"], dim=N-1)
-        VE_mu = VectorElement(self._FE["mu"], dim=N-1)
-        VE_v = VectorElement(self._FE["v"], dim=gdim)
+        # Group elements for c, mu, v
+        elements = []
+        elements.append(VectorElement(self._FE["c"], dim=N-1))
+        elements.append(VectorElement(self._FE["mu"], dim=N-1))
+        elements.append(VectorElement(self._FE["v"], dim=gdim))
 
-        # Create mixed elements for w_ns, w_ch and w
-        elements = [VE_c, VE_mu, VE_v, self._FE["p"]]
+        # Append elements for p and th
+        elements.append(self._FE["p"])
         if self._FE["th"] is not None:
             elements.append(self._FE["th"])
-        ME = MixedElement(elements)
-        del VE_c, VE_mu, VE_v, elements
 
-        # Create and rename solution variable
-        W = FunctionSpace(self._mesh, ME)
+        # Create solution variable
+        W = FunctionSpace(self._mesh, MixedElement(elements))
         w = Function(W)
         w.rename("sol", "solution-mono")
 
@@ -176,13 +169,16 @@ class DiscretizationMono(_DiscretizationBase):
     def _split_solution_fcns(self):
         return self._solution[0].split()
 
-    _split_solution_fcns.__doc__ = _DiscretizationBase._split_solution_fcns.__doc__
+    _split_solution_fcns.__doc__ = _BaseDS._split_solution_fcns.__doc__
 
 # -----------------------------------------------------------------------------
-# SEMI-DECOUPLED DISCRETIZATION
+# Semi-decoupled Discretization Scheme
 # -----------------------------------------------------------------------------
 
-class DiscretizationSemi(_DiscretizationBase):
+class SemiDS(_BaseDS):
+    """
+    Semi-decoupled Discretization Scheme
+    """
 
     def _prepare_solution_fcns(self):
         """
@@ -199,23 +195,18 @@ class DiscretizationSemi(_DiscretizationBase):
         # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
 
-        # Create vector elements for c, mu, v
-        VE_c = VectorElement(self._FE["c"], dim=N-1)
-        VE_mu = VectorElement(self._FE["mu"], dim=N-1)
-        VE_v = VectorElement(self._FE["v"], dim=gdim)
+        # Group elements for c, mu, v
+        elements_ch = (N-1)*[self._FE["c"],] + (N-1)*[self._FE["mu"],]
+        elements_ns = [VectorElement(self._FE["v"], dim=gdim),]
 
-        # Create mixed elements for w_ns, w_ch and w
-        elements_ch = [VE_c, VE_mu]
-        elements_ns = [VE_v, self._FE["p"]]
+        # Append elements for p and th
+        elements_ns.append(self._FE["p"])
         if self._FE["th"] is not None:
             elements_ns.append(self._FE["th"])
-        ME_ch = MixedElement(elements_ch)
-        ME_ns = MixedElement(elements_ns)
-        del VE_c, VE_mu, VE_v, elements_ch, elements_ns
 
-        # Create and rename solution variable
-        W_ch = FunctionSpace(self._mesh, ME_ch)
-        W_ns = FunctionSpace(self._mesh, ME_ns)
+        # Create solution variables
+        W_ch = FunctionSpace(self._mesh, MixedElement(elements_ch))
+        W_ns = FunctionSpace(self._mesh, MixedElement(elements_ns))
         w_ch, w_ns = Function(W_ch), Function(W_ns)
         w_ch.rename("sol-ch", "solution-semi-ch")
         w_ns.rename("sol-ns", "solution-semi-ns")
@@ -223,14 +214,67 @@ class DiscretizationSemi(_DiscretizationBase):
         return (w_ch, w_ns)
 
     def _split_solution_fcns(self):
-        pv = list(self._solution[0].split()) + list(self._solution[1].split())
+        N = self.parameters["N"]
+        ws = self._solution[0].split()
+        pv = [as_vector(ws[:N-1]), as_vector(ws[N-1:2*(N-1)])]
+        pv += list(self._solution[1].split())
         return tuple(pv)
 
-    _split_solution_fcns.__doc__ = _DiscretizationBase._split_solution_fcns.__doc__
+    _split_solution_fcns.__doc__ = _BaseDS._split_solution_fcns.__doc__
 
 # -----------------------------------------------------------------------------
-# FULLY-DECOUPLED DISCRETIZATION
+# Fully-decoupled Discretization Scheme
 # -----------------------------------------------------------------------------
 
-class DiscretizationFull(_DiscretizationBase):
-    pass # TODO
+class FullDS(_BaseDS):
+    """
+    Fully-decoupled Discretization Scheme
+    """
+    def _prepare_solution_fcns(self):
+        """
+        Solution variable wraps ``c, mu, v, p, th`` (or allowable subset)
+        in a single :py:class:`dolfin.Function` object.
+
+        :returns: vector containing single solution variable
+        :rtype: tuple
+        """
+        # Extract parameters
+        N = self.parameters["N"]
+
+        # Get geometrical dimension
+        gdim = self._mesh.geometry().dim()
+
+        # Group elements for c, mu, v
+        elements = []
+        elements += (N-1)*[self._FE["c"],]
+        elements += (N-1)*[self._FE["mu"],]
+        elements += gdim*[self._FE["v"],]
+
+        # Append elements for p and th
+        elements.append(self._FE["p"])
+        if self._FE["th"] is not None:
+            elements.append(self._FE["th"])
+
+        # Create functions from elements
+        sol_fcns = list(map(lambda FE: Function(FunctionSpace(self._mesh, FE)), elements))
+        for i, f in enumerate(sol_fcns):
+            f.rename("sol-{}".format(i), "solution-full-{}".format(i))
+
+        return tuple(sol_fcns)
+
+    def _split_solution_fcns(self):
+        N = self.parameters["N"]
+        gdim = self._mesh.geometry().dim()
+        ws = self._solution
+        pv = []
+        pv.append(as_vector(ws[:N-1])) # append c
+        pv.append(as_vector(ws[N-1:2*(N-1)])) # append mu
+        pv.append(as_vector(ws[2*(N-1):2*(N-1)+gdim])) # append v
+        pv.append(ws[2*(N-1)+gdim]) # append p
+        try:
+            pv.append(ws[2*(N-1)+gdim+1]) # append th
+        except IndexError:
+            pass
+        return tuple(pv)
+
+    _split_solution_fcns.__doc__ = _BaseDS._split_solution_fcns.__doc__
