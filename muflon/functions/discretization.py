@@ -20,7 +20,7 @@ schemes."""
 
 from ufl.tensors import ListTensor
 from dolfin import (Parameters, VectorElement, MixedElement,
-                    Function, FunctionSpace, as_vector)
+                    Function, FunctionSpace, as_tensor)
 from muflon.common.parameters import mpset
 
 __all__ = ['MonoDS', 'SemiDS', 'FullDS']
@@ -216,7 +216,7 @@ class SemiDS(_BaseDS):
     def _split_solution_fcns(self):
         N = self.parameters["N"]
         ws = self._solution[0].split()
-        pv = [as_vector(ws[:N-1]), as_vector(ws[N-1:2*(N-1)])]
+        pv = [_as_vector_ext(ws[:N-1]), _as_vector_ext(ws[N-1:2*(N-1)])]
         pv += list(self._solution[1].split())
         return tuple(pv)
 
@@ -267,9 +267,9 @@ class FullDS(_BaseDS):
         gdim = self._mesh.geometry().dim()
         ws = self._solution
         pv = []
-        pv.append(as_vector(ws[:N-1])) # append c
-        pv.append(as_vector(ws[N-1:2*(N-1)])) # append mu
-        pv.append(as_vector(ws[2*(N-1):2*(N-1)+gdim])) # append v
+        pv.append(_as_vector_ext(ws[:N-1])) # append c
+        pv.append(_as_vector_ext(ws[N-1:2*(N-1)])) # append mu
+        pv.append(_as_vector_ext(ws[2*(N-1):2*(N-1)+gdim])) # append v
         pv.append(ws[2*(N-1)+gdim]) # append p
         try:
             pv.append(ws[2*(N-1)+gdim+1]) # append th
@@ -278,3 +278,25 @@ class FullDS(_BaseDS):
         return tuple(pv)
 
     _split_solution_fcns.__doc__ = _BaseDS._split_solution_fcns.__doc__
+
+
+# --- Helper classes and functions ---
+
+class _ListTensorExt(ListTensor):
+    """
+    Extension of :py:class:`ufl.tensors.ListTensor` providing the ``split``
+    method.
+    """
+    def split(self):
+        return tuple(self)
+
+def _as_vector_ext(expressions):
+    """
+    Modification of :py:function:`ufl.tensors._as_list_tensor` for creating
+    :py:class:`ufl.tensors.ListTensor` objects extended by split method.
+    """
+    if isinstance(expressions, (list, tuple)):
+        expressions = [_as_vector_ext(e) for e in expressions]
+        return _ListTensorExt(*expressions)
+    else:
+        return as_tensor(expressions)
