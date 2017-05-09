@@ -22,7 +22,7 @@ Usage
 
 To install MUFLON from source do::
 
-  pip install [--user|--prefix=...] [-e] .
+  pip3 install [--user|--prefix=...] [-e] .
 
 in the source/repository root dir. Editable install using ``-e``
 allows to use MUFLON directly from source directory while
@@ -31,9 +31,13 @@ editing it which is suitable for development.
 Demos can be run by navigating to a particular demo directory and typing::
 
   NP=4
-  mpirun -n $NP python demo_foo-bar.py [-h]
+  mpirun -n $NP python3 demo_foo-bar.py [-h]
 
 Full documentation is available at **TODO**.
+
+.. TODO: Remove the following include directives later
+.. include:: ../../test/README.rst
+.. include:: ../README.rst
 
 
 Author
@@ -75,6 +79,6 @@ Links
 =====
 
 - Homepage http://gitlab.karlin.mff.cuni.cz/rehor/muflon
-- Testing **TODO**
+- Testing **TODO:** Add CI
 - Documentation **TODO**
 - Bug reports http://gitlab.karlin.mff.cuni.cz/rehor/muflon/issues

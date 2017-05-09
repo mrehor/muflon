@@ -1,11 +1,16 @@
+# Compiled source
 *.pyc
 
+# Compressed files
 *.xml.gz
+
+# Data files
 *.xdmf
 *.h5
 
-*.pdf
-
+# Installation
 /MUFLON.egg-info/
 
+# Demos and tests
 .cache/
+demo/**/*.py

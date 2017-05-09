@@ -1,5 +1,5 @@
-MUFLON documentation
-====================
+Building documentation
+======================
 
 You need to be able to import MUFLON in order to generate the documentation.
 
