@@ -1,0 +1,32 @@
+#!/bin/bash
+# Copyright (C) 2015 Garth N. Wells, 2016 Jan Blechta
+#
+# This file is originally from UFL, then it became part of FENaPack and the
+# current version is part of MUFLON.
+#
+# MUFLON is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# MUFLON is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
+
+# This script calls sphinx-apidoc to generate files ready for autodoc
+
+echo ""
+echo "--- Generating MUFLON autodoc RST files"
+echo ""
+
+# Get location of Sphinx files
+SPHINX_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SPHINX_SOURCE_DIR=$SPHINX_DIR/source
+
+# Generate .rst files ready for autodoc
+SPHINX_APIDOC_OPTIONS="members,special-members,show-inheritance" \
+    sphinx-apidoc -f -T -M -d 1 -o $SPHINX_SOURCE_DIR/api-doc $SPHINX_DIR/../muflon
