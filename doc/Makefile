@@ -12,7 +12,13 @@ BUILDDIR      = build
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-.PHONY: help Makefile
+.PHONY: help apidoc push-hpage Makefile
+
+apidoc:
+	./generate-apidoc
+
+push-hpage: | clean apidoc html
+	rsync -avP -e ssh ./build/html/ rehor@hill.karlin.mff.cuni.cz:~/public_html/muflon
 
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).

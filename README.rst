@@ -33,7 +33,7 @@ Demos can be run by navigating to a particular demo directory and typing::
   NP=4
   mpirun -n $NP python3 demo_foo-bar.py [-h]
 
-Full documentation is available at **TODO**.
+Full documentation is available at http://msekce.karlin.mff.cuni.cz/~rehor/muflon
 
 .. TODO: Remove the following include directives later
 .. include:: ../../test/README.rst
@@ -79,6 +79,6 @@ Links
 =====
 
 - Homepage http://gitlab.karlin.mff.cuni.cz/rehor/muflon
-- Testing **TODO:** Add CI
-- Documentation **TODO**
+- Testing **TODO:** add CI
+- Documentation http://msekce.karlin.mff.cuni.cz/~rehor/muflon
 - Bug reports http://gitlab.karlin.mff.cuni.cz/rehor/muflon/issues
