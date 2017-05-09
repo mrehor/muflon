@@ -112,8 +112,8 @@ class _BaseDS(object):
         Splits solution in primitive variables ``c, mu, v, p, th``
         (or allowable subset).
 
-        :returns: vector of :py:class:`dolfin.Function` and/or
-        :py:class:`ufl.tensors.ListTensor` objects
+        :returns: vector of :py:class:`dolfin.Function` and/or \
+                  :py:class:`ufl.tensors.ListTensor` objects
         :rtype: tuple
         """
         self._not_implemented_msg()
@@ -133,7 +133,6 @@ class MonoDS(_BaseDS):
     """
     Monolithic Discretization Scheme
     """
-
     def _prepare_solution_fcns(self):
         """
         Solution variable wraps ``c, mu, v, p, th`` (or allowable subset)
@@ -179,7 +178,6 @@ class SemiDS(_BaseDS):
     """
     Semi-decoupled Discretization Scheme
     """
-
     def _prepare_solution_fcns(self):
         """
         Solution variable wraps ``c, mu, v, p, th`` (or its allowable subset)

@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 """This module provides common parameter set for the MUFLON package.
 The parameters can be set up via 'muflon-parameters.xml' placed in
 the source directory of your program."""
@@ -21,6 +19,8 @@ the source directory of your program."""
 # You should have received a copy of the GNU Lesser General Public License
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function
+
 from dolfin import info, log, DEBUG, Parameters, File, MPI
 
 import os
@@ -33,7 +33,9 @@ __all__ = ['mpset']
 # [http://stackoverflow.com/questions/6760685/creating-a-singleton-in-python]
 
 class _Singleton(type):
-    """ A metaclass that creates a Singleton base class when called. """
+    """
+    A metaclass that creates a Singleton base class when called.
+    """
     _instances = {}
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
