@@ -2,8 +2,6 @@
 MUFLON - MUltiphase FLOw simulatioN
 ***********************************
 
-.. |version| replace:: 2017.1.0.dev0
-
 The MUFLON package implements diffuse interface models for computer
 simulations of incompressible multiphase flows described in [1]_.
 
