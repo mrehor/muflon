@@ -5,7 +5,7 @@ MUFLON - MUltiphase FLOw simulatioN
 The MUFLON package implements diffuse interface models for computer
 simulations of incompressible multiphase flows described in [1]_.
 
-MUFLON is based on the FEniCS project (https://www.fenicsproject.org).
+MUFLON is based on the FEniCS project <https://www.fenicsproject.org>.
 
 .. [1] Řehoř M., *Diffuse interface models in theory of interacting continua*.
        PhD Thesis, 2017.
@@ -33,7 +33,7 @@ Demos can be run by navigating to a particular demo directory and typing::
   NP=4
   mpirun -n $NP python3 demo_foo-bar.py [-h]
 
-Full documentation is available at http://msekce.karlin.mff.cuni.cz/~rehor/muflon
+Full documentation is available at <http://msekce.karlin.mff.cuni.cz/~rehor/muflon>.
 
 .. TODO: Remove the following include directives later
 .. include:: ../../test/README.rst
