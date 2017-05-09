@@ -1,8 +1,7 @@
 #!/bin/bash
-# Copyright (C) 2015 Garth N. Wells, 2016 Jan Blechta
+# Copyright (C) 2015 Garth N. Wells, 2016 Jan Blechta, 2017 Martin Řehoř
 #
-# This file is originally from UFL, then it became part of FENaPack and the
-# current version is part of MUFLON.
+# This file is part of MUFLON based on the files from UFL and FENaPack.
 #
 # MUFLON is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
