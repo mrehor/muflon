@@ -1,17 +1,23 @@
 Testing
 =======
 
-To run unit tests do::
+To run unit tests do
 
-  NP=4
-  [mpirun -n $NP] py.test-3 [-svl] test/unit [--junit-xml /tmp/pytest-of-fenics/unit.xml]
+.. code-block:: console
 
-To run regression tests do::
+  $ NP=4
+  $ [mpirun -n $NP] py.test-3 [-svl] test/unit [--junit-xml /tmp/pytest-of-fenics/unit.xml]
 
-  cd test/regression
-  [[DISABLE_PARALLEL_TESTING=1] NP=2] python3 [-u] test.py
+To run regression tests do
 
-To run benchmarks do::
+.. code-block:: console
 
-  NP=4
-  [mpirun -n $NP] py.test-3 [-svl] test/bench [--junit-xml /tmp/pytest-of-fenics/bench.xml]
+  $ cd test/regression
+  $ [[DISABLE_PARALLEL_TESTING=1] NP=2] python3 [-u] test.py
+
+To run benchmarks do
+
+.. code-block:: console
+
+  $ NP=4
+  $ [mpirun -n $NP] py.test-3 [-svl] test/bench [--junit-xml /tmp/pytest-of-fenics/bench.xml]

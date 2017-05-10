@@ -3,10 +3,14 @@ Building documentation
 
 You need to be able to import MUFLON in order to generate the documentation.
 
-To build the web pages locally run::
+To build the web pages locally run
 
-  make html
+.. code-block:: console
 
-To build the web pages and push them to host run::
+  $ make html
 
-  make push-host
+To build the web pages and push them to host run
+
+.. code-block:: console
+
+  $ make push-host

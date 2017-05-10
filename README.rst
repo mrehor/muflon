@@ -20,18 +20,22 @@ compiled with PETSc and petsc4py is needed to use MUFLON.
 Usage
 =====
 
-To install MUFLON from source do::
+To install MUFLON from source do
 
-  pip3 install [--user|--prefix=...] [-e] .
+.. code-block:: console
+
+  $ pip3 install [--user|--prefix=...] [-e] .
 
 in the source/repository root dir. Editable install using ``-e``
 allows to use MUFLON directly from source directory while
 editing it which is suitable for development.
 
-Demos can be run by navigating to a particular demo directory and typing::
+Demos can be run by navigating to a particular demo directory and typing
 
-  NP=4
-  mpirun -n $NP python3 demo_foo-bar.py [-h]
+.. code-block:: console
+
+  $ NP=4
+  $ mpirun -n $NP python3 demo_foo-bar.py [-h]
 
 Full documentation is available at <http://msekce.karlin.mff.cuni.cz/~rehor/muflon>.
 
