@@ -12,12 +12,9 @@ BUILDDIR      = build
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-.PHONY: help apidoc push-hpage Makefile
+.PHONY: help push-host Makefile
 
-apidoc:
-	./generate-apidoc
-
-push-hpage: | clean apidoc html
+push-host: | clean html
 	rsync -avP -e ssh ./build/html/ rehor@hill.karlin.mff.cuni.cz:~/public_html/muflon
 
 # Catch-all target: route all unknown targets to Sphinx using the new
