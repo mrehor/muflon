@@ -194,6 +194,7 @@ def run_apidoc(_):
                      "-f",             # Overwrite existing files
                      "-T",             # Don't create a table of contents file
                      #"-P",             # Include "_private" modules
+                     #"-E",             # Don't create headings for the module/package packages
                      "-M",             # Put module doc before submodule doc
                      "-d", "1",        # Maximum depth of submodules to show in the TOC
                      "-o", apidoc_dir, # Directory to place all output

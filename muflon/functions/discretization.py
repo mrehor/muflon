@@ -50,7 +50,7 @@ class _BaseDS(object):
         solution at ``n``, ``f0[1]`` at ``n-1``, etc.
 
         :param mesh: computational mesh
-        :param mesh: :py:class:`dolfin.Mesh`
+        :type mesh: :py:class:`dolfin.Mesh`
         :param FE_c: finite element for discretization of order parameters
         :type FE_c: :py:class:`dolfin.FiniteElement`
         :param FE_mu: finite element for discretization of chemical potentials
