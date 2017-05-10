@@ -1,5 +1,5 @@
 from dolfin import mpi_comm_world, MPI, set_log_level, DEBUG, INFO
-from muflon.common.parameters import mpset, _MuflonParameterSet
+from muflon.common.parameters import mpset, MuflonParameterSet
 
 import os
 
@@ -39,6 +39,6 @@ def test_mpset():
     del fname
 
     # Check that every other call points to the same object
-    assert id(_MuflonParameterSet()) == id(mpset)
+    assert id(MuflonParameterSet()) == id(mpset)
 
     #set_log_level(INFO)

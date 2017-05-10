@@ -1,7 +1,3 @@
-"""This module provides common parameter set for the MUFLON package.
-The parameters can be set up via 'muflon-parameters.xml' placed in
-the source directory of your program."""
-
 # Copyright (C) 2017 Martin Rehor
 #
 # This file is part of MUFLON.
@@ -19,13 +15,59 @@ the source directory of your program."""
 # You should have received a copy of the GNU Lesser General Public License
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
+# Manual
+"""
+.. _parameters_usage:
+
+MUFLON uses a global parameter set named :py:data:`mpset` to collect all
+parameters describing the diffuse interface models implemented within the
+package.
+
+The standard usage is: ::
+
+  from muflon import mpset
+
+The actual parameter values can be printed out using: ::
+
+  mpset.show()
+
+All parameters are described in the `table`__ below. Using ``mpset.show(True)``
+it is possible to append this description to the parameter values in
+application programs.
+
+__ tab_mpset_
+
+Default parameter values for different application programs are obtained in two
+steps:
+
+1. Once :py:mod:`muflon` is imported in the application program, it searches
+   for a file named ``muflon-parameters.xml`` in the source directory of the
+   program. If successful, it tries to read defaults from this file.
+2. Users can override the default parameter values (previously read
+   from ``muflon-parameters.xml``) directly from command line when running the
+   application program. Updated values of parameters from :py:data:`mpset`
+   must be specified after the key-option ``--mpset`` as shown in the following
+   example:
+
+   .. code-block:: console
+
+      $ python3 amazing-muflon-app.py [[<app-options>] --mpset --<opt>[.<subopt>]=<val>]
+
+Accessing MUFLON's parameters in application programs is possible on the same
+basis as accessing DOLFIN's parameters.
+
+Actual parameter values can be written to XML file using
+:py:meth:`MuflonParameterSet.write`.
+"""
+
 from __future__ import print_function
 
-from dolfin import info, log, DEBUG, Parameters, File, MPI
+from dolfin import (info, log, DEBUG, Parameters, File, MPI,
+                    get_log_level, set_log_level)
 
 import os
 
-__all__ = ['mpset']
+__all__ = ['MuflonParameterSet', 'mpset']
 
 
 #------------------------------------------------------------------------------
@@ -33,9 +75,7 @@ __all__ = ['mpset']
 # [http://stackoverflow.com/questions/6760685/creating-a-singleton-in-python]
 
 class _Singleton(type):
-    """
-    A metaclass that creates a Singleton base class when called.
-    """
+    """A metaclass that creates a Singleton base class when called."""
     _instances = {}
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
@@ -43,36 +83,37 @@ class _Singleton(type):
               super(_Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
 
-class Singleton(_Singleton('SingletonMeta', (object,), {})): pass
+class Singleton(_Singleton('SingletonMeta', (object,), {})):
+    """Singleton base class."""
+    pass
 #------------------------------------------------------------------------------
 
-class _MuflonParameterSet(Parameters, Singleton):
+class MuflonParameterSet(Parameters, Singleton):
     """
-    ====================  =============  ======================================
-    MUFLON parameters
-    ---------------------------------------------------------------------------
-    Option                Suboption      Description
-    ====================  =============  ======================================
-    --discretization
-    \                     .N             Number of phases
-    \                     .OTD           Order of Temporal Discretization
-    --material
-    ====================  =============  ======================================
+    .. _tab_mpset:
+
+       ====================  =============  ===================================
+       MUFLON parameters
+       ------------------------------------------------------------------------
+       Option                Suboption      Description
+       ====================  =============  ===================================
+       --discretization
+       \                     .N             Number of phases
+       \                     .OTD           Order of Temporal Discretization
+       --material
+       ====================  =============  ===================================
     """
 
-    def __init__(self, name='muflon-parameters'):
+    def __init__(self, name="muflon-parameters"):
         """
-        ``_MuflonParameterSet`` is singleton. The single instance of this class
-        is called ``mpset`` and it is designed to encapsulate parameters of
-        MUFLON.
+        Create and initialize an instance of :py:class:`dolfin.Parameters`
+        which is treated as *singleton*.
 
-        Once ``mpset`` is initialized, it searches for a file named
-        ``muflon-parameters.xml`` in the source directory (i.e. directory from
-        which the program is being executed) to update default parameter values
-        that are set up within this constructor.
+        :param name: name of the parameter set
+        :type name: str
         """
         # Initialize dolfin's Parameters
-        super(_MuflonParameterSet, self).__init__(name)
+        super(MuflonParameterSet, self).__init__(name)
 
         # Discretization
         nested_prm = Parameters("discretization")
@@ -84,22 +125,31 @@ class _MuflonParameterSet(Parameters, Singleton):
         nested_prm = Parameters("material")
         self.add(nested_prm)
 
-    def show(self, display="all"):
+    def show(self, verbose=False):
         """
-        Show either description of parameters (``display="desc"``), or their
-        values (``display="vals"``), or both (``display="all"``).
+        Show parameter values (and description).
+
+        Note that the value returned by :py:func:`dolfin.get_log_level` must be
+        greater or equal than :py:data:`dolfin.INFO` to see the result.
+
+        :param verbose: if ``True`` show description of parameters \
+                        additionally to their values
+        :type verbose: bool
         """
-        if display != "vals":
+        info("")
+        info(self, True)
+        if verbose:
             info("")
             info(self.__doc__)
-        if display != "desc":
-            info("")
-            info(self, True)
-            info("") # for pretty-print output
+        info("") # for pretty-print output
 
     def read(self, filename="muflon-parameters.xml"):
         """
         Read parameters from XML file.
+
+        :param filename: name of the input XML file (can be relative or \
+                         absolute path)
+        :type filename: str
         """
         filename += ".xml" if filename[-4:] != ".xml" else ""
         if os.path.isfile(filename) and os.access(filename, os.R_OK):
@@ -113,6 +163,12 @@ class _MuflonParameterSet(Parameters, Singleton):
     def write(self, comm, filename="muflon-parameters.xml"):
         """
         Write parameters to XML file.
+
+        :param comm: MPI communicator
+        :type comm: :py:class:`dolfin.MPI_Comm`
+        :param filename: name of the output XML file (can be relative or \
+                         absolute path)
+        :type filename: str
         """
         if MPI.rank(comm) == 0:
             filename += ".xml" if filename[-4:] != ".xml" else ""
@@ -123,6 +179,24 @@ class _MuflonParameterSet(Parameters, Singleton):
         else:
             return
 
-# Create muflon parameter set and read default parameter values
-mpset = _MuflonParameterSet()
+# Create muflon parameter set
+mpset = MuflonParameterSet()
+"""
+This is the instance of :py:class:`MuflonParameterSet` created with the very
+first import of :py:mod:`muflon` in application programs. It exists as
+*singleton*. Other modules within the MUFLON package use parameters from
+:py:data:`mpset` to initialize parameters of their own classes.
+*TODO: give some examples*
+"""
+
+# Read default parameter values from 'muflon-parameters.xml'
 mpset.read()
+
+# Parse default parameter values from command line
+import sys
+keyopt = "--mpset"
+if keyopt in sys.argv[1:]:             # search for key option in cmd line args
+    idx = sys.argv.index(keyopt)       # determine the index of key option
+    mpset.parse(sys.argv[idx:])        # parse all further opts to mpset
+    sys.argv = sys.argv[:idx]          # discard already parsed opts
+del keyopt
