@@ -1,6 +1,3 @@
-"""Discretization of CHNSF type models according to different numerical
-schemes."""
-
 # Copyright (C) 2017 Martin Rehor
 #
 # This file is part of MUFLON.
@@ -18,36 +15,102 @@ schemes."""
 # You should have received a copy of the GNU Lesser General Public License
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
+"""
+This module provides tools for discretization of CHNSF type models based on
+different numerical schemes.
+
+Typical usage: ::
+
+  from muflon import DiscretizationFactory
+
+  # create discretization scheme
+  ds = DiscretizationFactory.create(<name>, <args>)
+
+  # TODO: this could be dangerous
+  # there is a space for updating 'ds.parameters'
+
+  # finish the initialization process
+  ds.setup()
+
+  # discretization scheme is ready to use
+  assert isinstance(ds.solution_fcns(), tuple)
+  assert isinstance(ds.primitive_vars(), tuple)
+"""
+
 from ufl.tensors import ListTensor
 from dolfin import (Parameters, VectorElement, MixedElement,
                     Function, FunctionSpace, as_tensor)
 from muflon.common.parameters import mpset
 
-__all__ = ['MonoDS', 'SemiDS', 'FullDS']
+#__all__ = ['Discretization']
 
-
-class _BaseDS(object):
+class DiscretizationFactory(object):
     """
-    Abstract class for creating discretization schemes.
-
-    Users need to implement private methods ``_prepare_solution_fcns``
-    and ``_split_solution_fcns``. For examples of implementation see
-
-    * :py:class:`MonoDS`
-    * :py:class:`SemiDS`
-    * :py:class:`FullDS`
+    Factory for creating discretization schemes.
     """
+    factories = {}
 
+    @staticmethod
+    def _register(ds):
+        """
+        Register ``Factory`` of a discretization scheme ``ds``.
+
+        :param ds: name of discretization scheme
+        :type ds: str
+        """
+        DiscretizationFactory.factories[ds] = eval(ds + ".Factory()")
+
+    @staticmethod
+    def create(ds, *args, **kwargs):
+        """
+        Create an instance of discretization scheme ``ds`` and initialize it
+        with given arguments.
+
+        Currently implemented discretization schemes:
+
+        * :py:class:`Monolithic`
+        * :py:class:`SemiDecoupled`
+        * :py:class:`FullyDecoupled`
+
+        :param ds: name of discretization scheme
+        :type ds: str
+        :returns: instance of discretization scheme ``ds``
+        :rtype: subclass of :py:class:`Discretization`
+        """
+        if not ds in DiscretizationFactory.factories:
+            DiscretizationFactory._register(ds)
+        return DiscretizationFactory.factories[ds].create(*args, **kwargs)
+
+class Discretization(object):
+    """
+    This class provides a generic interface for discretization schemes.
+    It stores discrete variables at current and previous time levels.
+
+    We assume that discrete solution at the current time level can be written
+    in the following form: ::
+
+      (f_0, ..., f_M) == (c, mu, v, p, th)
+
+    Functions on the left hand are called **solution functions**, while
+    functions on the right hand are called **primitive variables**.
+
+    Solution functions are always represented by :py:class:`dolfin.Function`
+    objects and their number depends on particular discretization scheme.
+    Primitive variables are represented either by :py:class:`dolfin.Function`
+    or :py:class:`ufl.tensors.ListTensor` objects.  Some primitive
+    variables may be omitted depending on the particular setting, e.g. we do
+    not consider ``th`` in the isothermal setting.
+
+    Primitive variables at previous time levels are stored as a list of
+    :py:class:`dolfin.Function` objects. If ``n+1`` denotes the time level
+    corresponding to primitive variable ``g``, then ``g0[0]`` is the
+    solution at ``n``, ``g0[1]`` at ``n-1``, etc.
+    """
     def __init__(self, mesh,
                  FE_c, FE_mu, FE_v, FE_p, FE_th=None):
         """
-        From a given set of finite elements creates and stores discrete
-        variables at current and previous time steps.
-
-        Solution variables at previous time steps are stored as a list of
-        :py:class:`dolfin.Function` objects. If ``n+1`` denotes the time level
-        corresponding to solution variable ``f``, then ``f0[0]`` is the
-        solution at ``n``, ``f0[1]`` at ``n-1``, etc.
+        Initialize :py:data:`Discretization.parameters` and store given
+        arguments for later setup.
 
         :param mesh: computational mesh
         :type mesh: :py:class:`dolfin.Mesh`
@@ -72,51 +135,42 @@ class _BaseDS(object):
         for var in self._vars:
             self._FE[var] = eval("FE_"+var)
 
-        # Initialize solution variable(s) and store primitive variables
-        self._solution = self._prepare_solution_fcns()
-        self._pv = self._split_solution_fcns()
-
-    def solution(self):
+    def setup(self):
         """
-        Provides access to functions representing the discrete solution at the
-        current time level.
+        An abstract method which is responsible for creating
+        solution functions representing the discrete solution at the
+        current time level and their relation to primitive variables.
+
+        Examples:
+
+        * :py:meth:`Monolithic.setup`
+        * :py:meth:`SemiDecoupled.setup`
+        * :py:meth:`FullyDecoupled.setup`
+        """
+        self._not_implemented_msg()
+
+    def solution_fcns(self):
+        """
+        Provides access to solution functions representing the discrete
+        solution at the current time level.
 
         :returns: vector of :py:class:`dolfin.Function` objects
         :rtype: tuple
         """
-        return self._solution
+        assert hasattr(self, "_solution_fcns")
+        return self._solution_fcns
 
     def primitive_vars(self):
         """
         Provides access to primitive variables ``c, mu, v, p, th``
         (or allowable subset).
 
-        :returns: vector of :py:class:`dolfin.Function` and/or
-        :py:class:`ufl.tensors.ListTensor` objects
-        :rtype: tuple
-        """
-        return self._pv
-
-    def _prepare_solution_fcns(self):
-        """
-        Prepares functions representing the discrete solution at the
-        current time level. (Functions can live in the mixed space.)
-
-        :returns: vector of :py:class:`dolfin.Function` objects
-        :rtype: tuple
-        """
-        self._not_implemented_msg()
-
-    def _split_solution_fcns(self):
-        """
-        Splits solution in primitive variables ``c, mu, v, p, th``
-        (or allowable subset).
-
         :returns: vector of :py:class:`dolfin.Function` and/or \
                   :py:class:`ufl.tensors.ListTensor` objects
         :rtype: tuple
         """
-        self._not_implemented_msg()
+        assert hasattr(self, "_primitive_vars")
+        return self._primitive_vars
 
     def _not_implemented_msg(self):
         import inspect
@@ -125,22 +179,29 @@ class _BaseDS(object):
           % (caller, self.__str__())
         raise NotImplementedError(msg)
 
-# -----------------------------------------------------------------------------
-# Monolithic Discretization Scheme
-# -----------------------------------------------------------------------------
+# --- Monolithic discretization scheme ----------------------------------------
 
-class MonoDS(_BaseDS):
+class Monolithic(Discretization):
     """
-    Monolithic Discretization Scheme
+    Monolithic discretization scheme
     """
+    class Factory(object):
+        def create(self, *args, **kwargs):
+            return Monolithic(*args, **kwargs)
+
+    def setup(self):
+        """
+        This method prepares
+
+        * vector of solution functions consisting of a single
+          :py:class:`dolfin.Function` object
+        * vector of primitive variables obtained by splitting the solution
+          function
+        """
+        self._solution_fcns = self._prepare_solution_fcns()
+        self._primitive_vars = self._split_solution_fcns()
+
     def _prepare_solution_fcns(self):
-        """
-        Solution variable wraps ``c, mu, v, p, th`` (or allowable subset)
-        in a single :py:class:`dolfin.Function` object.
-
-        :returns: vector containing single solution variable
-        :rtype: tuple
-        """
         # Extract parameters
         N = self.parameters["N"]
 
@@ -166,27 +227,32 @@ class MonoDS(_BaseDS):
         return (w,)
 
     def _split_solution_fcns(self):
-        return self._solution[0].split()
+        return self._solution_fcns[0].split()
 
-    _split_solution_fcns.__doc__ = _BaseDS._split_solution_fcns.__doc__
+# --- Semi-decoupled discretization scheme ------------------------------------
 
-# -----------------------------------------------------------------------------
-# Semi-decoupled Discretization Scheme
-# -----------------------------------------------------------------------------
-
-class SemiDS(_BaseDS):
+class SemiDecoupled(Discretization):
     """
-    Semi-decoupled Discretization Scheme
+    Semi-decoupled discretization scheme
     """
+    class Factory(object):
+        def create(self, *args, **kwargs):
+            return SemiDecoupled(*args, **kwargs)
+
+    def setup(self):
+        """
+        This method prepares
+
+        * vector of solution functions consisting of two
+          :py:class:`dolfin.Function` objects determining Cahn-Hilliard part
+          of the solution and Navie-Stokes(-Fourier) part of the solution
+        * vector of primitive variables obtained by splitting the two
+          solution functions
+        """
+        self._solution_fcns = self._prepare_solution_fcns()
+        self._primitive_vars = self._split_solution_fcns()
+
     def _prepare_solution_fcns(self):
-        """
-        Solution variable wraps ``c, mu, v, p, th`` (or its allowable subset)
-        in two :py:class:`dolfin.Function` objects determining Cahn-Hilliard
-        part of the solution and Navie-Stokes(-Fourier) part of the solution.
-
-        :returns: vector containing two solution variables (w_ch, w_ns)
-        :rtype: tuple
-        """
         # Extract parameters
         N = self.parameters["N"]
 
@@ -213,29 +279,37 @@ class SemiDS(_BaseDS):
 
     def _split_solution_fcns(self):
         N = self.parameters["N"]
-        ws = self._solution[0].split()
+        ws = self._solution_fcns[0].split()
         pv = [_as_vector_ext(ws[:N-1]), _as_vector_ext(ws[N-1:2*(N-1)])]
-        pv += list(self._solution[1].split())
+        pv += list(self._solution_fcns[1].split())
         return tuple(pv)
 
-    _split_solution_fcns.__doc__ = _BaseDS._split_solution_fcns.__doc__
+# --- Fully-decoupled discretization scheme -----------------------------------
 
-# -----------------------------------------------------------------------------
-# Fully-decoupled Discretization Scheme
-# -----------------------------------------------------------------------------
+class FullyDecoupled(Discretization):
+    """
+    Fully-decoupled discretization scheme
+    """
+    class Factory(object):
+        def create(self, *args, **kwargs):
+            return FullyDecoupled(*args, **kwargs)
 
-class FullDS(_BaseDS):
-    """
-    Fully-decoupled Discretization Scheme
-    """
+    def setup(self):
+        """
+        This method prepares
+
+        * vector of solution functions consisting of
+          :py:class:`dolfin.Function` objects corresponding to individual
+          components of  ``c, mu, v`` and scalars ``p`` and ``th``
+          (some of them may be omitted depending on the setting)
+        * vector of primitive variables such that components of vector
+          quantities are collected in :py:class:`ufl.tensors.ListTensor`
+          objects
+        """
+        self._solution_fcns = self._prepare_solution_fcns()
+        self._primitive_vars = self._split_solution_fcns()
+
     def _prepare_solution_fcns(self):
-        """
-        Solution variable wraps ``c, mu, v, p, th`` (or allowable subset)
-        in a single :py:class:`dolfin.Function` object.
-
-        :returns: vector containing single solution variable
-        :rtype: tuple
-        """
         # Extract parameters
         N = self.parameters["N"]
 
@@ -263,7 +337,7 @@ class FullDS(_BaseDS):
     def _split_solution_fcns(self):
         N = self.parameters["N"]
         gdim = self._mesh.geometry().dim()
-        ws = self._solution
+        ws = self._solution_fcns
         pv = []
         pv.append(_as_vector_ext(ws[:N-1])) # append c
         pv.append(_as_vector_ext(ws[N-1:2*(N-1)])) # append mu
@@ -275,10 +349,8 @@ class FullDS(_BaseDS):
             pass
         return tuple(pv)
 
-    _split_solution_fcns.__doc__ = _BaseDS._split_solution_fcns.__doc__
-
-
-# --- Helper classes and functions ---
+# TODO: get rid of the following helper functions
+# --- Helper classes and functions --------------------------------------------
 
 class _ListTensorExt(ListTensor):
     """
@@ -290,7 +362,7 @@ class _ListTensorExt(ListTensor):
 
 def _as_vector_ext(expressions):
     """
-    Modification of :py:function:`ufl.tensors._as_list_tensor` for creating
+    Modification of :py:func:`ufl.tensors._as_list_tensor` for creating
     :py:class:`ufl.tensors.ListTensor` objects extended by split method.
     """
     if isinstance(expressions, (list, tuple)):

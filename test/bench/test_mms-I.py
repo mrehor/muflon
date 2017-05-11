@@ -29,7 +29,7 @@ import gc
 import itertools
 
 from muflon import mpset
-from muflon import MonoDS
+from muflon import DiscretizationFactory
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
@@ -57,11 +57,11 @@ def create_discretization(mesh):
     P2 = FiniteElement("Lagrange", mesh.ufl_cell(), 2)
 
     # Choose discretization
-    discretization = MonoDS(mesh, P1, P1, P2, P1)
+    ds = DiscretizationFactory.create("Monolithic", mesh, P1, P1, P2, P1)
 
-    return discretization
+    return ds
 
-def create_forms(discretization, boundary_markers):
+def create_forms(ds, boundary_markers):
     pass
     #return forms
 
@@ -79,8 +79,8 @@ def test_scaling_mesh(): #postprocessor
         # Prepare problem and solvers
         with Timer("Prepare") as t_prepare:
             mesh, boundary_markers = create_domain(level)
-            discretization = create_discretization(mesh)
-            forms = create_forms(discretization, boundary_markers)
+            ds = create_discretization(mesh)
+            forms = create_forms(ds, boundary_markers)
             #problem = creare_problem(forms)
 
             # Prepare functions

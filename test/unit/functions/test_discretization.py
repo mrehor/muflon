@@ -3,8 +3,7 @@ import pytest
 import dolfin
 from ufl.tensors import ListTensor
 from muflon.common.parameters import mpset
-from muflon.functions.discretization import _BaseDS, MonoDS, SemiDS, FullDS
-
+from muflon.functions.discretization import DiscretizationFactory
 
 def get_arguments():
     mesh = dolfin.UnitSquareMesh(2, 2)
@@ -12,24 +11,24 @@ def get_arguments():
     P2 = dolfin.FiniteElement("Lagrange", mesh.ufl_cell(), 2)
     return (mesh, P1, P1, P2, P1)
 
-def test_DiscretizationBase():
+def test_GenericDiscretization():
     args = get_arguments()
-    with pytest.raises(NotImplementedError):
-        foo = _BaseDS(*args)
+    with pytest.raises(AttributeError):
+        ds = DiscretizationFactory.create("Discretization", *args)
 
-@pytest.mark.parametrize("D", [MonoDS, SemiDS, FullDS])
-def test_Discretization(D):
-    #mpset["discretization"]["N"] = 3
+@pytest.mark.parametrize("D", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
+def test_discretization_schemes(D):
 
     args = get_arguments()
-    foo = D(*args)
+    ds = DiscretizationFactory.create(D, *args)
 
-    # Check inheritance of docstrings
-    assert foo._split_solution_fcns.__doc__ == \
-      _BaseDS._split_solution_fcns.__doc__
+    # Check that ds raises without calling the setup method
+    with pytest.raises(AssertionError):
+        ds = ds.primitive_vars()
 
     # Check primitive variables
-    pv = foo.primitive_vars()
+    ds.setup()
+    pv = ds.primitive_vars()
     assert isinstance(pv, tuple)
     for f in pv:
         assert isinstance(f, dolfin.Function) or isinstance(f, ListTensor)
@@ -53,8 +52,8 @@ def test_Discretization(D):
     for f in list(c_list) + list(mu_list):
         assert isinstance(f, dolfin.Function)
 
-    # Check block size of CH part when using SemiDS
-    sol = foo.solution()
-    if isinstance(foo, SemiDS):
+    # Check block size of CH part when using SemiDecoupled
+    sol = ds.solution_fcns()
+    if D == "SemiDecoupled":
         bs = sol[0].function_space().dofmap().block_size()
-        assert bs == 2*(foo.parameters["N"]-1)
+        assert bs == 2*(ds.parameters["N"]-1)

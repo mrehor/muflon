@@ -25,4 +25,4 @@ __license__ = "GNU LGPL v3"
 
 # Import public API
 from muflon.common.parameters import mpset, MuflonParameterSet
-from muflon.functions.discretization import MonoDS, SemiDS, FullDS
+from muflon.functions.discretization import DiscretizationFactory
