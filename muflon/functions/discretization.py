@@ -16,8 +16,9 @@
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
 """
-This module provides tools for discretization of CHNSF type models based on
-different numerical schemes.
+This module provides tools for discretization of
+Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) type models,
+both in space and time, based on different numerical schemes.
 
 Typical usage: ::
 
@@ -26,15 +27,24 @@ Typical usage: ::
   # create discretization scheme
   ds = DiscretizationFactory.create(<name>, <args>)
 
-  # TODO: this could be dangerous
   # there is a space for updating 'ds.parameters'
 
   # finish the initialization process
   ds.setup()
 
-  # discretization scheme is ready to use
+  # discretization scheme is ready to be used
   assert isinstance(ds.solution_fcns(), tuple)
   assert isinstance(ds.primitive_vars(), tuple)
+
+.. warning::
+
+  The two-stage initialization allowing updates of 'ds.parameters' could be
+  dangerous. Does it make sense to create discretization schemes with different
+  parameters (such as number of phases) within one application program?
+
+.. todo::
+
+  Is it safe to allow for two-stage initialization of discretization schemes?
 """
 
 from ufl.tensors import as_vector, ListTensor
@@ -88,8 +98,8 @@ class DiscretizationFactory(object):
 
         :param ds: name of discretization scheme
         :type ds: str
-        :returns: instance of discretization scheme ``ds``
-        :rtype: subclass of :py:class:`Discretization`
+        :returns: instance of discretization scheme
+        :rtype: (subclass of) :py:class:`Discretization`
         """
         if not ds in DiscretizationFactory.factories:
             DiscretizationFactory._register(ds)
@@ -100,27 +110,55 @@ class DiscretizationFactory(object):
 class Discretization(object):
     """
     This class provides a generic interface for discretization schemes.
-    It stores discrete variables at current and previous time levels.
+    It stores discrete variables at **current** and **previous** time levels.
 
-    We assume that discrete solution at the current time level can be written
-    in the following form: ::
+    **Current time level**
+
+    We assume that discrete solution can be written in the form ::
 
       (f_0, ..., f_M) == (c, mu, v, p, th)
 
-    Functions on the left hand are called **solution functions**, while
-    functions on the right hand are called **primitive variables**.
+    Functions on the left hand are called *solution functions*, while
+    functions on the right hand are called *primitive variables*.
 
-    Solution functions are always represented by :py:class:`dolfin.Function`
-    objects and their number depends on particular discretization scheme.
-    Primitive variables are represented either by :py:class:`dolfin.Function`
-    or :py:class:`ufl.tensors.ListTensor` objects.  Some primitive
-    variables may be omitted depending on the particular setting, e.g. we do
-    not consider ``th`` in the isothermal setting.
+    *Solution functions* are always represented by :py:class:`dolfin.Function`
+    objects. Their number depends on particular discretization scheme.
+    Some examples:
 
-    Primitive variables at previous time levels are stored as a list of
-    :py:class:`dolfin.Function` objects. If ``n+1`` denotes the time level
-    corresponding to primitive variable ``g``, then ``g0[0]`` is the
-    solution at ``n``, ``g0[1]`` at ``n-1``, etc.
+    * ``f_0`` represents vector
+      :math:`[\\vec c, \\vec \\mu, \\vec v, p, \\vartheta]^T`,
+      then :math:`M = 0`
+
+    * ``f_0`` represents vector :math:`[\\vec c, \\vec \\mu]^T` and
+      ``f_1`` represents vector :math:`[\\vec v, p, \\vartheta]^T`,
+      then :math:`M = 1`
+
+    * ``f_0`` represents scalar :math:`c_1` etc.,
+      then :math:`M = 2(N-1) + d + 2` (:math:`N` ... number of phases,
+      :math:`d` ... dimension of computational mesh)
+
+    *Primitive variables* are represented either by
+    :py:class:`dolfin.Function` or (modified)
+    :py:class:`ufl.tensors.ListTensor` objects. Components of vector
+    quantities can be obtained by calling the *split* method in both
+    cases. ::
+
+      if len(c) == 2:
+          c1, c2 = c.split() # this is OK
+
+      if len(c) == 1:
+          c1 = c.split() # raises 'RuntimeError', use c1 = c (if needed)
+
+    Some primitive variables may be omitted depending on the
+    particular setting, e.g. we do not consider ``th`` in the isothermal
+    setting.
+
+    **Previous time levels**
+
+    *Primitive variables* are stored as a list of :py:class:`dolfin.Function`
+    objects. If ``c`` is a discrete solution at the (``n+1``)-th time level
+    (current), then ``c0[0]`` is the solution at the (``n-0``)-th level,
+    ``c0[1]`` at the (``n-1``)-th level, etc.
     """
     class Factory(object):
         def create(self, ds_name, *args, **kwargs):
@@ -187,7 +225,7 @@ class Discretization(object):
         (or allowable subset).
 
         :returns: vector of :py:class:`dolfin.Function` and/or \
-                  :py:class:`ufl.tensors.ListTensor` objects
+                  (modified) :py:class:`ufl.tensors.ListTensor` objects
         :rtype: tuple
         """
         assert hasattr(self, "_primitive_vars")
@@ -205,6 +243,8 @@ class Discretization(object):
 class Monolithic(Discretization):
     """
     Monolithic discretization scheme
+
+    .. todo:: add reference
     """
     class Factory(object):
         def create(self, *args, **kwargs):
@@ -212,12 +252,9 @@ class Monolithic(Discretization):
 
     def setup(self):
         """
-        This method prepares
+        Prepare vector of solution functions ``(f_0,)`` such that
 
-        * vector of solution functions consisting of a single
-          :py:class:`dolfin.Function` object
-        * vector of primitive variables obtained by splitting the solution
-          function
+        * ``f_0`` wraps ``c, mu, v, p, th`` (or allowable subset)
         """
         self._solution_fcns = self._prepare_solution_fcns()
         self._primitive_vars = self._split_solution_fcns()
@@ -256,6 +293,8 @@ class Monolithic(Discretization):
 class SemiDecoupled(Discretization):
     """
     Semi-decoupled discretization scheme
+
+    .. todo:: add reference
     """
     class Factory(object):
         def create(self, *args, **kwargs):
@@ -263,13 +302,10 @@ class SemiDecoupled(Discretization):
 
     def setup(self):
         """
-        This method prepares
+        Prepare vector of solution functions ``(f_0, f_1)`` such that
 
-        * vector of solution functions consisting of two
-          :py:class:`dolfin.Function` objects determining Cahn-Hilliard part
-          of the solution and Navie-Stokes(-Fourier) part of the solution
-        * vector of primitive variables obtained by splitting the two
-          solution functions
+        * ``f_0`` wraps ``c, mu``
+        * ``f_1`` wraps ``v, p, th`` (or allowable subset)
         """
         self._solution_fcns = self._prepare_solution_fcns()
         self._primitive_vars = self._split_solution_fcns()
@@ -313,6 +349,8 @@ class SemiDecoupled(Discretization):
 class FullyDecoupled(Discretization):
     """
     Fully-decoupled discretization scheme
+
+    .. todo:: add reference
     """
     class Factory(object):
         def create(self, *args, **kwargs):
@@ -320,15 +358,10 @@ class FullyDecoupled(Discretization):
 
     def setup(self):
         """
-        This method prepares
-
-        * vector of solution functions consisting of
-          :py:class:`dolfin.Function` objects corresponding to individual
-          components of  ``c, mu, v`` and scalars ``p`` and ``th``
-          (some of them may be omitted depending on the setting)
-        * vector of primitive variables such that components of vector
-          quantities are collected in :py:class:`ufl.tensors.ListTensor`
-          objects
+        Prepare vector of solution functions ``(f_0, f_1, ...)`` such that
+        all components of this vector are scalar functions including volume
+        fractions, chemical potentials, velocity components, pressure,
+        temperature (or allowable subset).
         """
         self._solution_fcns = self._prepare_solution_fcns()
         self._primitive_vars = self._split_solution_fcns()
