@@ -40,7 +40,7 @@ __ tab_mpset_
 Default parameter values for different application programs are obtained in two
 steps:
 
-1. Once :py:mod:`muflon` is imported in the application program, it searches
+1. Once :py:mod:`muflon` is imported in an application program, it searches
    for a file named ``muflon-parameters.xml`` in the source directory of the
    program. If successful, it tries to read defaults from this file.
 2. Users can override the default parameter values (previously read
@@ -54,10 +54,12 @@ steps:
       $ python3 amazing-muflon-app.py [[<app-options>] --mpset --<opt>[.<subopt>]=<val>]
 
 Accessing MUFLON's parameters in application programs is possible on the same
-basis as accessing DOLFIN's parameters.
+basis as accessing DOLFIN's parameters, that is: ::
 
-Actual parameter values can be written to XML file using
-:py:meth:`MuflonParameterSet.write`.
+  prm = mpset[<opt>][<subopt>]
+
+Parameter values can be written to XML file by calling
+:py:meth:`MuflonParameterSet.write` wherever in the application program.
 """
 
 from __future__ import print_function
@@ -133,7 +135,7 @@ class MuflonParameterSet(Parameters, Singleton):
         greater or equal than :py:data:`dolfin.INFO` to see the result.
 
         :param verbose: if ``True`` show description of parameters \
-                        additionally to their values
+                        (additionally to their values)
         :type verbose: bool
         """
         info("")
@@ -182,11 +184,12 @@ class MuflonParameterSet(Parameters, Singleton):
 # Create muflon parameter set
 mpset = MuflonParameterSet()
 """
-This is the instance of :py:class:`MuflonParameterSet` created with the very
+This is the instance of :py:class:`MuflonParameterSet` created with the
 first import of :py:mod:`muflon` in application programs. It exists as
-*singleton*. Other modules within the MUFLON package use parameters from
+*singleton*. Other modules within the MUFLON package use
 :py:data:`mpset` to initialize parameters of their own classes.
-*TODO: give some examples*
+
+.. todo:: add example
 """
 
 # Read default parameter values from 'muflon-parameters.xml'

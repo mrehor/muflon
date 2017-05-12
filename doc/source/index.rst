@@ -21,7 +21,11 @@ Manual and API Reference
 
    API Reference <api-doc/muflon>
 
-
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
+
+TODO list
+=========
+
+.. todolist::
