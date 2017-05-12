@@ -37,12 +37,26 @@ Typical usage: ::
   assert isinstance(ds.primitive_vars(), tuple)
 """
 
-from ufl.tensors import ListTensor
+from ufl.tensors import as_vector, ListTensor
 from dolfin import (Parameters, VectorElement, MixedElement,
                     Function, FunctionSpace, as_tensor)
 from muflon.common.parameters import mpset
 
-#__all__ = ['Discretization']
+#__all__ = ['DiscretizationFactory']
+
+
+# --- Hack of ufl.tensors.ListTensor ------------------------------------------
+
+# We add 'split' method to ListTensor objects for convenience
+def _split_ListTensor(instance):
+    if len(instance) == 1:
+        raise RuntimeError("No subfunctions to extract")
+    else:
+        return tuple(instance)
+
+setattr(ListTensor, "split", _split_ListTensor)
+
+# --- Generic interface for discretization schemes (factory pattern) ----------
 
 class DiscretizationFactory(object):
     """
@@ -81,6 +95,8 @@ class DiscretizationFactory(object):
             DiscretizationFactory._register(ds)
         return DiscretizationFactory.factories[ds].create(*args, **kwargs)
 
+# --- Generic class for creating discretization schemes -----------------------
+
 class Discretization(object):
     """
     This class provides a generic interface for discretization schemes.
@@ -106,6 +122,11 @@ class Discretization(object):
     corresponding to primitive variable ``g``, then ``g0[0]`` is the
     solution at ``n``, ``g0[1]`` at ``n-1``, etc.
     """
+    class Factory(object):
+        def create(self, ds_name, *args, **kwargs):
+            msg = "Cannot create discretization scheme from a generic class. "
+            Discretization._not_implemented_msg(self, msg)
+
     def __init__(self, mesh,
                  FE_c, FE_mu, FE_v, FE_p, FE_th=None):
         """
@@ -172,12 +193,12 @@ class Discretization(object):
         assert hasattr(self, "_primitive_vars")
         return self._primitive_vars
 
-    def _not_implemented_msg(self):
+    def _not_implemented_msg(self, msg=""):
         import inspect
         caller = inspect.stack()[1][3]
-        msg = "You need to implement a method '%s' of class '%s'." \
+        _msg = "You need to implement a method '%s' of class '%s'." \
           % (caller, self.__str__())
-        raise NotImplementedError(msg)
+        raise NotImplementedError(msg + _msg)
 
 # --- Monolithic discretization scheme ----------------------------------------
 
@@ -204,6 +225,7 @@ class Monolithic(Discretization):
     def _prepare_solution_fcns(self):
         # Extract parameters
         N = self.parameters["N"]
+        assert (N > 1)
 
         # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
@@ -255,6 +277,7 @@ class SemiDecoupled(Discretization):
     def _prepare_solution_fcns(self):
         # Extract parameters
         N = self.parameters["N"]
+        assert (N > 1)
 
         # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
@@ -272,16 +295,17 @@ class SemiDecoupled(Discretization):
         W_ch = FunctionSpace(self._mesh, MixedElement(elements_ch))
         W_ns = FunctionSpace(self._mesh, MixedElement(elements_ns))
         w_ch, w_ns = Function(W_ch), Function(W_ns)
-        w_ch.rename("sol-ch", "solution-semi-ch")
-        w_ns.rename("sol-ns", "solution-semi-ns")
+        w_ch.rename("sol_ch", "solution-semi-ch")
+        w_ns.rename("sol_ns", "solution-semi-ns")
 
         return (w_ch, w_ns)
 
     def _split_solution_fcns(self):
         N = self.parameters["N"]
         ws = self._solution_fcns[0].split()
-        pv = [_as_vector_ext(ws[:N-1]), _as_vector_ext(ws[N-1:2*(N-1)])]
+        pv = [as_vector(ws[:N-1]), as_vector(ws[N-1:2*(N-1)])]
         pv += list(self._solution_fcns[1].split())
+
         return tuple(pv)
 
 # --- Fully-decoupled discretization scheme -----------------------------------
@@ -312,6 +336,7 @@ class FullyDecoupled(Discretization):
     def _prepare_solution_fcns(self):
         # Extract parameters
         N = self.parameters["N"]
+        assert (N > 1)
 
         # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
@@ -330,7 +355,7 @@ class FullyDecoupled(Discretization):
         # Create functions from elements
         sol_fcns = list(map(lambda FE: Function(FunctionSpace(self._mesh, FE)), elements))
         for i, f in enumerate(sol_fcns):
-            f.rename("sol-{}".format(i), "solution-full-{}".format(i))
+            f.rename("sol_{}".format(i), "solution-full-{}".format(i))
 
         return tuple(sol_fcns)
 
@@ -339,34 +364,13 @@ class FullyDecoupled(Discretization):
         gdim = self._mesh.geometry().dim()
         ws = self._solution_fcns
         pv = []
-        pv.append(_as_vector_ext(ws[:N-1])) # append c
-        pv.append(_as_vector_ext(ws[N-1:2*(N-1)])) # append mu
-        pv.append(_as_vector_ext(ws[2*(N-1):2*(N-1)+gdim])) # append v
+        pv.append(as_vector(ws[:N-1])) # append c
+        pv.append(as_vector(ws[N-1:2*(N-1)])) # append mu
+        pv.append(as_vector(ws[2*(N-1):2*(N-1)+gdim])) # append v
         pv.append(ws[2*(N-1)+gdim]) # append p
         try:
             pv.append(ws[2*(N-1)+gdim+1]) # append th
         except IndexError:
             pass
+
         return tuple(pv)
-
-# TODO: get rid of the following helper functions
-# --- Helper classes and functions --------------------------------------------
-
-class _ListTensorExt(ListTensor):
-    """
-    Extension of :py:class:`ufl.tensors.ListTensor` providing the ``split``
-    method.
-    """
-    def split(self):
-        return tuple(self)
-
-def _as_vector_ext(expressions):
-    """
-    Modification of :py:func:`ufl.tensors._as_list_tensor` for creating
-    :py:class:`ufl.tensors.ListTensor` objects extended by split method.
-    """
-    if isinstance(expressions, (list, tuple)):
-        expressions = [_as_vector_ext(e) for e in expressions]
-        return _ListTensorExt(*expressions)
-    else:
-        return as_tensor(expressions)
