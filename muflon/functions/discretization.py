@@ -49,7 +49,8 @@ Typical usage: ::
 
 from ufl.tensors import as_vector, ListTensor
 from dolfin import (Parameters, VectorElement, MixedElement,
-                    Function, FunctionSpace, as_tensor)
+                    Function, FunctionSpace, as_tensor,
+                    TrialFunction, TestFunction)
 from muflon.common.parameters import mpset
 
 #__all__ = ['DiscretizationFactory']
@@ -230,6 +231,28 @@ class Discretization(object):
         """
         assert hasattr(self, "_primitive_vars")
         return self._primitive_vars
+
+    def get_function_spaces(self):
+        """
+        Ask solution functions for their function spaces.
+
+        :returns: vector of :py:class:`dolfin.FunctionSpace` objects
+        :rtype: tuple
+        """
+        spaces = [w.function_space() for w in self._solution_fcns]
+        return tuple(spaces)
+
+    def create_trial_fcns(self):
+        """
+        Create trial functions corresponding to primitive variables.
+
+        :returns: vector of :py:class:`ufl.Argument` objects
+        :rtype: tuple
+        """
+        spaces = self.get_function_spaces()
+        tr_fcns = [TrialFunction(V) for V in spaces]
+
+        return tr_fcns
 
     def _not_implemented_msg(self, msg=""):
         import inspect

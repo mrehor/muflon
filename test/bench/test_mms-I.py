@@ -51,7 +51,7 @@ def create_domain(refinement_level):
 
     return mesh, boundary_markers
 
-def create_discretization(mesh):
+def create_discretization(DS, mesh):
     # Prepare finite elements
     P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
     P2 = FiniteElement("Lagrange", mesh.ufl_cell(), 2)
@@ -62,11 +62,17 @@ def create_discretization(mesh):
     return ds
 
 def create_forms(ds, boundary_markers):
-    pass
-    #return forms
+    W = ds.get_function_spaces()
+
+    # Arguments and coefficients of the form
+    u = ds.create_trial_fcns()
 
 
-def test_scaling_mesh(): #postprocessor
+    forms = None
+    return forms
+
+@pytest.mark.parametrize("DS", ["Monolithic"]) # , "SemiDecoupled", "FullyDecoupled"
+def test_scaling_mesh(DS): #postprocessor
     """
     Compute convergence rates for fixed element order, fixed time step and
     gradually refined mesh.
@@ -78,13 +84,15 @@ def test_scaling_mesh(): #postprocessor
 
         # Prepare problem and solvers
         with Timer("Prepare") as t_prepare:
+            #mpset["discretization"]["N"] = 4
             mesh, boundary_markers = create_domain(level)
-            ds = create_discretization(mesh)
+            ds = create_discretization(DS, mesh)
+            ds.setup()
             forms = create_forms(ds, boundary_markers)
             #problem = creare_problem(forms)
 
             # Prepare functions
-            # TODO
+            w = ds.solution_fcns()
 
 
         # Solve
