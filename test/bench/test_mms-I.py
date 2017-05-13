@@ -64,15 +64,36 @@ def create_discretization(DS, mesh):
 def create_forms(ds, boundary_markers):
 
     # Arguments and coefficients of the forms
-    c, mu, v, p = ds.create_trial_fcns()
+    #c, mu, v, p = ds.create_trial_fcns()
     c_, mu_, v_, p_ = ds.create_test_fcns()
 
     # Coefficients for non-linear forms
     # FIXME: Which split is correct? Which one uses 'restrict_as_ufc_function'?
-    cF, muF, vF, pF = ds.primitive_vars(indexed=True)
-    #cF, muF, vF, pF = ds.primitive_vars(indexed=False)
+    c, mu, v, p = ds.primitive_vars(indexed=True)
+    #c, mu, v, p = ds.primitive_vars(indexed=False)
 
-    forms = None
+    V_c = ds.get_function_spaces()[0].sub(0).collapse()
+    c0 = Function(V_c) # FIXME: This should be obtained from ds
+
+    # Forms for monolithic ds
+    idt = Constant(1.0) # 1.0/dt
+    K1 = Constant(1.0) # Mo
+    eqn_c = (
+          idt*inner((c - c0), mu_)
+        + inner(dot(grad(c), v), mu_) # FIXME: div(c_i*v)
+        #- inner(g, mu_) # FIXME: artificial source term for MMS
+        + K1*inner(grad(mu), grad(mu_))
+    )*dx
+
+    K2 = Constant(1.0) # b/eps
+    K3 = Constant(1.0) # a*eps/2
+    eqn_mu = (
+          inner(mu, c_)
+        #+ K2* FIXME: potential term
+        - K3*inner(grad(c), grad(c_))
+    )*dx
+
+    forms = eqn_c + eqn_mu
 
     return forms
 
