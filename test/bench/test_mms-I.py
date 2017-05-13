@@ -62,13 +62,18 @@ def create_discretization(DS, mesh):
     return ds
 
 def create_forms(ds, boundary_markers):
-    W = ds.get_function_spaces()
 
-    # Arguments and coefficients of the form
-    u = ds.create_trial_fcns()
+    # Arguments and coefficients of the forms
+    c, mu, v, p = ds.create_trial_fcns()
+    c_, mu_, v_, p_ = ds.create_test_fcns()
 
+    # Coefficients for non-linear forms
+    # FIXME: Which split is correct?
+    cF, muF, vF, pF = ds.primitive_vars(indexed=True)
+    #cF, muF, vF, pF = ds.primitive_vars(indexed=False)
 
     forms = None
+
     return forms
 
 @pytest.mark.parametrize("DS", ["Monolithic"]) # , "SemiDecoupled", "FullyDecoupled"

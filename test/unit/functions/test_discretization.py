@@ -6,9 +6,10 @@ from muflon.common.parameters import mpset
 from muflon.functions.discretization import DiscretizationFactory
 
 def get_arguments():
-    #mesh = dolfin.UnitIntervalMesh(4)
-    mesh = dolfin.UnitSquareMesh(4, 4)
-    #mesh = dolfin.UnitCubeMesh(4, 4, 4)
+    nx = 2
+    #mesh = dolfin.UnitIntervalMesh(nx)
+    mesh = dolfin.UnitSquareMesh(nx, nx)
+    #mesh = dolfin.UnitCubeMesh(nx, nx, nx)
     P1 = dolfin.FiniteElement("Lagrange", mesh.ufl_cell(), 1)
     P2 = dolfin.FiniteElement("Lagrange", mesh.ufl_cell(), 2)
     return (mesh, P1, P1, P2, P1)
@@ -31,10 +32,10 @@ def test_discretization_schemes(D, N):
     ds = DiscretizationFactory.create(D, *args)
 
     # Check that ds raises without calling the setup method
-    with pytest.raises(AssertionError):
-        ds = ds.solution_fcns()
-    with pytest.raises(AssertionError):
-        ds = ds.primitive_vars()
+    for meth in ["solution_fcns", "primitive_vars", "get_function_spaces",
+                 "create_trial_fcns", "create_test_fcns"]:
+        with pytest.raises(AssertionError):
+            foo = eval("ds." + meth + "()")
 
     # Do the necessary setup
     ds.parameters["N"] = N
@@ -46,8 +47,7 @@ def test_discretization_schemes(D, N):
     for foo in w:
         assert isinstance(foo, dolfin.Function)
 
-    # Check block size of CH part when using SemiDecoupled ds
-    if D == "SemiDecoupled":
+    if D == "SemiDecoupled": # check block size of CH part
         assert w[0].name() == "sol_ch"
         bs = w[0].function_space().dofmap().block_size()
         assert bs == 2*(ds.parameters["N"]-1)
@@ -59,7 +59,7 @@ def test_discretization_schemes(D, N):
     assert isinstance(pv, tuple)
     for foo in pv:
         assert isinstance(foo, dolfin.Function) or isinstance(foo, ListTensor)
-    assert len(pv) == len(args)-1 # mesh is an additional argument
+    assert len(pv) == len(args)-1 # mesh is the additional argument
 
     # Try to unpack 'c' and 'mu' variables (works for N > 2)
     for i in range(2):
@@ -83,7 +83,34 @@ def test_discretization_schemes(D, N):
         for foo in foo_list:
             assert isinstance(foo, dolfin.Function)
 
+    # Create trial and test functions
+    tr_fcns = ds.create_trial_fcns()
+    assert len(tr_fcns) == len(pv)
+    te_fcns = ds.create_test_fcns()
+    assert len(te_fcns) == len(pv)
+
+    # # Test assigners
+    # W = ds.get_function_spaces()
+    # w = ds.solution_fcns() # zeros
+    # pv = ds.primitive_vars()
+    # V_c = W[0].sub(0).collapse()
+    # c0 = dolfin.Function(V_c) # zeros
+    # c = pv[0]
+    # # Test assignment from c0 to c
+    # ass_to_mix = dolfin.FunctionAssigner(W[0].sub(0), V_c)
+    # c0.vector()[:] = 1.0
+    # dolfin.info(w[0].vector(), True) # zeros
+    # ass_to_mix.assign(c, c0)
+    # dolfin.info(w[0].vector(), True) # some ones
+    # # Test assignment from c to c0
+    # ass_from_mix = dolfin.FunctionAssigner(V_c, W[0].sub(0))
+    # w[0].vector()[:] = 2.0
+    # dolfin.info(c0.vector(), True) # ones
+    # ass_from_mix.assign(c0, c)
+    # dolfin.info(c0.vector(), True) # twos
+
     # Cleanup
+    del foo
     del pv
     del gdim
     del ds

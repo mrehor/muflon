@@ -47,10 +47,11 @@ Typical usage: ::
   Is it safe to allow for two-stage initialization of discretization schemes?
 """
 
-from ufl.tensors import as_vector, ListTensor
-from dolfin import (Parameters, VectorElement, MixedElement,
-                    Function, FunctionSpace, as_tensor,
-                    TrialFunction, TestFunction)
+from ufl.tensors import ListTensor
+from dolfin import as_vector, split
+from dolfin import Parameters, VectorElement, MixedElement
+from dolfin import Function, FunctionSpace, TrialFunction, TestFunction
+
 from muflon.common.parameters import mpset
 
 #__all__ = ['DiscretizationFactory']
@@ -127,11 +128,11 @@ class Discretization(object):
     Some examples:
 
     * ``f_0`` represents vector
-      :math:`[\\vec c, \\vec \\mu, \\vec v, p, \\vartheta]^T`,
+      :math:`(\\vec c, \\vec \\mu, \\vec v, p, \\vartheta)^T`,
       then :math:`M = 0`
 
-    * ``f_0`` represents vector :math:`[\\vec c, \\vec \\mu]^T` and
-      ``f_1`` represents vector :math:`[\\vec v, p, \\vartheta]^T`,
+    * ``f_0`` represents vector :math:`(\\vec c, \\vec \\mu)^T` and
+      ``f_1`` represents vector :math:`(\\vec v, p, \\vartheta)^T`,
       then :math:`M = 1`
 
     * ``f_0`` represents scalar :math:`c_1` etc.,
@@ -197,9 +198,21 @@ class Discretization(object):
 
     def setup(self):
         """
-        An abstract method which is responsible for creating
-        solution functions representing the discrete solution at the
-        current time level and their relation to primitive variables.
+        An abstract method.
+
+        When we are creating a new class by subclassing this generic class,
+        we must override this method in such a way that it sets attributes
+        ``_solution_fcns`` and ``_fit_primitives`` to the new class.
+        The first attribute represents a vector (*tuple*) of solution
+        functions, while the second attribute must be a callable function
+        with the following signature: ::
+
+          def  _fit_primitives(vec, deepcopy=False, indexed=True):
+               \"\"\"
+               Split/collect components of 'vec' (solution/test/trial fcns)
+               to fit the vector of primitive variables.
+               \"\"\"
+               pass # need to be implemented
 
         Examples:
 
@@ -220,27 +233,48 @@ class Discretization(object):
         assert hasattr(self, "_solution_fcns")
         return self._solution_fcns
 
-    def primitive_vars(self):
+    def primitive_vars(self, deepcopy=False, indexed=False):
         """
         Provides access to primitive variables ``c, mu, v, p, th``
         (or allowable subset).
 
+        :param deepcopy: return either deep or shallow copy of primitive vars
+                         (deep makes sense only if ``indexed == False``)
+        :type deepcopy: bool
+        :param indexed: if ``True`` use free function :py:func:`dolfin.split`,
+                        otherwise use :py:meth:`dolfin.Function.split`
+        :type indexed: bool
         :returns: vector of :py:class:`dolfin.Function` and/or \
                   (modified) :py:class:`ufl.tensors.ListTensor` objects
         :rtype: tuple
         """
-        assert hasattr(self, "_primitive_vars")
-        return self._primitive_vars
+        assert hasattr(self, "_fit_primitives")
+        assert hasattr(self, "_solution_fcns")
+        return self._fit_primitives(self._solution_fcns, deepcopy, indexed)
 
     def get_function_spaces(self):
         """
-        Ask solution functions for their function spaces.
+        Ask solution functions for the function spaces on which they live.
 
         :returns: vector of :py:class:`dolfin.FunctionSpace` objects
         :rtype: tuple
         """
+        assert hasattr(self, "_solution_fcns")
         spaces = [w.function_space() for w in self._solution_fcns]
         return tuple(spaces)
+
+    def create_test_fcns(self):
+        """
+        Create test functions corresponding to primitive variables.
+
+        :returns: vector of :py:class:`ufl.Argument` objects
+        :rtype: tuple
+        """
+        assert hasattr(self, "_fit_primitives")
+        spaces = self.get_function_spaces()
+        te_fcns = [TestFunction(V) for V in spaces]
+
+        return self._fit_primitives(te_fcns)
 
     def create_trial_fcns(self):
         """
@@ -249,10 +283,11 @@ class Discretization(object):
         :returns: vector of :py:class:`ufl.Argument` objects
         :rtype: tuple
         """
+        assert hasattr(self, "_fit_primitives")
         spaces = self.get_function_spaces()
         tr_fcns = [TrialFunction(V) for V in spaces]
 
-        return tr_fcns
+        return self._fit_primitives(tr_fcns)
 
     def _not_implemented_msg(self, msg=""):
         import inspect
@@ -279,8 +314,16 @@ class Monolithic(Discretization):
 
         * ``f_0`` wraps ``c, mu, v, p, th`` (or allowable subset)
         """
+        def fit_primitives(vec, deepcopy=False, indexed=True):
+            assert not (deepcopy and indexed)
+            if indexed:
+                return split(vec[0])
+            else:
+                return vec[0].split(deepcopy)
+
+        # Set required attributes
         self._solution_fcns = self._prepare_solution_fcns()
-        self._primitive_vars = self._split_solution_fcns()
+        self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):
         # Extract parameters
@@ -308,9 +351,6 @@ class Monolithic(Discretization):
 
         return (w,)
 
-    def _split_solution_fcns(self):
-        return self._solution_fcns[0].split()
-
 # --- Semi-decoupled discretization scheme ------------------------------------
 
 class SemiDecoupled(Discretization):
@@ -330,8 +370,22 @@ class SemiDecoupled(Discretization):
         * ``f_0`` wraps ``c, mu``
         * ``f_1`` wraps ``v, p, th`` (or allowable subset)
         """
+        def fit_primitives(vec, deepcopy=False, indexed=True):
+            assert not (deepcopy and indexed)
+            N = self.parameters["N"] # 'self' is visible from here
+            if indexed:
+                ws = split(vec[0])
+                pv = [ws[:N-1], ws[N-1:]]
+                pv += list(split(vec[1]))
+            else:
+                ws = vec[0].split(deepcopy)
+                pv = [as_vector(ws[:N-1]), as_vector(ws[N-1:])]
+                pv += list(vec[1].split(deepcopy))
+            return tuple(pv)
+
+        # Set required attributes
         self._solution_fcns = self._prepare_solution_fcns()
-        self._primitive_vars = self._split_solution_fcns()
+        self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):
         # Extract parameters
@@ -359,14 +413,6 @@ class SemiDecoupled(Discretization):
 
         return (w_ch, w_ns)
 
-    def _split_solution_fcns(self):
-        N = self.parameters["N"]
-        ws = self._solution_fcns[0].split()
-        pv = [as_vector(ws[:N-1]), as_vector(ws[N-1:2*(N-1)])]
-        pv += list(self._solution_fcns[1].split())
-
-        return tuple(pv)
-
 # --- Fully-decoupled discretization scheme -----------------------------------
 
 class FullyDecoupled(Discretization):
@@ -386,8 +432,24 @@ class FullyDecoupled(Discretization):
         fractions, chemical potentials, velocity components, pressure,
         temperature (or allowable subset).
         """
+        def fit_primitives(vec, deepcopy=False, indexed=True):
+            # FIXME: deepcopy and indexed don't have any effect here
+            N = self.parameters["N"] # 'self' is visible from here
+            gdim = self._mesh.geometry().dim()
+            pv = []
+            pv.append(as_vector(vec[:N-1])) # append c
+            pv.append(as_vector(vec[N-1:2*(N-1)])) # append mu
+            pv.append(as_vector(vec[2*(N-1):2*(N-1)+gdim])) # append v
+            pv.append(vec[2*(N-1)+gdim]) # append p
+            try:
+                pv.append(vec[2*(N-1)+gdim+1]) # append th
+            except IndexError:
+                pass
+            return tuple(pv)
+
+        # Set required attributes
         self._solution_fcns = self._prepare_solution_fcns()
-        self._primitive_vars = self._split_solution_fcns()
+        self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):
         # Extract parameters
@@ -414,19 +476,3 @@ class FullyDecoupled(Discretization):
             f.rename("sol_{}".format(i), "solution-full-{}".format(i))
 
         return tuple(sol_fcns)
-
-    def _split_solution_fcns(self):
-        N = self.parameters["N"]
-        gdim = self._mesh.geometry().dim()
-        ws = self._solution_fcns
-        pv = []
-        pv.append(as_vector(ws[:N-1])) # append c
-        pv.append(as_vector(ws[N-1:2*(N-1)])) # append mu
-        pv.append(as_vector(ws[2*(N-1):2*(N-1)+gdim])) # append v
-        pv.append(ws[2*(N-1)+gdim]) # append p
-        try:
-            pv.append(ws[2*(N-1)+gdim+1]) # append th
-        except IndexError:
-            pass
-
-        return tuple(pv)
