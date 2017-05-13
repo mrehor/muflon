@@ -375,7 +375,7 @@ class SemiDecoupled(Discretization):
             N = self.parameters["N"] # 'self' is visible from here
             if indexed:
                 ws = split(vec[0])
-                pv = [ws[:N-1], ws[N-1:]]
+                pv = [as_vector(ws[:N-1]), as_vector(ws[N-1:])]
                 pv += list(split(vec[1]))
             else:
                 ws = vec[0].split(deepcopy)

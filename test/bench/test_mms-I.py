@@ -68,7 +68,7 @@ def create_forms(ds, boundary_markers):
     c_, mu_, v_, p_ = ds.create_test_fcns()
 
     # Coefficients for non-linear forms
-    # FIXME: Which split is correct?
+    # FIXME: Which split is correct? Which one uses 'restrict_as_ufc_function'?
     cF, muF, vF, pF = ds.primitive_vars(indexed=True)
     #cF, muF, vF, pF = ds.primitive_vars(indexed=False)
 

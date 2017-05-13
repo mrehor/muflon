@@ -88,6 +88,21 @@ def test_discretization_schemes(D, N):
     assert len(tr_fcns) == len(pv)
     te_fcns = ds.create_test_fcns()
     assert len(te_fcns) == len(pv)
+    pv_ufl = ds.primitive_vars(indexed=True)
+    assert len(pv_ufl) == len(pv)
+
+    # # Visual check of the output
+    # print("\nTrial functions:")
+    # for f in tr_fcns:
+    #     print(f, type(f))
+    # print("\nTest functions:")
+    # for f in te_fcns:
+    #     print(f, type(f))
+    # print("\nSolution functions (indexed):")
+    # for f in pv_ufl:
+    #     print(f, type(f))
+
+    del tr_fcns, te_fcns, pv_ufl
 
     # # Test assigners
     # W = ds.get_function_spaces()
