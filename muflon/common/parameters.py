@@ -101,7 +101,7 @@ class MuflonParameterSet(Parameters, Singleton):
        ====================  =============  ===================================
        --discretization
        \                     .N             Number of phases
-       \                     .OTD           Order of Temporal Discretization
+       \                     .PTL           number of Previous Time Levels
        --material
        ====================  =============  ===================================
     """
@@ -119,8 +119,8 @@ class MuflonParameterSet(Parameters, Singleton):
 
         # Discretization
         nested_prm = Parameters("discretization")
-        nested_prm.add("N", 2)              # Number of phases
-        nested_prm.add("OTD", 1)            # Order of Temporal Discretization
+        nested_prm.add("N", 2)
+        nested_prm.add("PTL", 1)
         self.add(nested_prm)
 
         # Material parameters
