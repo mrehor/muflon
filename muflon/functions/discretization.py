@@ -60,7 +60,8 @@ from muflon.common.parameters import mpset
 # --- Hack of ufl.tensors.ListTensor ------------------------------------------
 
 # We add 'split' method to ListTensor objects for convenience
-def _split_ListTensor(instance):
+def _split_ListTensor(instance, deepcopy=True):
+    # Switching 'deepcopy' to False does not have any effect here
     if len(instance) == 1:
         raise RuntimeError("No subfunctions to extract")
     else:
@@ -289,12 +290,33 @@ class Discretization(object):
 
         return self._fit_primitives(tr_fcns)
 
+    def c0(self):
+        """
+        An abstract method.
+
+        Create and return an array of functions for volume fractions at the
+        previous time level. Number of previous time levels is controlled by
+        ``mpset["discretization"]["PTL"]``.
+
+        :returns: ``c0[0]`` as a vector ``c`` at the previous time level, \
+                  ``c0[1]`` as a vector ``c`` at the last but one time level, \
+                  etc.
+        :rtype: list of ``dolfin.Functions``
+        """
+        self._not_implemented_msg()
+
     def _not_implemented_msg(self, msg=""):
         import inspect
         caller = inspect.stack()[1][3]
         _msg = "You need to implement a method '%s' of class '%s'." \
           % (caller, self.__str__())
         raise NotImplementedError(msg + _msg)
+
+    @classmethod
+    def _inherit_docstring(cls, meth):
+        doc = eval("cls." + meth + ".__doc__")
+        # omit first two lines saying that the method is abstract
+        return "\n".join(doc.split("\n")[2:])
 
 # --- Monolithic discretization scheme ----------------------------------------
 
@@ -350,6 +372,16 @@ class Monolithic(Discretization):
         w.rename("sol", "solution-mono")
 
         return (w,)
+
+    def c0(self):
+        # Get mixed space for the vector c
+        V_c = self.get_function_spaces()[0].sub(0).collapse()
+        # Create zero initial condition(s)
+        c0 = []
+        for i in range(self.parameters["PTL"]):
+            c0.append(Function(V_c))
+        return c0
+    c0.__doc__ = Discretization._inherit_docstring("c0")
 
 # --- Semi-decoupled discretization scheme ------------------------------------
 
@@ -412,6 +444,18 @@ class SemiDecoupled(Discretization):
         w_ns.rename("sol_ns", "solution-semi-ns")
 
         return (w_ch, w_ns)
+
+    def c0(self):
+        N = self.parameters["N"]
+        assert (N > 1)
+        # Get mixed space for a component of vector c
+        V_c = self.get_function_spaces()[0].sub(0).collapse()
+        # Create zero initial condition(s)
+        c0 = []
+        for i in range(self.parameters["PTL"]):
+            c0.append(as_vector((N-1)*[Function(V_c),]))
+        return c0
+    c0.__doc__ = Discretization._inherit_docstring("c0")
 
 # --- Fully-decoupled discretization scheme -----------------------------------
 
@@ -476,3 +520,15 @@ class FullyDecoupled(Discretization):
             f.rename("sol_{}".format(i), "solution-full-{}".format(i))
 
         return tuple(sol_fcns)
+
+    def c0(self):
+        N = self.parameters["N"]
+        assert (N > 1)
+        # Get mixed space for a component of vector c
+        V_c = self.get_function_spaces()[0]
+        # Create zero initial condition(s)
+        c0 = []
+        for i in range(self.parameters["PTL"]):
+            c0.append(as_vector((N-1)*[Function(V_c),]))
+        return c0
+    c0.__doc__ = Discretization._inherit_docstring("c0")

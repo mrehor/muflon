@@ -82,8 +82,31 @@ def test_discretization_schemes(D, N):
         assert isinstance(foo_list, tuple)
         for foo in foo_list:
             assert isinstance(foo, dolfin.Function)
+    del pv
+
+    # Get functions for initial conditions
+    pv = ds.primitive_vars()
+    c = pv[0]
+    c0 = ds.c0()
+    assert len(c0) == ds.parameters["PTL"]
+    assert len(c0[0]) == len(c)
+
+    # Check assignment from current level to previous time level
+    sol = ds.solution_fcns()
+    for w in sol:
+        w.vector()[:] = 1.0
+    try:
+        c00_cpts = c0[0].split(True) # get components of c
+    except RuntimeError: # no subfcns to extract
+        if isinstance(c0[0], ListTensor):
+            c0[0] = c0[0][0] # extract a single component from ListTensor
+        c00_cpts = [c0[0],]
+    #c.assign(c0[0])
+    assert c00_cpts[0].vector()[0] == 0.0
+    del sol, pv, c, c0
 
     # Create trial and test functions
+    pv = ds.primitive_vars()
     tr_fcns = ds.create_trial_fcns()
     assert len(tr_fcns) == len(pv)
     te_fcns = ds.create_test_fcns()
@@ -102,7 +125,8 @@ def test_discretization_schemes(D, N):
     # for f in pv_ufl:
     #     print(f, type(f))
 
-    del tr_fcns, te_fcns, pv_ufl
+    del tr_fcns, te_fcns, pv, pv_ufl
+
 
     # # Test assigners
     # W = ds.get_function_spaces()
@@ -126,7 +150,6 @@ def test_discretization_schemes(D, N):
 
     # Cleanup
     del foo
-    del pv
     del gdim
     del ds
     del args
