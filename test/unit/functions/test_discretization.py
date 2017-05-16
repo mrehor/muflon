@@ -55,7 +55,7 @@ def test_discretization_schemes(D, N):
         assert isinstance(foo, dolfin.Function)
 
     if D == "SemiDecoupled": # check block size of CH part
-        assert w[0].name() == "sol_ch"
+        assert w[0].name() == "ctl_ch"
         bs = w[0].function_space().dofmap().block_size()
         assert bs == 2*(ds.parameters["N"]-1)
         del bs

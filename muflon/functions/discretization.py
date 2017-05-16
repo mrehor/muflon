@@ -266,6 +266,17 @@ class Discretization(object):
         assert hasattr(self, "_solution_ctl")
         return self._solution_ctl
 
+    def solution_ptl(self):
+        """
+        Provides access to solution functions representing the discrete
+        solution at previous time levels.
+
+        :returns: vector of :py:class:`dolfin.Function` objects
+        :rtype: tuple
+        """
+        assert hasattr(self, "_solution_ptl")
+        return self._solution_ptl
+
     def primitive_vars(self, deepcopy=False, indexed=False):
         """
         Provides access to primitive variables ``c, mu, v, p, th``
@@ -383,14 +394,12 @@ class Monolithic(Discretization):
                 return vec[0].split(deepcopy)
 
         # Set required attributes
-        self._solution_ctl = self._prepare_solution_fcns()
+        self._solution_ctl, self._solution_ptl = self._prepare_solution_fcns()
         self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):
-        # Extract parameters
+        # Extract parameters needed to create finite elements
         N = self.parameters["N"]
-
-        # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
 
         # Group elements for c, mu, v
@@ -404,12 +413,19 @@ class Monolithic(Discretization):
         if self._FE["th"] is not None:
             elements.append(self._FE["th"])
 
-        # Create solution variable
+        # Build function spaces
         W = FunctionSpace(self._mesh, MixedElement(elements))
-        w = Function(W)
-        w.rename("sol", "solution-mono")
 
-        return (w,)
+        # Create solution variable at ctl
+        w_ctl = (Function(W),)
+        w_ctl[0].rename("ctl", "solution-mono-ctl")
+
+        # Create solution variables at ptl
+        w_ptl = self.parameters["PTL"]*[(Function(W),),] # list of tuples
+        for (i, f) in enumerate(w_ptl):
+            f[0].rename("ptl%i" % i, "solution-mono-ptl%i" % i)
+
+        return (w_ctl, w_ptl)
 
     def c0(self):
         # Get mixed space for the vector c
@@ -454,14 +470,12 @@ class SemiDecoupled(Discretization):
             return tuple(pv)
 
         # Set required attributes
-        self._solution_ctl = self._prepare_solution_fcns()
+        self._solution_ctl, self._solution_ptl = self._prepare_solution_fcns()
         self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):
-        # Extract parameters
+        # Extract parameters needed to create finite elements
         N = self.parameters["N"]
-
-        # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
 
         # Group elements for c, mu, v
@@ -473,14 +487,22 @@ class SemiDecoupled(Discretization):
         if self._FE["th"] is not None:
             elements_ns.append(self._FE["th"])
 
-        # Create solution variables
+        # Build function spaces
         W_ch = FunctionSpace(self._mesh, MixedElement(elements_ch))
         W_ns = FunctionSpace(self._mesh, MixedElement(elements_ns))
-        w_ch, w_ns = Function(W_ch), Function(W_ns)
-        w_ch.rename("sol_ch", "solution-semi-ch")
-        w_ns.rename("sol_ns", "solution-semi-ns")
 
-        return (w_ch, w_ns)
+        # Create solution variables at ctl
+        w_ctl = (Function(W_ch), Function(W_ns))
+        w_ctl[0].rename("ctl_ch", "solution-semi-ch-ctl")
+        w_ctl[1].rename("ctl_ns", "solution-semi-ns-ctl")
+
+        # Create solution variables at ptl
+        w_ptl = self.parameters["PTL"]*[(Function(W_ch), Function(W_ns)),]
+        for i, f in enumerate(w_ptl):
+            f[0].rename("ptl%i_ch" % i, "solution-semi-ch-ptl%i" % i)
+            f[1].rename("ptl%i_ns" % i, "solution-semi-ns-ptl%i" % i)
+
+        return (w_ctl, w_ptl)
 
     def c0(self):
         N = self.parameters["N"]
@@ -528,14 +550,12 @@ class FullyDecoupled(Discretization):
             return tuple(pv)
 
         # Set required attributes
-        self._solution_ctl = self._prepare_solution_fcns()
+        self._solution_ctl, self._solution_ptl = self._prepare_solution_fcns()
         self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):
-        # Extract parameters
+        # Extract parameters needed to create finite elements
         N = self.parameters["N"]
-
-        # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
 
         # Group elements for c, mu, v
@@ -549,12 +569,23 @@ class FullyDecoupled(Discretization):
         if self._FE["th"] is not None:
             elements.append(self._FE["th"])
 
-        # Create functions from elements
-        sol_fcns = list(map(lambda FE: Function(FunctionSpace(self._mesh, FE)), elements))
-        for i, f in enumerate(sol_fcns):
-            f.rename("sol_{}".format(i), "solution-full-{}".format(i))
+        # Build function spaces
+        spaces = list(map(lambda FE: FunctionSpace(self._mesh, FE), elements))
 
-        return tuple(sol_fcns)
+        # Create solution variables at ctl
+        w_ctl = tuple(map(lambda FS: Function(FS), spaces))
+        for i, f in enumerate(w_ctl):
+            f.rename("ctl_{}".format(i), "solution-full-{}-ctl".format(i))
+
+        # Create solution variables at ptl
+        w_ptl = self.parameters["PTL"] \
+                  * [tuple(map(lambda FS: Function(FS), spaces)),]
+        for i, f in enumerate(w_ptl):
+            for j in range(len(f)):
+                f[j].rename("ptl{}_{}".format(i, j),
+                            "solution-full-{}-ptl{}".format(j, i))
+
+        return (w_ctl, w_ptl)
 
     def c0(self):
         N = self.parameters["N"]
