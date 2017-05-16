@@ -1,7 +1,7 @@
 import pytest
 
 import dolfin
-from ufl.tensors import ListTensor
+from ufl.tensors import as_vector, ListTensor
 from muflon.common.parameters import mpset
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.discretization import as_primitive, PrimitiveShell
@@ -39,7 +39,7 @@ def test_discretization_schemes(D, N):
     ds = DiscretizationFactory.create(D, *args)
 
     # Check that ds raises without calling the setup method
-    for meth in ["solution_ctl", "primitive_vars", "get_function_spaces",
+    for meth in ["solution_ctl", "primitive_vars_ctl", "get_function_spaces",
                  "create_trial_fcns", "create_test_fcns"]:
         with pytest.raises(AssertionError):
             foo = eval("ds." + meth + "()")
@@ -62,7 +62,7 @@ def test_discretization_schemes(D, N):
     del w
 
     # Check primitive variables
-    pv = ds.primitive_vars()
+    pv = ds.primitive_vars_ctl()
     assert isinstance(pv, tuple)
     for foo in pv:
         assert isinstance(foo, PrimitiveShell)
@@ -89,7 +89,6 @@ def test_discretization_schemes(D, N):
         assert isinstance(foo_list, tuple)
         for foo in foo_list:
             assert isinstance(foo, dolfin.Function)
-    del v
 
     # Try to unpack pressure
     p = pv[3]
@@ -97,20 +96,35 @@ def test_discretization_schemes(D, N):
         len(p)
     with pytest.raises(RuntimeError):
         p.split()
-    del p
+    del v, p, pv
 
-    # Get functions for initial conditions
-    c = pv[0]
-    c0 = ds.c0()
-    assert len(c0) == ds.parameters["PTL"]
-    assert len(c0[0]) == len(c)
+    # Test assignment to functions at the previous time level
+    w, w0 = ds.solution_ctl(), ds.solution_ptl(0)
+    assert len(w) == len(w0)
+    w[0].vector()[:] = 1.0
+    w0[0].assign(w[0]) # updates solution on the previous level
+    pv0 = ds.primitive_vars_ptl(0, deepcopy=True)
+    c0_1st = pv0[0].split(deepcopy=True)[0] # get first component of c0
+    assert c0_1st.vector()[0] == 1.0
+    del w, w0, pv0, c0_1st
+
+    # # Test loading of initial conditions
+    # # -- prepare initial condition
+    # # TODO: ic = InitialCondition(...)
+    # # -- assign to ptl0
+    # # TODO: ds.load_initial_condition(ic)
+    # # -- check the result
+    # pv0 = ds.primitive_vars_ptl(0, deepcopy=True)
+    # c0 = pv0[0].split(deepcopy=True) # get components of c0
+    # assert ...
 
     # Create trial and test functions
+    pv = ds.primitive_vars_ctl()
     tr_fcns = ds.create_trial_fcns()
     assert len(tr_fcns) == len(pv)
     te_fcns = ds.create_test_fcns()
     assert len(te_fcns) == len(pv)
-    pv_ufl = ds.primitive_vars(indexed=True)
+    pv_ufl = ds.primitive_vars_ctl(indexed=True)
     assert len(pv_ufl) == len(pv)
 
     # # Visual check of the output
@@ -126,29 +140,6 @@ def test_discretization_schemes(D, N):
 
     del tr_fcns, te_fcns, pv, pv_ufl
 
-
-    # # Test assigners
-    # W = ds.get_function_spaces()
-    # w = ds.solution_ctl() # zeros
-    # pv = ds.primitive_vars()
-    # V_c = W[0].sub(0).collapse()
-    # c0 = dolfin.Function(V_c) # zeros
-    # c = pv[0]
-    # # Test assignment from c0 to c
-    # ass_to_mix = dolfin.FunctionAssigner(W[0].sub(0), V_c)
-    # c0.vector()[:] = 1.0
-    # dolfin.info(w[0].vector(), True) # zeros
-    # ass_to_mix.assign(c, c0)
-    # dolfin.info(w[0].vector(), True) # some ones
-    # # Test assignment from c to c0
-    # ass_from_mix = dolfin.FunctionAssigner(V_c, W[0].sub(0))
-    # w[0].vector()[:] = 2.0
-    # dolfin.info(c0.vector(), True) # ones
-    # ass_from_mix.assign(c0, c)
-    # dolfin.info(c0.vector(), True) # twos
-
     # Cleanup
-    del foo
-    del gdim
-    del ds
-    del args
+    del foo, foo_list, gdim
+    del ds, args

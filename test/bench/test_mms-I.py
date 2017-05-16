@@ -69,8 +69,8 @@ def create_forms(ds, boundary_markers):
 
     # Coefficients for non-linear forms
     # FIXME: Which split is correct? Which one uses 'restrict_as_ufc_function'?
-    c, mu, v, p = ds.primitive_vars(indexed=True)
-    #c, mu, v, p = ds.primitive_vars(indexed=False)
+    c, mu, v, p = ds.primitive_vars_ctl(indexed=True)
+    #c, mu, v, p = ds.primitive_vars_ctl(indexed=False)
 
     V_c = ds.get_function_spaces()[0].sub(0).collapse()
     c0 = Function(V_c) # FIXME: This should be obtained from ds

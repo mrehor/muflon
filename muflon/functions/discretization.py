@@ -34,7 +34,7 @@ Typical usage: ::
 
   # discretization scheme is ready to be used
   assert isinstance(ds.solution_ctl(), tuple)
-  assert isinstance(ds.primitive_vars(), tuple)
+  assert isinstance(ds.primitive_vars_ctl(), tuple)
 
 .. warning::
 
@@ -266,7 +266,7 @@ class Discretization(object):
         assert hasattr(self, "_solution_ctl")
         return self._solution_ctl
 
-    def solution_ptl(self):
+    def solution_ptl(self, level=0):
         """
         Provides access to solution functions representing the discrete
         solution at previous time levels.
@@ -275,9 +275,9 @@ class Discretization(object):
         :rtype: tuple
         """
         assert hasattr(self, "_solution_ptl")
-        return self._solution_ptl
+        return self._solution_ptl[level]
 
-    def primitive_vars(self, deepcopy=False, indexed=False):
+    def primitive_vars_ctl(self, deepcopy=False, indexed=False):
         """
         Provides access to primitive variables ``c, mu, v, p, th``
         (or allowable subset).
@@ -297,11 +297,41 @@ class Discretization(object):
         pv = self._fit_primitives(self._solution_ctl, deepcopy, indexed)
         if indexed == False:
             # Wrap objects in pv by PrimitiveShell
-            wrapped_pv = [item for item in map(lambda var: \
-                            PrimitiveShell(var[1], self._varnames[var[0]]),
-                            enumerate(pv))]
+            wrapped_pv = list(map(lambda var: \
+                PrimitiveShell(var[1], self._varnames[var[0]]),
+                enumerate(pv)))
             return tuple(wrapped_pv)
-        return pv
+        else:
+            return pv
+
+    def primitive_vars_ptl(self, level=0, deepcopy=False, indexed=False):
+        """
+        Provides access to primitive variables ``c, mu, v, p, th``
+        (or allowable subset) at previous time levels.
+
+        :param level: which level
+        :type level: int
+        :param deepcopy: return either deep or shallow copy of primitive vars
+                         (deep makes sense only if ``indexed == False``)
+        :type deepcopy: bool
+        :param indexed: if ``True`` use free function :py:func:`dolfin.split`,
+                        otherwise use :py:meth:`dolfin.Function.split`
+        :type indexed: bool
+        :returns: vector of :py:class:`dolfin.Function` and/or \
+                  :py:class:`ufl.tensors.ListTensor` objects
+        :rtype: tuple
+        """
+        assert hasattr(self, "_fit_primitives")
+        assert hasattr(self, "_solution_ptl")
+        pv = self._fit_primitives(self._solution_ptl[level], deepcopy, indexed)
+        if indexed == False:
+            # Wrap objects in pv by PrimitiveShell
+            wrapped_pv = list(map(lambda var: \
+                PrimitiveShell(var[1], self._varnames[var[0]]+"0"+str(level)),
+                enumerate(pv)))
+            return tuple(wrapped_pv)
+        else:
+            return pv
 
     def get_function_spaces(self):
         """
@@ -340,19 +370,13 @@ class Discretization(object):
 
         return self._fit_primitives(tr_fcns)
 
-    def c0(self):
-        """
-        An abstract method.
+    def space_c(self):
+        if not hasattr(self, "_space_c"):
+            self._space_c = FunctionSpace(self._mesh, self._FE["c"])
+        return self._space_c
 
-        Create and return an array of functions for volume fractions at the
-        previous time level. Number of previous time levels is controlled by
-        ``mpset["discretization"]["PTL"]``.
-
-        :returns: ``c0[0]`` as a vector ``c`` at the previous time level, \
-                  ``c0[1]`` as a vector ``c`` at the last but one time level, \
-                  etc.
-        :rtype: list of ``dolfin.Functions``
-        """
+    def load_initial_condition(ic):
+        assert isinstance(ic, InitialCondition)
         self._not_implemented_msg()
 
     def _not_implemented_msg(self, msg=""):
@@ -362,6 +386,7 @@ class Discretization(object):
           % (caller, self.__str__())
         raise NotImplementedError(msg + _msg)
 
+    # FIXME: Currently not used method
     @classmethod
     def _inherit_docstring(cls, meth):
         doc = eval("cls." + meth + ".__doc__")
@@ -426,16 +451,6 @@ class Monolithic(Discretization):
             f[0].rename("ptl%i" % i, "solution-mono-ptl%i" % i)
 
         return (w_ctl, w_ptl)
-
-    def c0(self):
-        # Get mixed space for the vector c
-        V_c = self.get_function_spaces()[0].sub(0).collapse()
-        # Create zero initial condition(s)
-        c0 = []
-        for i in range(self.parameters["PTL"]):
-            c0.append(PrimitiveShell(Function(V_c)))
-        return c0
-    c0.__doc__ = Discretization._inherit_docstring("c0")
 
 # --- Semi-decoupled discretization scheme ------------------------------------
 
@@ -503,17 +518,6 @@ class SemiDecoupled(Discretization):
             f[1].rename("ptl%i_ns" % i, "solution-semi-ns-ptl%i" % i)
 
         return (w_ctl, w_ptl)
-
-    def c0(self):
-        N = self.parameters["N"]
-        # Get mixed space for a component of vector c
-        V_c = self.get_function_spaces()[0].sub(0).collapse()
-        # Create zero initial condition(s)
-        c0 = []
-        for i in range(self.parameters["PTL"]):
-            c0.append(PrimitiveShell(as_vector((N-1)*[Function(V_c),])))
-        return c0
-    c0.__doc__ = Discretization._inherit_docstring("c0")
 
 # --- Fully-decoupled discretization scheme -----------------------------------
 
@@ -586,14 +590,3 @@ class FullyDecoupled(Discretization):
                             "solution-full-{}-ptl{}".format(j, i))
 
         return (w_ctl, w_ptl)
-
-    def c0(self):
-        N = self.parameters["N"]
-        # Get mixed space for a component of vector c
-        V_c = self.get_function_spaces()[0]
-        # Create zero initial condition(s)
-        c0 = []
-        for i in range(self.parameters["PTL"]):
-            c0.append(PrimitiveShell(as_vector((N-1)*[Function(V_c),])))
-        return c0
-    c0.__doc__ = Discretization._inherit_docstring("c0")
