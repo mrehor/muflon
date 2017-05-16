@@ -350,7 +350,6 @@ class Monolithic(Discretization):
     def _prepare_solution_fcns(self):
         # Extract parameters
         N = self.parameters["N"]
-        assert (N > 1)
 
         # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
@@ -422,7 +421,6 @@ class SemiDecoupled(Discretization):
     def _prepare_solution_fcns(self):
         # Extract parameters
         N = self.parameters["N"]
-        assert (N > 1)
 
         # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
@@ -447,7 +445,6 @@ class SemiDecoupled(Discretization):
 
     def c0(self):
         N = self.parameters["N"]
-        assert (N > 1)
         # Get mixed space for a component of vector c
         V_c = self.get_function_spaces()[0].sub(0).collapse()
         # Create zero initial condition(s)
@@ -498,7 +495,6 @@ class FullyDecoupled(Discretization):
     def _prepare_solution_fcns(self):
         # Extract parameters
         N = self.parameters["N"]
-        assert (N > 1)
 
         # Get geometrical dimension
         gdim = self._mesh.geometry().dim()
@@ -523,7 +519,6 @@ class FullyDecoupled(Discretization):
 
     def c0(self):
         N = self.parameters["N"]
-        assert (N > 1)
         # Get mixed space for a component of vector c
         V_c = self.get_function_spaces()[0]
         # Create zero initial condition(s)

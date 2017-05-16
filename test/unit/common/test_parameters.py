@@ -1,3 +1,5 @@
+import pytest
+
 from dolfin import mpi_comm_world, MPI, set_log_level, DEBUG, INFO
 from muflon.common.parameters import mpset, MuflonParameterSet
 
@@ -8,6 +10,10 @@ def test_mpset():
 
     # Print parameters and their values
     #mpset.show()
+
+    # Check that assignment out of range raises
+    with pytest.raises(RuntimeError):
+        mpset["discretization"]["N"] = 1
 
     # Try to add parameter
     mpset.add("foo", "bar")

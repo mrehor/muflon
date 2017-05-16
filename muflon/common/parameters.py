@@ -119,8 +119,8 @@ class MuflonParameterSet(Parameters, Singleton):
 
         # Discretization
         nested_prm = Parameters("discretization")
-        nested_prm.add("N", 2)
-        nested_prm.add("PTL", 1)
+        nested_prm.add("N", 2, 2, 7)
+        nested_prm.add("PTL", 1, 1, 2)
         self.add(nested_prm)
 
         # Material parameters
