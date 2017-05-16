@@ -4,6 +4,7 @@ import dolfin
 from ufl.tensors import ListTensor
 from muflon.common.parameters import mpset
 from muflon.functions.discretization import DiscretizationFactory
+from muflon.functions.discretization import as_primitive, PrimitiveShell
 
 def get_arguments():
     nx = 2
@@ -23,6 +24,12 @@ def test_GenericDiscretization():
     ds = Discretization(*args)
     with pytest.raises(NotImplementedError):
         ds.setup()
+
+def test_PrimitiveShell():
+    with pytest.raises(RuntimeError):
+        as_primitive("foo")
+    with pytest.raises(RuntimeError):
+        PrimitiveShell(42, "answer")
 
 @pytest.mark.parametrize("D", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
 @pytest.mark.parametrize("N", [2, 3])
@@ -58,55 +65,47 @@ def test_discretization_schemes(D, N):
     pv = ds.primitive_vars()
     assert isinstance(pv, tuple)
     for foo in pv:
-        assert isinstance(foo, dolfin.Function) or isinstance(foo, ListTensor)
+        assert isinstance(foo, PrimitiveShell)
     assert len(pv) == len(args)-1 # mesh is the additional argument
 
     # Try to unpack 'c' and 'mu' variables (works for N > 2)
+    assert len(pv[0]) == N-1
+    assert len(pv[1]) == N-1
     for i in range(2):
-        if ds.parameters["N"] == 2:
-            with pytest.raises(RuntimeError):
-                foo_list = pv[i].split()
-        else:
-            foo_list = pv[i].split()
-            assert isinstance(foo_list, tuple)
-            for foo in foo_list:
-                assert isinstance(foo, dolfin.Function)
-
-    # Try to unpack velocity vector
-    gdim =  ds.solution_fcns()[0].function_space().mesh().geometry()
-    if gdim == 1:
-        with pytest.raises(RuntimeError):
-            foo_list = pv[3].split()
-    else:
-        foo_list = pv[3].split()
+        foo_list = pv[i].split()
         assert isinstance(foo_list, tuple)
         for foo in foo_list:
             assert isinstance(foo, dolfin.Function)
-    del pv
+
+    # Try to unpack velocity vector
+    v = pv[2]
+    gdim = ds.solution_fcns()[0].function_space().mesh().geometry().dim()
+    assert len(v) == gdim
+    if gdim == 1:
+        with pytest.raises(RuntimeError):
+            foo_list = v.split()
+    else:
+        foo_list = v.split()
+        assert isinstance(foo_list, tuple)
+        for foo in foo_list:
+            assert isinstance(foo, dolfin.Function)
+    del v
+
+    # Try to unpack pressure
+    p = pv[3]
+    with pytest.raises(NotImplementedError):
+        len(p)
+    with pytest.raises(RuntimeError):
+        p.split()
+    del p
 
     # Get functions for initial conditions
-    pv = ds.primitive_vars()
     c = pv[0]
     c0 = ds.c0()
     assert len(c0) == ds.parameters["PTL"]
     assert len(c0[0]) == len(c)
 
-    # Check assignment from current level to previous time level
-    sol = ds.solution_fcns()
-    for w in sol:
-        w.vector()[:] = 1.0
-    try:
-        c00_cpts = c0[0].split(True) # get components of c
-    except RuntimeError: # no subfcns to extract
-        if isinstance(c0[0], ListTensor):
-            c0[0] = c0[0][0] # extract a single component from ListTensor
-        c00_cpts = [c0[0],]
-    #c.assign(c0[0])
-    assert c00_cpts[0].vector()[0] == 0.0
-    del sol, pv, c, c0
-
     # Create trial and test functions
-    pv = ds.primitive_vars()
     tr_fcns = ds.create_trial_fcns()
     assert len(tr_fcns) == len(pv)
     te_fcns = ds.create_test_fcns()

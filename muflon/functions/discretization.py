@@ -49,25 +49,58 @@ Typical usage: ::
 
 from ufl.tensors import ListTensor
 from dolfin import as_vector, split
-from dolfin import Parameters, VectorElement, MixedElement
-from dolfin import Function, FunctionSpace, TrialFunction, TestFunction
+from dolfin import Parameters, VectorElement, MixedElement, FunctionSpace
+from dolfin import Function, TrialFunction, TestFunction
 
 from muflon.common.parameters import mpset
 
 #__all__ = ['DiscretizationFactory']
 
 
-# --- Hack of ufl.tensors.ListTensor ------------------------------------------
+# --- Hack for "unification" of dolfin.Function and ufl.tensors.ListTensor ----
 
-# We add 'split' method to ListTensor objects for convenience
-def _split_ListTensor(instance, deepcopy=True):
-    # Switching 'deepcopy' to False does not have any effect here
-    if len(instance) == 1:
-        raise RuntimeError("No subfunctions to extract")
-    else:
-        return tuple(instance)
+class PrimitiveShell(object):
+    """
+    Shell for wrapping of :py:class:`dolfin.Function` and
+    :py:class:`ufl.tensors.ListTensor` objects.
 
-setattr(ListTensor, "split", _split_ListTensor)
+    Users can require the original type by calling :py:meth:`dolfin_repr`.
+    """
+    nInstances = 0
+
+    def __init__(self, var, name=None):
+        if isinstance(var, (Function, ListTensor)):
+            PrimitiveShell.nInstances = PrimitiveShell.nInstances + 1
+            self._variable = var
+            self._name = name if name is not None else \
+              "pv_{}".format(PrimitiveShell.nInstances)
+        else:
+            raise RuntimeError("Cannot wrap object of the type %s"
+                               " as a primitive variable" % type(var))
+
+    def __len__(self):
+        return len(self._variable)
+
+    def name(self):
+        return self._name
+
+    def dolfin_repr(self):
+        return self._variable
+
+    def split(self, deepcopy=False):
+        if isinstance(self._variable, Function):
+            num_sub_spaces = self._variable.function_space().num_sub_spaces()
+            if num_sub_spaces == 0:
+                raise RuntimeError("Cannot split scalar quantity")
+            if num_sub_spaces == 1:
+                return (self._variable,)
+            else:
+                return self._variable.split(deepcopy)
+        elif isinstance(self._variable, ListTensor):
+            return tuple(self._variable)
+
+def as_primitive(var):
+    return PrimitiveShell(var)
 
 # --- Generic interface for discretization schemes (factory pattern) ----------
 
@@ -141,10 +174,9 @@ class Discretization(object):
       :math:`d` ... dimension of computational mesh)
 
     *Primitive variables* are represented either by
-    :py:class:`dolfin.Function` or (modified)
-    :py:class:`ufl.tensors.ListTensor` objects. Components of vector
-    quantities can be obtained by calling the *split* method in both
-    cases. ::
+    :py:class:`dolfin.Function` or :py:class:`ufl.tensors.ListTensor`
+    objects. Components of vector quantities can be obtained by calling the
+    *split* method in both cases. ::
 
       if len(c) == 2:
           c1, c2 = c.split() # this is OK
@@ -192,9 +224,9 @@ class Discretization(object):
 
         # Store attributes
         self._mesh = mesh
-        self._vars = ("c", "mu", "v", "p", "th")
+        self._varnames = ("c", "mu", "v", "p", "th")
         self._FE = dict()
-        for var in self._vars:
+        for var in self._varnames:
             self._FE[var] = eval("FE_"+var)
 
     def setup(self):
@@ -246,12 +278,19 @@ class Discretization(object):
                         otherwise use :py:meth:`dolfin.Function.split`
         :type indexed: bool
         :returns: vector of :py:class:`dolfin.Function` and/or \
-                  (modified) :py:class:`ufl.tensors.ListTensor` objects
+                  :py:class:`ufl.tensors.ListTensor` objects
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
         assert hasattr(self, "_solution_fcns")
-        return self._fit_primitives(self._solution_fcns, deepcopy, indexed)
+        pv = self._fit_primitives(self._solution_fcns, deepcopy, indexed)
+        if indexed == False:
+            # Wrap objects in pv by PrimitiveShell
+            wrapped_pv = [item for item in map(lambda var: \
+                            PrimitiveShell(var[1], self._varnames[var[0]]),
+                            enumerate(pv))]
+            return tuple(wrapped_pv)
+        return pv
 
     def get_function_spaces(self):
         """
@@ -378,7 +417,7 @@ class Monolithic(Discretization):
         # Create zero initial condition(s)
         c0 = []
         for i in range(self.parameters["PTL"]):
-            c0.append(Function(V_c))
+            c0.append(PrimitiveShell(Function(V_c)))
         return c0
     c0.__doc__ = Discretization._inherit_docstring("c0")
 
@@ -450,7 +489,7 @@ class SemiDecoupled(Discretization):
         # Create zero initial condition(s)
         c0 = []
         for i in range(self.parameters["PTL"]):
-            c0.append(as_vector((N-1)*[Function(V_c),]))
+            c0.append(PrimitiveShell(as_vector((N-1)*[Function(V_c),])))
         return c0
     c0.__doc__ = Discretization._inherit_docstring("c0")
 
@@ -524,6 +563,6 @@ class FullyDecoupled(Discretization):
         # Create zero initial condition(s)
         c0 = []
         for i in range(self.parameters["PTL"]):
-            c0.append(as_vector((N-1)*[Function(V_c),]))
+            c0.append(PrimitiveShell(as_vector((N-1)*[Function(V_c),])))
         return c0
     c0.__doc__ = Discretization._inherit_docstring("c0")
