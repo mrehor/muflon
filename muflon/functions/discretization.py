@@ -53,54 +53,9 @@ from dolfin import Parameters, VectorElement, MixedElement, FunctionSpace
 from dolfin import Function, TrialFunction, TestFunction
 
 from muflon.common.parameters import mpset
+from muflon.functions.primitives import PrimitiveShell
 
 #__all__ = ['DiscretizationFactory']
-
-
-# --- Hack for "unification" of dolfin.Function and ufl.tensors.ListTensor ----
-
-class PrimitiveShell(object):
-    """
-    Shell for wrapping of :py:class:`dolfin.Function` and
-    :py:class:`ufl.tensors.ListTensor` objects.
-
-    Users can require the original type by calling :py:meth:`dolfin_repr`.
-    """
-    nInstances = 0
-
-    def __init__(self, var, name=None):
-        if isinstance(var, (Function, ListTensor)):
-            PrimitiveShell.nInstances = PrimitiveShell.nInstances + 1
-            self._variable = var
-            self._name = name if name is not None else \
-              "pv_{}".format(PrimitiveShell.nInstances)
-        else:
-            raise RuntimeError("Cannot wrap object of the type %s"
-                               " as a primitive variable" % type(var))
-
-    def __len__(self):
-        return len(self._variable)
-
-    def name(self):
-        return self._name
-
-    def dolfin_repr(self):
-        return self._variable
-
-    def split(self, deepcopy=False):
-        if isinstance(self._variable, Function):
-            num_sub_spaces = self._variable.function_space().num_sub_spaces()
-            if num_sub_spaces == 0:
-                raise RuntimeError("Cannot split scalar quantity")
-            if num_sub_spaces == 1:
-                return (self._variable,)
-            else:
-                return self._variable.split(deepcopy)
-        elif isinstance(self._variable, ListTensor):
-            return tuple(self._variable)
-
-def as_primitive(var):
-    return PrimitiveShell(var)
 
 # --- Generic interface for discretization schemes (factory pattern) ----------
 

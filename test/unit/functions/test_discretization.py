@@ -4,7 +4,7 @@ import dolfin
 from ufl.tensors import as_vector, ListTensor
 from muflon.common.parameters import mpset
 from muflon.functions.discretization import DiscretizationFactory
-from muflon.functions.discretization import as_primitive, PrimitiveShell
+from muflon.functions.primitives import PrimitiveShell
 
 def get_arguments():
     nx = 2
@@ -25,11 +25,7 @@ def test_GenericDiscretization():
     with pytest.raises(NotImplementedError):
         ds.setup()
 
-def test_PrimitiveShell():
-    with pytest.raises(RuntimeError):
-        as_primitive("foo")
-    with pytest.raises(RuntimeError):
-        PrimitiveShell(42, "answer")
+
 
 @pytest.mark.parametrize("D", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
 @pytest.mark.parametrize("N", [2, 3])
