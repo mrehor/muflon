@@ -118,7 +118,7 @@ def test_scaling_mesh(DS): #postprocessor
             #problem = creare_problem(forms)
 
             # Prepare functions
-            w = ds.solution_fcns()
+            w = ds.solution_ctl()
 
 
         # Solve

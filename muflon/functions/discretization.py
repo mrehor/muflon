@@ -33,7 +33,7 @@ Typical usage: ::
   ds.setup()
 
   # discretization scheme is ready to be used
-  assert isinstance(ds.solution_fcns(), tuple)
+  assert isinstance(ds.solution_ctl(), tuple)
   assert isinstance(ds.primitive_vars(), tuple)
 
 .. warning::
@@ -235,7 +235,7 @@ class Discretization(object):
 
         When we are creating a new class by subclassing this generic class,
         we must override this method in such a way that it sets attributes
-        ``_solution_fcns`` and ``_fit_primitives`` to the new class.
+        ``_solution_ctl`` and ``_fit_primitives`` to the new class.
         The first attribute represents a vector (*tuple*) of solution
         functions, while the second attribute must be a callable function
         with the following signature: ::
@@ -255,7 +255,7 @@ class Discretization(object):
         """
         self._not_implemented_msg()
 
-    def solution_fcns(self):
+    def solution_ctl(self):
         """
         Provides access to solution functions representing the discrete
         solution at the current time level.
@@ -263,8 +263,8 @@ class Discretization(object):
         :returns: vector of :py:class:`dolfin.Function` objects
         :rtype: tuple
         """
-        assert hasattr(self, "_solution_fcns")
-        return self._solution_fcns
+        assert hasattr(self, "_solution_ctl")
+        return self._solution_ctl
 
     def primitive_vars(self, deepcopy=False, indexed=False):
         """
@@ -282,8 +282,8 @@ class Discretization(object):
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
-        assert hasattr(self, "_solution_fcns")
-        pv = self._fit_primitives(self._solution_fcns, deepcopy, indexed)
+        assert hasattr(self, "_solution_ctl")
+        pv = self._fit_primitives(self._solution_ctl, deepcopy, indexed)
         if indexed == False:
             # Wrap objects in pv by PrimitiveShell
             wrapped_pv = [item for item in map(lambda var: \
@@ -299,8 +299,8 @@ class Discretization(object):
         :returns: vector of :py:class:`dolfin.FunctionSpace` objects
         :rtype: tuple
         """
-        assert hasattr(self, "_solution_fcns")
-        spaces = [w.function_space() for w in self._solution_fcns]
+        assert hasattr(self, "_solution_ctl")
+        spaces = [w.function_space() for w in self._solution_ctl]
         return tuple(spaces)
 
     def create_test_fcns(self):
@@ -383,7 +383,7 @@ class Monolithic(Discretization):
                 return vec[0].split(deepcopy)
 
         # Set required attributes
-        self._solution_fcns = self._prepare_solution_fcns()
+        self._solution_ctl = self._prepare_solution_fcns()
         self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):
@@ -454,7 +454,7 @@ class SemiDecoupled(Discretization):
             return tuple(pv)
 
         # Set required attributes
-        self._solution_fcns = self._prepare_solution_fcns()
+        self._solution_ctl = self._prepare_solution_fcns()
         self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):
@@ -528,7 +528,7 @@ class FullyDecoupled(Discretization):
             return tuple(pv)
 
         # Set required attributes
-        self._solution_fcns = self._prepare_solution_fcns()
+        self._solution_ctl = self._prepare_solution_fcns()
         self._fit_primitives = fit_primitives
 
     def _prepare_solution_fcns(self):

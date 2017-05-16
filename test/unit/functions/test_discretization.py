@@ -39,7 +39,7 @@ def test_discretization_schemes(D, N):
     ds = DiscretizationFactory.create(D, *args)
 
     # Check that ds raises without calling the setup method
-    for meth in ["solution_fcns", "primitive_vars", "get_function_spaces",
+    for meth in ["solution_ctl", "primitive_vars", "get_function_spaces",
                  "create_trial_fcns", "create_test_fcns"]:
         with pytest.raises(AssertionError):
             foo = eval("ds." + meth + "()")
@@ -49,7 +49,7 @@ def test_discretization_schemes(D, N):
     ds.setup()
 
     # Check solution functions
-    w = ds.solution_fcns()
+    w = ds.solution_ctl()
     assert isinstance(w, tuple)
     for foo in w:
         assert isinstance(foo, dolfin.Function)
@@ -79,7 +79,7 @@ def test_discretization_schemes(D, N):
 
     # Try to unpack velocity vector
     v = pv[2]
-    gdim = ds.solution_fcns()[0].function_space().mesh().geometry().dim()
+    gdim = ds.solution_ctl()[0].function_space().mesh().geometry().dim()
     assert len(v) == gdim
     if gdim == 1:
         with pytest.raises(RuntimeError):
@@ -129,7 +129,7 @@ def test_discretization_schemes(D, N):
 
     # # Test assigners
     # W = ds.get_function_spaces()
-    # w = ds.solution_fcns() # zeros
+    # w = ds.solution_ctl() # zeros
     # pv = ds.primitive_vars()
     # V_c = W[0].sub(0).collapse()
     # c0 = dolfin.Function(V_c) # zeros
