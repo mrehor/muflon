@@ -54,67 +54,10 @@ from dolfin import Function, TrialFunction, TestFunction, Expression
 
 from muflon.common.parameters import mpset
 from muflon.functions.primitives import PrimitiveShell
+from muflon.functions.iconds import InitialCondition
 
 #__all__ = ['DiscretizationFactory']
 
-
-class InitialCondition(object):
-
-    def __init__(self):
-        self._vars = ("c", "mu", "v", "p")
-        for var in self._vars:
-            setattr(self, var, None)
-
-    def add(self, var, value, **kwargs):
-        if var == "th":
-            # The following attributes are not set in __init__() on purpose
-            self.th = [(str(value), kwargs),]
-        elif var == "p":
-            setattr(self, var, [(str(value), kwargs),])
-        elif var in self._vars:
-            if getattr(self, var) is None:
-                setattr(self, var, [(str(value), kwargs),])
-            else:
-                getattr(self, var).append((str(value), kwargs))
-        else:
-            msg = "Cannot add attribute '%s' to '%s'" % (var, type(self))
-            raise AttributeError(msg)
-
-    def get_vals_and_coeffs(self, N, gdim, unified=False):
-        """
-        Return initial conditions in the form appropriate for creating
-        :py:class:`dolfin.Expression`.
-        """
-        zero = "0.0"
-
-        snippets = (N-1)*[(zero, {}),] if self.c is None else self.c
-        assert len(snippets) == N-1
-
-        snippets += (N-1)*[(zero, {}),] if self.mu is None else self.mu
-        assert len(snippets) == 2*(N-1)
-
-        snippets += gdim*[(zero, {}),] if self.v is None else self.v
-        assert len(snippets) == 2*(N-1) + gdim
-
-        snippets += [(zero, {}),] if self.p is None else self.p
-        assert len(snippets) == 2*(N-1) + gdim + 1
-
-        try:
-            snippets += self.th
-            assert len(snippets) == 2*(N-1) + gdim + 2
-        except AttributeError:
-            pass
-
-        values = [val[0] for val in snippets]
-        coeffs = [val[1] for val in snippets]
-
-        if unified:
-            ucoeffs = {}
-            for d in coeffs:
-                ucoeffs.update(d)
-            coeffs = ucoeffs
-
-        return values, coeffs
 
 # --- Generic interface for discretization schemes (factory pattern) ----------
 

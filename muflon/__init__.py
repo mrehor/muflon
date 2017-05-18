@@ -27,3 +27,4 @@ __license__ = "GNU LGPL v3"
 from muflon.common.parameters import mpset, MuflonParameterSet
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.primitives import as_primitive, PrimitiveShell
+from muflon.functions.iconds import InitialCondition

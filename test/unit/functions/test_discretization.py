@@ -4,8 +4,8 @@ import dolfin
 from ufl.tensors import as_vector, ListTensor
 from muflon.common.parameters import mpset
 from muflon.functions.discretization import DiscretizationFactory
-from muflon.functions.discretization import InitialCondition
 from muflon.functions.primitives import PrimitiveShell
+from muflon.functions.iconds import InitialCondition
 
 def get_arguments():
     nx = 2
