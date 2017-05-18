@@ -4,6 +4,7 @@ import dolfin
 from ufl.tensors import as_vector, ListTensor
 from muflon.common.parameters import mpset
 from muflon.functions.discretization import DiscretizationFactory
+from muflon.functions.discretization import InitialCondition
 from muflon.functions.primitives import PrimitiveShell
 
 def get_arguments():
@@ -24,7 +25,6 @@ def test_GenericDiscretization():
     ds = Discretization(*args)
     with pytest.raises(NotImplementedError):
         ds.setup()
-
 
 
 @pytest.mark.parametrize("D", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
@@ -92,6 +92,7 @@ def test_discretization_schemes(D, N):
         len(p)
     with pytest.raises(RuntimeError):
         p.split()
+    #assert isinstance(p.split(), dolfin.Function)
     del v, p, pv
 
     # Test assignment to functions at the previous time level
@@ -104,15 +105,31 @@ def test_discretization_schemes(D, N):
     assert c0_1st.vector()[0] == 1.0
     del w, w0, pv0, c0_1st
 
-    # # Test loading of initial conditions
-    # # -- prepare initial condition
-    # # TODO: ic = InitialCondition(...)
-    # # -- assign to ptl0
-    # # TODO: ds.load_initial_condition(ic)
-    # # -- check the result
-    # pv0 = ds.primitive_vars_ptl(0, deepcopy=True)
-    # c0 = pv0[0].split(deepcopy=True) # get components of c0
-    # assert ...
+    # Test loading of initial conditions
+    # -- prepare initial condition
+    ic = InitialCondition()
+    ic.add("c", "A*(1.0 - pow(x[0], 2.0))", A=2.0)
+    if N == 3:
+        ic.add("c", "B*pow(x[0], 2.0)", B=1.0)
+    ic.add("v", 1.0)
+    ic.add("v", 2.0)
+    # -- assign to ptl0
+    ds.load_simple_cpp_ic(ic)
+    # -- check the result
+    pv0 = ds.primitive_vars_ptl(0, deepcopy=True)
+    v0 = pv0[2].split(deepcopy=True) # get components of v0
+    assert v0[0].vector().array()[0] == 1.0
+
+    # # Visual check
+    # dolfin.info(pv0[0].split(deepcopy=True)[0].vector(), True)
+    # if N == 3:
+    #     dolfin.info(pv0[0].split(deepcopy=True)[1].vector(), True)
+    # dolfin.info(pv0[1].split(deepcopy=True)[0].vector(), True)
+    # if N == 3:
+    #     dolfin.info(pv0[1].split(deepcopy=True)[1].vector(), True)
+    # dolfin.info(pv0[2].split(deepcopy=True)[0].vector(), True)
+    # dolfin.info(pv0[2].split(deepcopy=True)[1].vector(), True)
+    # dolfin.info(pv0[3].dolfin_repr().vector(), True)
 
     # Create trial and test functions
     pv = ds.primitive_vars_ctl()

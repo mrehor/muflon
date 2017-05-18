@@ -72,6 +72,7 @@ class PrimitiveShell(object):
         if isinstance(self._variable, Function):
             num_sub_spaces = self._variable.function_space().num_sub_spaces()
             if num_sub_spaces == 0:
+                #return self._variable
                 raise RuntimeError("Cannot split scalar quantity")
             if num_sub_spaces == 1:
                 return (self._variable,)

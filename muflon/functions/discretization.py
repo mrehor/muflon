@@ -50,12 +50,71 @@ Typical usage: ::
 from ufl.tensors import ListTensor
 from dolfin import as_vector, split
 from dolfin import Parameters, VectorElement, MixedElement, FunctionSpace
-from dolfin import Function, TrialFunction, TestFunction
+from dolfin import Function, TrialFunction, TestFunction, Expression
 
 from muflon.common.parameters import mpset
 from muflon.functions.primitives import PrimitiveShell
 
 #__all__ = ['DiscretizationFactory']
+
+
+class InitialCondition(object):
+
+    def __init__(self):
+        self._vars = ("c", "mu", "v", "p")
+        for var in self._vars:
+            setattr(self, var, None)
+
+    def add(self, var, value, **kwargs):
+        if var == "th":
+            # The following attributes are not set in __init__() on purpose
+            self.th = [(str(value), kwargs),]
+        elif var == "p":
+            setattr(self, var, [(str(value), kwargs),])
+        elif var in self._vars:
+            if getattr(self, var) is None:
+                setattr(self, var, [(str(value), kwargs),])
+            else:
+                getattr(self, var).append((str(value), kwargs))
+        else:
+            msg = "Cannot add attribute '%s' to '%s'" % (var, type(self))
+            raise AttributeError(msg)
+
+    def get_vals_and_coeffs(self, N, gdim, unified=False):
+        """
+        Return initial conditions in the form appropriate for creating
+        :py:class:`dolfin.Expression`.
+        """
+        zero = "0.0"
+
+        snippets = (N-1)*[(zero, {}),] if self.c is None else self.c
+        assert len(snippets) == N-1
+
+        snippets += (N-1)*[(zero, {}),] if self.mu is None else self.mu
+        assert len(snippets) == 2*(N-1)
+
+        snippets += gdim*[(zero, {}),] if self.v is None else self.v
+        assert len(snippets) == 2*(N-1) + gdim
+
+        snippets += [(zero, {}),] if self.p is None else self.p
+        assert len(snippets) == 2*(N-1) + gdim + 1
+
+        try:
+            snippets += self.th
+            assert len(snippets) == 2*(N-1) + gdim + 2
+        except AttributeError:
+            pass
+
+        values = [val[0] for val in snippets]
+        coeffs = [val[1] for val in snippets]
+
+        if unified:
+            ucoeffs = {}
+            for d in coeffs:
+                ucoeffs.update(d)
+            coeffs = ucoeffs
+
+        return values, coeffs
 
 # --- Generic interface for discretization schemes (factory pattern) ----------
 
@@ -330,8 +389,26 @@ class Discretization(object):
             self._space_c = FunctionSpace(self._mesh, self._FE["c"])
         return self._space_c
 
-    def load_initial_condition(ic):
-        assert isinstance(ic, InitialCondition)
+    def load_simple_cpp_ic(self, ic):
+        """
+        An abstract method.
+
+        Update functions returned by :py:meth:`solution_ptl` with values stored
+        in ``ic``.
+
+        :param ic: initial conditions collected within a special class designed \
+                   for this purpose
+        :type ic: :py:class:`InitialCondition`
+        """
+        self._not_implemented_msg()
+
+    def load_ic_from_file(self, filenames):
+        """
+        .. todo:: add possibility to load IC from XML files
+
+        :param filenames: list of XML files
+        :type filenames: list
+        """
         self._not_implemented_msg()
 
     def _not_implemented_msg(self, msg=""):
@@ -341,7 +418,6 @@ class Discretization(object):
           % (caller, self.__str__())
         raise NotImplementedError(msg + _msg)
 
-    # FIXME: Currently not used method
     @classmethod
     def _inherit_docstring(cls, meth):
         doc = eval("cls." + meth + ".__doc__")
@@ -406,6 +482,28 @@ class Monolithic(Discretization):
             f[0].rename("ptl%i" % i, "solution-mono-ptl%i" % i)
 
         return (w_ctl, w_ptl)
+
+    def load_simple_cpp_ic(self, ic):
+        # Get solution at PTL and extract mixed element
+        w0 = self.solution_ptl(0)[0]
+        ME = w0.ufl_element()
+
+        # Extract parameters needed to define default values
+        N = self.parameters["N"]
+        gdim = self._mesh.geometry().dim()
+
+        # Extract values and coeffs from ic
+        values, coeffs = ic.get_vals_and_coeffs(N, gdim, unified=True)
+
+        # Prepare expression
+        assert len(values) == ME.value_size()
+        expr = Expression(tuple(values), element=ME, **coeffs)
+
+        # Interpolate expression to solution at PTL
+        w0.interpolate(expr)
+
+    load_simple_cpp_ic.__doc__ = \
+      Discretization._inherit_docstring("load_simple_cpp_ic")
 
 # --- Semi-decoupled discretization scheme ------------------------------------
 
@@ -473,6 +571,40 @@ class SemiDecoupled(Discretization):
             f[1].rename("ptl%i_ns" % i, "solution-semi-ns-ptl%i" % i)
 
         return (w_ctl, w_ptl)
+
+    def load_simple_cpp_ic(self, ic):
+        # Get solution at PTL
+        w0_ch, w0_ns = self.solution_ptl(0)
+        ME_ch, ME_ns = w0_ch.ufl_element(), w0_ns.ufl_element()
+
+        # Extract parameters needed to define default values
+        N = self.parameters["N"]
+        gdim = self._mesh.geometry().dim()
+
+        # Extract values and coeffs from ic
+        values, coeffs = ic.get_vals_and_coeffs(N, gdim)
+        assert len(coeffs) == len(values)
+
+        coeffs_ch = {}
+        for kwargs in coeffs[:2*(N-1)]:
+            coeffs_ch.update(kwargs)
+        coeffs_ns = {}
+        for kwargs in coeffs[2*(N-1):]:
+            coeffs_ns.update(kwargs)
+
+        # Prepare expressions
+        vals_ch, vals_ns = tuple(values[:2*(N-1)]), tuple(values[2*(N-1):])
+        assert len(vals_ch) == ME_ch.value_size()
+        expr_ch = Expression(vals_ch, element=ME_ch, **coeffs_ch)
+        assert len(vals_ns) == ME_ns.value_size()
+        expr_ns = Expression(vals_ns, element=ME_ns, **coeffs_ns)
+
+        # Interpolate expressions to solution at PTL
+        w0_ch.interpolate(expr_ch)
+        w0_ns.interpolate(expr_ns)
+
+    load_simple_cpp_ic.__doc__ = \
+      Discretization._inherit_docstring("load_simple_cpp_ic")
 
 # --- Fully-decoupled discretization scheme -----------------------------------
 
@@ -545,3 +677,24 @@ class FullyDecoupled(Discretization):
                             "solution-full-{}-ptl{}".format(j, i))
 
         return (w_ctl, w_ptl)
+
+    def load_simple_cpp_ic(self, ic):
+        # Get solution at PTL
+        w0 = self.solution_ptl(0)
+
+        # Extract parameters needed to define default values
+        N = self.parameters["N"]
+        gdim = self._mesh.geometry().dim()
+
+        # Extract values and coeffs from ic
+        values, coeffs = ic.get_vals_and_coeffs(N, gdim)
+
+        # Prepare expressions and interpolate them to solution at PTL
+        assert len(values) == len(w0)
+        assert len(values) == len(coeffs)
+        for i, val in enumerate(values):
+            w0[i].interpolate(
+                Expression(val, element=w0[i].ufl_element(), **coeffs[i]))
+
+    load_simple_cpp_ic.__doc__ = \
+      Discretization._inherit_docstring("load_simple_cpp_ic")
