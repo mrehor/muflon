@@ -5,7 +5,6 @@ from muflon.functions.iconds import SimpleCppIC
 def test_SimpleCppIC():
     # prepare wrapper for initial conditions
     ic = SimpleCppIC()
-    assert ic._add_flag == 0
 
     # test adding of values
     N = 3

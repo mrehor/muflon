@@ -25,33 +25,28 @@ from six import integer_types
 class SimpleCppIC(object):
     """
     This class wraps initial conditions passed into it in the form of simple
-    cpp code snippets and prepares them to be used for initialization of
+    C++ code snippets and prepares them to be used for initialization of
     solution functions at the 0-th time level in various discretization
     schemes.
     """
 
     _numtypes = tuple([float,] + list(integer_types))
 
-    def __CONSTANTSUBST__(self, value):
+    @staticmethod
+    def _process_input_args(value):
         """
-        Prepares special substitutions to represent constant initial
-        conditions. (Prevents unnecessary JIT compilations whenever we change
-        the constant value.)
+        Check if value represent a valid input argument.
 
         :param value: either a C++ code snippet or a real number
         :type value: str, float, int, (long)
-        :returns: a pair of string and dictionary that can be used to
-                  represent ``value`` in the constructor of
-                  :py:class:`dolfin.Expression` objects
-        :rtype: tuple
-        :raises TypeError: if ``value`` is not `str` or a real number
+        :returns: processed value
+        :rtype: str
+        :raises TypeError: if ``value`` is not *str* or a real number
         """
         if isinstance(value, SimpleCppIC._numtypes):
-            universal_const_wrapper = \
-             "MUFLONCONSTANTIC%i" % self._add_flag
-            return universal_const_wrapper, {universal_const_wrapper: value}
+            return str(value)
         elif isinstance(value, str):
-            return value, {}
+            return value
         else:
             msg = "Cannot prepare constant substitutions for objects" \
                   " of the type '%s'" % type(value)
@@ -67,7 +62,6 @@ class SimpleCppIC(object):
         self._vars = ("c", "mu", "v", "p")
         for var in self._vars:
             setattr(self, var, None)
-        self._add_flag = 0
 
     def add(self, var, value, **kwargs):
         """
@@ -94,13 +88,7 @@ class SimpleCppIC(object):
                       scalar quantity or a real number
         :type value: str, float, int, (long)
         """
-        # Representation of constant values that helps to avoid some JITting
-        # FIXME:
-        #   Not really efficient since JITting depends on the order in which
-        #   values are added. At least checks value type.
-        self._add_flag += 1
-        value, const_coeff = self.__CONSTANTSUBST__(value)
-        kwargs.update(const_coeff)
+        value = SimpleCppIC._process_input_args(value)
 
         # Update of attributes
         if var == "th": # not set in __init__() on purpose
