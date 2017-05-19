@@ -22,7 +22,7 @@ time level that are typically used as initial conditions.
 
 from six import integer_types
 
-class InitialCondition(object):
+class SimpleCppIC(object):
     """
     This class wraps initial conditions passed into it in the form of simple
     cpp code snippets and prepares them to be used for initialization of
@@ -48,9 +48,9 @@ class InitialCondition(object):
         :rtype: tuple
         :raises TypeError: if ``value`` is not `str` or a real number
         """
-        if isinstance(value, InitialCondition._numtypes):
+        if isinstance(value, SimpleCppIC._numtypes):
             universal_const_wrapper = \
-             "MUFLONCONSTANTIC%i" % InitialCondition._add_flag
+             "MUFLONCONSTANTIC%i" % SimpleCppIC._add_flag
             return universal_const_wrapper, {universal_const_wrapper: value}
         elif isinstance(value, str):
             return value, {}
@@ -61,8 +61,8 @@ class InitialCondition(object):
 
     def __init__(self):
         """
-        The constructor prepares attributes that will be used to store the cpp
-        snippets. The method :py:meth:`InitialCondition.add` must be used to
+        The constructor prepares attributes that will be used to store the C++
+        code snippets. The method :py:meth:`SimpleCppIC.add` must be used to
         initialize these attributes.
         """
         # Initialize attributes
@@ -81,13 +81,13 @@ class InitialCondition(object):
 
         .. code-block:: python
 
-            ic = InitialCondition()
+            ic = SimpleCppIC()
             ic.add("v", "A*sin(x[0])", A=42.0)
             ic.add("v", 0.0)
 
         **IMPORTANT:** Whenever user provides at least one of the components of
-        a vector quantity, the remaining components must be added as well,
-        even in the case when they are assumed to be zero.
+        a vector quantity, the remaining components must be added as well
+        (even in the case when they are assumed to be zero).
 
         :param var: primitive variable ``"c", "mu", "v", "p"`` or ``"th"``
         :type var: str
@@ -99,8 +99,8 @@ class InitialCondition(object):
         # FIXME:
         #   Not really efficient since JITting depends on the order in which
         #   values are added. At least checks value type.
-        InitialCondition._add_flag += 1
-        value, const_coeff = InitialCondition.__CONSTANTSUBST__(value)
+        SimpleCppIC._add_flag += 1
+        value, const_coeff = SimpleCppIC.__CONSTANTSUBST__(value)
         kwargs.update(const_coeff)
 
         # Update of attributes
@@ -119,8 +119,8 @@ class InitialCondition(object):
 
     def get_vals_and_coeffs(self, N, gdim, unified=False):
         """
-        Unwrap the initial conditions that were previously added using
-        :py:meth:`InitialCondition.add`, and return them in the form
+        Unwrap the initial conditions, which were previously added using
+        :py:meth:`SimpleCppIC.add`, and return them in the form
         appropriate for creating :py:class:`dolfin.Expression` objects.
 
         If one or more primitive quantities have not been initialized (meaning

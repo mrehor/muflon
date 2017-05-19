@@ -89,8 +89,7 @@ class PrimitiveShell(object):
         """
         A method used to split vector quantities into their components.
 
-        :param deepcopy: determines if shallow or deep copies of components
-                         should be returned
+        :param deepcopy: if False then shallow copy of components is returned
         :type deepcopy: bool
         :returns: tuple of :py:class:`dolfin.Function` objects
         :rtype: tuple

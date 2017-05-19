@@ -54,7 +54,7 @@ from dolfin import Function, TrialFunction, TestFunction, Expression
 
 from muflon.common.parameters import mpset
 from muflon.functions.primitives import PrimitiveShell
-from muflon.functions.iconds import InitialCondition
+from muflon.functions.iconds import SimpleCppIC
 
 #__all__ = ['DiscretizationFactory']
 
@@ -143,8 +143,10 @@ class Discretization(object):
     *Primitive variables* are wrapped using the class
     :py:class:`muflon.functions.primitives.PrimitiveShell`.
     Components of vector quantities can be obtained by calling the *split*
-    method in both cases. Note that ``c, mu, v`` are always represented as
-    vector quantities (even in the case when there is only one component in the
+    method in both cases.
+
+    **IMPORTANT:** Note that ``c, mu, v`` are always represented as vector
+    quantities (even in the case when there is only one component in the
     vector), while ``p`` and ``th`` are always scalars.
 
     .. code-block:: python
@@ -245,10 +247,10 @@ class Discretization(object):
 
         When creating a new class by subclassing this generic class,
         one must override this method in such a way that it sets attributes
-        ``_solution_ctl`` and ``_fit_primitives`` to the new class.
-        The first attribute represents a vector (*tuple*) of solution
-        functions, while the second attribute must be a callable function
-        with the following signature:
+        ``_solution_ctl``, ``_solution_ptl`` and ``_fit_primitives`` to the new
+        class. The first two attributes represent vectors of solution
+        functions at current and previous time levels, while the third
+        attribute must be a callable function with the following signature:
 
         .. code-block:: python
 
@@ -283,6 +285,8 @@ class Discretization(object):
         Provides access to solution functions representing the discrete
         solution at previous time levels.
 
+        :param level: determines which previous time level will be returned
+        :type level: int
         :returns: vector of :py:class:`dolfin.Function` objects
         :rtype: tuple
         """
@@ -292,25 +296,27 @@ class Discretization(object):
     def primitive_vars_ctl(self, deepcopy=False, indexed=False):
         """
         Provides access to primitive variables ``c, mu, v, p, th``
-        (or allowable subset).
+        (or allowable subset) at the current time level.
 
-        .. todo:: repair functionality of deepcopy
+        (Note that it makes no sense to require indexed deep copy.)
 
-        :param deepcopy: return either deep or shallow copy of primitive vars
-                         (deep makes sense only if ``indexed == False``)
+        :param deepcopy: if False the shallow copy of primitive
+                         variables is returned
         :type deepcopy: bool
-        :param indexed: if ``True`` use free function :py:func:`dolfin.split`,
-                        otherwise use :py:meth:`dolfin.Function.split`
+        :param indexed: if False then primitive vars are obtained in
+                        the context of :py:meth:`dolfin.Function.split` method
+                        and free function :py:func:`dolfin.split` otherwise
         :type indexed: bool
-        :returns: vector of :py:class:`dolfin.Function` and/or
-                  :py:class:`ufl.tensors.ListTensor` objects
+        :returns: vector of (indexed) :py:class:`ufl.Argument` objects or
+                  :py:class:`muflon.functions.primitives.PrimitiveShell`
+                  objects
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
         assert hasattr(self, "_solution_ctl")
         pv = self._fit_primitives(self._solution_ctl, deepcopy, indexed)
         if indexed == False:
-            # Wrap objects in pv by PrimitiveShell
+            # Wrap objects in 'pv' by PrimitiveShell
             wrapped_pv = list(map(lambda var: \
                 PrimitiveShell(var[1], self._varnames[var[0]]),
                 enumerate(pv)))
@@ -323,18 +329,20 @@ class Discretization(object):
         Provides access to primitive variables ``c, mu, v, p, th``
         (or allowable subset) at previous time levels.
 
-        .. todo:: repair functionality of deepcopy
+        (Note that it makes no sense to require indexed deep copy.)
 
-        :param level: which level
+        :param level: determines which previous time level will be returned
         :type level: int
-        :param deepcopy: return either deep or shallow copy of primitive vars
-                         (deep makes sense only if ``indexed == False``)
+        :param deepcopy: if False the shallow copy of primitive
+                         variables is returned
         :type deepcopy: bool
-        :param indexed: if ``True`` use free function :py:func:`dolfin.split`,
-                        otherwise use :py:meth:`dolfin.Function.split`
+        :param indexed: if False then primitive vars are obtained in
+                        the context of :py:meth:`dolfin.Function.split` method
+                        and free function :py:func:`dolfin.split` otherwise
         :type indexed: bool
-        :returns: vector of :py:class:`dolfin.Function` and/or
-                  :py:class:`ufl.tensors.ListTensor` objects
+        :returns: vector of (indexed) :py:class:`ufl.Argument` objects or
+                  :py:class:`muflon.functions.primitives.PrimitiveShell`
+                  objects
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
@@ -365,7 +373,6 @@ class Discretization(object):
         Create test functions corresponding to primitive variables.
 
         :returns: vector of (indexed) :py:class:`ufl.Argument` objects
-                  that can be wrapped using :py:class:`ufl.tensors.ListTensor`
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
@@ -379,7 +386,6 @@ class Discretization(object):
         Create trial functions corresponding to primitive variables.
 
         :returns: vector of (indexed) :py:class:`ufl.Argument` objects
-                  that can be wrapped using :py:class:`ufl.tensors.ListTensor`
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
@@ -387,12 +393,6 @@ class Discretization(object):
         tr_fcns = [TrialFunction(V) for V in spaces]
 
         return self._fit_primitives(tr_fcns)
-
-    # FIXME: Is this method needed?
-    def space_c(self):
-        if not hasattr(self, "_space_c"):
-            self._space_c = FunctionSpace(self._mesh, self._FE["c"])
-        return self._space_c
 
     def load_ic_from_simple_cpp(self, ic):
         """
@@ -402,8 +402,8 @@ class Discretization(object):
         values stored in ``ic``.
 
         :param ic: initial conditions collected within a special class designed
-                   for this purpose
-        :type ic: :py:class:`InitialCondition`
+                   for the purpose of loading them at this point
+        :type ic: :py:class:`muflon.functions.iconds.SimpleCppIC`
         """
         self._not_implemented_msg()
 
@@ -489,6 +489,8 @@ class Monolithic(Discretization):
         return (w_ctl, w_ptl)
 
     def load_ic_from_simple_cpp(self, ic):
+        assert isinstance(ic, SimpleCppIC)
+
         # Get solution at PTL and extract mixed element
         w0 = self.solution_ptl(0)[0]
         ME = w0.ufl_element()
@@ -578,6 +580,8 @@ class SemiDecoupled(Discretization):
         return (w_ctl, w_ptl)
 
     def load_ic_from_simple_cpp(self, ic):
+        assert isinstance(ic, SimpleCppIC)
+
         # Get solution at PTL
         w0_ch, w0_ns = self.solution_ptl(0)
         ME_ch, ME_ns = w0_ch.ufl_element(), w0_ns.ufl_element()
@@ -627,13 +631,15 @@ class FullyDecoupled(Discretization):
         """
         Prepare vector of solution functions ``(f_0, f_1, ...)`` such that
         all components of this vector are scalar functions including volume
-        fractions, chemical potentials, velocity components, pressure,
+        fractions, chemical potentials, velocity components, pressure and
         temperature (or allowable subset).
         """
         def fit_primitives(vec, deepcopy=False, indexed=True):
-            # FIXME: deepcopy and indexed don't have any effect here
+            indexed = False # FIXME: indexed does't make sense here
             N = self.parameters["N"] # 'self' is visible from here
             gdim = self._mesh.geometry().dim()
+            if deepcopy:
+                vec = [f.copy(True) for f in vec]
             pv = []
             pv.append(as_vector(vec[:N-1])) # append c
             pv.append(as_vector(vec[N-1:2*(N-1)])) # append mu
@@ -684,6 +690,8 @@ class FullyDecoupled(Discretization):
         return (w_ctl, w_ptl)
 
     def load_ic_from_simple_cpp(self, ic):
+        assert isinstance(ic, SimpleCppIC)
+
         # Get solution at PTL
         w0 = self.solution_ptl(0)
 

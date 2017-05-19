@@ -5,7 +5,7 @@ from ufl.tensors import as_vector, ListTensor
 from muflon.common.parameters import mpset
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.primitives import PrimitiveShell
-from muflon.functions.iconds import InitialCondition
+from muflon.functions.iconds import SimpleCppIC
 
 def get_arguments():
     nx = 2
@@ -98,19 +98,24 @@ def test_discretization_schemes(D, N):
     # Test assignment to functions at the previous time level
     w, w0 = ds.solution_ctl(), ds.solution_ptl(0)
     assert len(w) == len(w0)
+    # -- change solution @ CTL
     w[0].vector()[:] = 1.0
-    w0[0].assign(w[0]) # updates solution on the previous level
+    # -- update solution @ PTL
+    w0[0].assign(w[0])
+    # -- check that first component of c0 has changed
     pv0 = ds.primitive_vars_ptl(0, deepcopy=True)
     c0_1st = pv0[0].split(deepcopy=True)[0] # get first component of c0
     assert c0_1st.vector()[0] == 1.0
-    c0_1st.vector()[:] = 2.0
+    # -- change value of the first component of c0
+    c0_1st.vector()[:] = 3.0
+    # -- solution @ PTL must remain unchanged because of the 'deepcopy'
+    assert c0_1st.vector()[0] == 3.0
     assert w0[0].vector()[0] == 1.0
-    assert c0_1st.vector()[0] == 2.0
     del w, w0, pv0, c0_1st
 
     # Test loading of initial conditions
     # -- prepare initial condition
-    ic = InitialCondition()
+    ic = SimpleCppIC()
     ic.add("c", "A*(1.0 - pow(x[0], 2.0))", A=2.0)
     if N == 3:
         ic.add("c", "B*pow(x[0], 2.0)", B=1.0)
