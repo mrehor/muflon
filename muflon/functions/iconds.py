@@ -42,7 +42,7 @@ class InitialCondition(object):
 
         :param value: either a C++ code snippet or a real number
         :type value: str, float, int, (long)
-        :returns: a pair of string and dictionary that can be used to \
+        :returns: a pair of string and dictionary that can be used to
                   represent ``value`` in the constructor of
                   :py:class:`dolfin.Expression` objects
         :rtype: tuple
@@ -91,7 +91,7 @@ class InitialCondition(object):
 
         :param var: primitive variable ``"c", "mu", "v", "p"`` or ``"th"``
         :type var: str
-        :param value: either a C++ code snippet representing the value of the \
+        :param value: either a C++ code snippet representing the value of the
                       scalar quantity or a real number
         :type value: str, float, int, (long)
         """
@@ -131,7 +131,7 @@ class InitialCondition(object):
         :type N: int
         :param gdim: dimension of the velocity vector
         :type gdim: int
-        :param unified: if ``True`` then user coefficients are kept in \
+        :param unified: if ``True`` then user coefficients are kept in
                         a single dictionary
         :type unified: bool
         """

@@ -245,7 +245,7 @@ class Discretization(object):
         :param indexed: if ``True`` use free function :py:func:`dolfin.split`,
                         otherwise use :py:meth:`dolfin.Function.split`
         :type indexed: bool
-        :returns: vector of :py:class:`dolfin.Function` and/or \
+        :returns: vector of :py:class:`dolfin.Function` and/or
                   :py:class:`ufl.tensors.ListTensor` objects
         :rtype: tuple
         """
@@ -274,7 +274,7 @@ class Discretization(object):
         :param indexed: if ``True`` use free function :py:func:`dolfin.split`,
                         otherwise use :py:meth:`dolfin.Function.split`
         :type indexed: bool
-        :returns: vector of :py:class:`dolfin.Function` and/or \
+        :returns: vector of :py:class:`dolfin.Function` and/or
                   :py:class:`ufl.tensors.ListTensor` objects
         :rtype: tuple
         """
@@ -339,7 +339,7 @@ class Discretization(object):
         Update functions returned by :py:meth:`solution_ptl` with values stored
         in ``ic``.
 
-        :param ic: initial conditions collected within a special class designed \
+        :param ic: initial conditions collected within a special class designed
                    for this purpose
         :type ic: :py:class:`InitialCondition`
         """
