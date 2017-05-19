@@ -20,7 +20,7 @@ This module provides tools for dealing with primitive quantities in the
 context of CHNSF models. The wrapper class :py:class:`PrimitiveShell`
 provides common interface for primitive quantities represented either by
 :py:class:`dolfin.Function` or :py:class:`ufl.tensors.ListTensor` objects
-(depending on the discretization).
+(depending on discretization scheme).
 """
 
 from ufl.tensors import ListTensor
@@ -31,10 +31,10 @@ def as_primitive(var):
     Turn variable ``var`` to primitive quantity in the MUFLON's context.
 
     :param var: one of the variables ``c, mu, v, p, th``
-    :type var: :py:class:`dolfin.Function` or \
+    :type var: :py:class:`dolfin.Function` or
                :py:class:`ufl.tensors.ListTensor`
     :returns: ``var`` wrapped as primitive quantity
-    :rtype: muflon.functions.primitives.PrimitiveShell
+    :rtype: :py:class:`muflon.functions.primitives.PrimitiveShell`
     """
     return PrimitiveShell(var)
 
@@ -44,39 +44,72 @@ class PrimitiveShell(object):
     :py:class:`ufl.tensors.ListTensor` objects.
 
     Users can require the original type by calling :py:meth:`dolfin_repr`.
-
-    .. todo:: document methods of PrimitiveShell
     """
     nInstances = 0
 
     def __init__(self, var, name=None):
+        """
+        Wraps ``var`` and stores it under a given name (an automatic string
+        will be generated if no name is given).
+
+        :param var: primitive variable to be wrapped into this shell
+        :type var: :py:class:`dolfin.Function` or
+                   :py:class:`ufl.tensors.ListTensor`
+        :param name: name of the variable
+        :type name: str
+        :raises TypeError: if ``var`` is not of the type specified above
+        """
         if isinstance(var, (Function, ListTensor)):
             PrimitiveShell.nInstances = PrimitiveShell.nInstances + 1
             self._variable = var
             self._name = name if name is not None else \
               "pv_{}".format(PrimitiveShell.nInstances)
         else:
-            raise RuntimeError("Cannot wrap object of the type %s"
-                               " as a primitive variable" % type(var))
+            raise TypeError("Cannot wrap object of the type %s"
+                            " as a primitive variable" % type(var))
 
     def __len__(self):
         return len(self._variable)
 
     def name(self):
+        """
+        :returns: name of the primitive variable
+        :rtype: str
+        """
         return self._name
 
     def dolfin_repr(self):
+        """
+        :returns: DOLFIN's representation of the primitive variable
+        :rtype: :py:class:`dolfin.Function` or :py:class:`ufl.tensors.ListTensor`
+        """
         return self._variable
 
     def split(self, deepcopy=False):
+        """
+        A method used to split vector quantities into their components.
+
+        :param deepcopy: determines if shallow or deep copies of components
+                         should be returned
+        :type deepcopy: bool
+        :returns: tuple of :py:class:`dolfin.Function` objects
+        :rtype: tuple
+        :raises RuntimeError: if we are dealing with a scalar primitive quantity
+        """
         if isinstance(self._variable, Function):
             num_sub_spaces = self._variable.function_space().num_sub_spaces()
             if num_sub_spaces == 0:
                 #return self._variable
                 raise RuntimeError("Cannot split scalar quantity")
             if num_sub_spaces == 1:
-                return (self._variable,)
+                if deepcopy:
+                   return (self._variable.copy(True),)
+                else:
+                   return (self._variable,)
             else:
                 return self._variable.split(deepcopy)
         elif isinstance(self._variable, ListTensor):
-            return tuple(self._variable)
+            if deepcopy:
+                return tuple([f.copy(True) for f in tuple(self._variable)])
+            else:
+                return tuple(self._variable)

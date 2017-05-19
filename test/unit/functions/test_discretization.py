@@ -103,6 +103,9 @@ def test_discretization_schemes(D, N):
     pv0 = ds.primitive_vars_ptl(0, deepcopy=True)
     c0_1st = pv0[0].split(deepcopy=True)[0] # get first component of c0
     assert c0_1st.vector()[0] == 1.0
+    c0_1st.vector()[:] = 2.0
+    assert w0[0].vector()[0] == 1.0
+    assert c0_1st.vector()[0] == 2.0
     del w, w0, pv0, c0_1st
 
     # Test loading of initial conditions
@@ -114,7 +117,7 @@ def test_discretization_schemes(D, N):
     ic.add("v", 1.0)
     ic.add("v", 2.0)
     # -- assign to ptl0
-    ds.load_simple_cpp_ic(ic)
+    ds.load_ic_from_simple_cpp(ic)
     # -- check the result
     pv0 = ds.primitive_vars_ptl(0, deepcopy=True)
     v0 = pv0[2].split(deepcopy=True) # get components of v0

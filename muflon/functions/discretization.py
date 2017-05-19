@@ -20,7 +20,9 @@ This module provides tools for discretization of
 Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) type models,
 both in space and time, based on different numerical schemes.
 
-Typical usage: ::
+Typical usage:
+
+.. code-block:: python
 
   from muflon import DiscretizationFactory
 
@@ -32,9 +34,7 @@ Typical usage: ::
   # finish the initialization process
   ds.setup()
 
-  # discretization scheme is ready to be used
-  assert isinstance(ds.solution_ctl(), tuple)
-  assert isinstance(ds.primitive_vars_ctl(), tuple)
+  # discretization scheme 'ds' is ready to be used
 
 .. warning::
 
@@ -105,9 +105,11 @@ class Discretization(object):
     This class provides a generic interface for discretization schemes.
     It stores discrete variables at **current** and **previous** time levels.
 
-    **Current time level**
+    **Current time level (CTL)**
 
-    We assume that discrete solution can be written in the form ::
+    We assume that discrete solution can be written in the form
+
+    .. code-block:: python
 
       (f_0, ..., f_M) == (c, mu, v, p, th)
 
@@ -130,27 +132,78 @@ class Discretization(object):
       then :math:`M = 2(N-1) + d + 2` (:math:`N` ... number of phases,
       :math:`d` ... dimension of computational mesh)
 
-    *Primitive variables* are represented either by
-    :py:class:`dolfin.Function` or :py:class:`ufl.tensors.ListTensor`
-    objects. Components of vector quantities can be obtained by calling the
-    *split* method in both cases. ::
+    Solution functions at the current time level can be accessed as follows
 
-      if len(c) == 2:
-          c1, c2 = c.split() # this is OK
+    .. code-block:: python
+
+      # let 'ds' is a discretization scheme that has already been setup
+      sol_ctl = ds.solution_ctl()
+      assert isinstance(sol_ctl, tuple)
+
+    *Primitive variables* are wrapped using the class
+    :py:class:`muflon.functions.primitives.PrimitiveShell`.
+    Components of vector quantities can be obtained by calling the *split*
+    method in both cases. Note that ``c, mu, v`` are always represented as
+    vector quantities (even in the case when there is only one component in the
+    vector), while ``p`` and ``th`` are always scalars.
+
+    .. code-block:: python
 
       if len(c) == 1:
-          c1 = c.split() # raises 'RuntimeError', use c1 = c (if needed)
+          c1 = c.split()[0]
+
+      if len(c) == 2:
+          c1, c2 = c.split()
 
     Some primitive variables may be omitted depending on the
     particular setting, e.g. we do not consider ``th`` in the isothermal
     setting.
 
-    **Previous time levels**
+    Primitive variables at the current time level can be accessed via
+    :py:meth:`Discretization.primitive_vars_ctl()` as follows:
 
-    *Primitive variables* are stored as a list of :py:class:`dolfin.Function`
-    objects. If ``c`` is a discrete solution at the (``n+1``)-th time level
-    (current), then ``c0[0]`` is the solution at the (``n-0``)-th level,
-    ``c0[1]`` at the (``n-1``)-th level, etc.
+    .. code-block:: python
+
+      # let 'ds' is a discretization scheme that has already been setup
+      pv_ctl = ds.primitive_vars_ctl()
+      assert isinstance(pv_ctl, tuple)
+
+    **Previous time levels (PTL)**
+
+    *Solution functions* and *primitive variables* are stored in the same form
+    as at current time level. If we denote the current time level on which we
+    are computing the solution by ``(n+1)``, then the methods
+    :py:meth:`Discretization.solution_ptl` and
+    :py:meth:`Discretization.primitive_vars_ptl` provide the access to
+    solution functions and primitive variables at the time level
+    ``(n-<level>)``, where ``<level>`` is an input argument.
+
+    .. code-block:: python
+
+      # let 'ds' is a discretization scheme that has already been setup
+      sol_ctl = ds.solution_ctl()              # time level: n+1
+      sol_ptl_0 = ds.solution_ptl(0)           # time level: n-0
+      assert isinstance(sol_ptl_0, tuple)
+      if ds.parameters["PTL"]) > 1:
+          sol_ptl_1 = ds.solution_ptl(1)       # time level: n-1
+                                               # etc.
+      # similarly for primitive variables
+
+    Solution functions at the ``n``-th time level can be initialized using
+    the methods :py:meth:`Discretization.load_ic_from_file` or
+    :py:meth:`Discretization.load_ic_from_simple_cpp`.
+
+    Assignment to the ``n``-th level from the current time level ``(n+1)`` is
+    straightforward:
+
+    .. code-block:: python
+
+      # let 'ds' is a discretization scheme that has already been setup
+      sol_ctl = ds.solution_ctl()              # time level: n+1
+      sol_ptl_0 = ds.solution_ptl(0)           # time level: n-0
+      sol_ptl_0[0].assign(sol_ctl[0])          # f_0 @ CTL -> f_0 @ PTL-0
+
+      # similarly for the remaining solution functions and other time levels
     """
     class Factory(object):
         def create(self, ds_name, *args, **kwargs):
@@ -190,12 +243,14 @@ class Discretization(object):
         """
         An abstract method.
 
-        When we are creating a new class by subclassing this generic class,
-        we must override this method in such a way that it sets attributes
+        When creating a new class by subclassing this generic class,
+        one must override this method in such a way that it sets attributes
         ``_solution_ctl`` and ``_fit_primitives`` to the new class.
         The first attribute represents a vector (*tuple*) of solution
         functions, while the second attribute must be a callable function
-        with the following signature: ::
+        with the following signature:
+
+        .. code-block:: python
 
           def  _fit_primitives(vec, deepcopy=False, indexed=True):
                \"\"\"
@@ -239,6 +294,8 @@ class Discretization(object):
         Provides access to primitive variables ``c, mu, v, p, th``
         (or allowable subset).
 
+        .. todo:: repair functionality of deepcopy
+
         :param deepcopy: return either deep or shallow copy of primitive vars
                          (deep makes sense only if ``indexed == False``)
         :type deepcopy: bool
@@ -265,6 +322,8 @@ class Discretization(object):
         """
         Provides access to primitive variables ``c, mu, v, p, th``
         (or allowable subset) at previous time levels.
+
+        .. todo:: repair functionality of deepcopy
 
         :param level: which level
         :type level: int
@@ -305,7 +364,8 @@ class Discretization(object):
         """
         Create test functions corresponding to primitive variables.
 
-        :returns: vector of :py:class:`ufl.Argument` objects
+        :returns: vector of (indexed) :py:class:`ufl.Argument` objects
+                  that can be wrapped using :py:class:`ufl.tensors.ListTensor`
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
@@ -318,7 +378,8 @@ class Discretization(object):
         """
         Create trial functions corresponding to primitive variables.
 
-        :returns: vector of :py:class:`ufl.Argument` objects
+        :returns: vector of (indexed) :py:class:`ufl.Argument` objects
+                  that can be wrapped using :py:class:`ufl.tensors.ListTensor`
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
@@ -327,17 +388,18 @@ class Discretization(object):
 
         return self._fit_primitives(tr_fcns)
 
+    # FIXME: Is this method needed?
     def space_c(self):
         if not hasattr(self, "_space_c"):
             self._space_c = FunctionSpace(self._mesh, self._FE["c"])
         return self._space_c
 
-    def load_simple_cpp_ic(self, ic):
+    def load_ic_from_simple_cpp(self, ic):
         """
         An abstract method.
 
-        Update functions returned by :py:meth:`solution_ptl` with values stored
-        in ``ic``.
+        Update solution functions on the closest previous time level with
+        values stored in ``ic``.
 
         :param ic: initial conditions collected within a special class designed
                    for this purpose
@@ -347,9 +409,9 @@ class Discretization(object):
 
     def load_ic_from_file(self, filenames):
         """
-        .. todo:: add possibility to load IC from XML files
+        .. todo:: add possibility to load IC from HDF5 files
 
-        :param filenames: list of XML files
+        :param filenames: list of HDF5 files
         :type filenames: list
         """
         self._not_implemented_msg()
@@ -426,7 +488,7 @@ class Monolithic(Discretization):
 
         return (w_ctl, w_ptl)
 
-    def load_simple_cpp_ic(self, ic):
+    def load_ic_from_simple_cpp(self, ic):
         # Get solution at PTL and extract mixed element
         w0 = self.solution_ptl(0)[0]
         ME = w0.ufl_element()
@@ -445,8 +507,8 @@ class Monolithic(Discretization):
         # Interpolate expression to solution at PTL
         w0.interpolate(expr)
 
-    load_simple_cpp_ic.__doc__ = \
-      Discretization._inherit_docstring("load_simple_cpp_ic")
+    load_ic_from_simple_cpp.__doc__ = \
+      Discretization._inherit_docstring("load_ic_from_simple_cpp")
 
 # --- Semi-decoupled discretization scheme ------------------------------------
 
@@ -515,7 +577,7 @@ class SemiDecoupled(Discretization):
 
         return (w_ctl, w_ptl)
 
-    def load_simple_cpp_ic(self, ic):
+    def load_ic_from_simple_cpp(self, ic):
         # Get solution at PTL
         w0_ch, w0_ns = self.solution_ptl(0)
         ME_ch, ME_ns = w0_ch.ufl_element(), w0_ns.ufl_element()
@@ -546,8 +608,8 @@ class SemiDecoupled(Discretization):
         w0_ch.interpolate(expr_ch)
         w0_ns.interpolate(expr_ns)
 
-    load_simple_cpp_ic.__doc__ = \
-      Discretization._inherit_docstring("load_simple_cpp_ic")
+    load_ic_from_simple_cpp.__doc__ = \
+      Discretization._inherit_docstring("load_ic_from_simple_cpp")
 
 # --- Fully-decoupled discretization scheme -----------------------------------
 
@@ -621,7 +683,7 @@ class FullyDecoupled(Discretization):
 
         return (w_ctl, w_ptl)
 
-    def load_simple_cpp_ic(self, ic):
+    def load_ic_from_simple_cpp(self, ic):
         # Get solution at PTL
         w0 = self.solution_ptl(0)
 
@@ -639,5 +701,5 @@ class FullyDecoupled(Discretization):
             w0[i].interpolate(
                 Expression(val, element=w0[i].ufl_element(), **coeffs[i]))
 
-    load_simple_cpp_ic.__doc__ = \
-      Discretization._inherit_docstring("load_simple_cpp_ic")
+    load_ic_from_simple_cpp.__doc__ = \
+      Discretization._inherit_docstring("load_ic_from_simple_cpp")
