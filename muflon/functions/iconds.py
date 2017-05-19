@@ -31,10 +31,8 @@ class SimpleCppIC(object):
     """
 
     _numtypes = tuple([float,] + list(integer_types))
-    _add_flag = 0
 
-    @staticmethod
-    def __CONSTANTSUBST__(value):
+    def __CONSTANTSUBST__(self, value):
         """
         Prepares special substitutions to represent constant initial
         conditions. (Prevents unnecessary JIT compilations whenever we change
@@ -50,12 +48,12 @@ class SimpleCppIC(object):
         """
         if isinstance(value, SimpleCppIC._numtypes):
             universal_const_wrapper = \
-             "MUFLONCONSTANTIC%i" % SimpleCppIC._add_flag
+             "MUFLONCONSTANTIC%i" % self._add_flag
             return universal_const_wrapper, {universal_const_wrapper: value}
         elif isinstance(value, str):
             return value, {}
         else:
-            msg = "Cannot prepare const. substitutions for objects" \
+            msg = "Cannot prepare constant substitutions for objects" \
                   " of the type '%s'" % type(value)
             raise TypeError(msg)
 
@@ -69,6 +67,7 @@ class SimpleCppIC(object):
         self._vars = ("c", "mu", "v", "p")
         for var in self._vars:
             setattr(self, var, None)
+        self._add_flag = 0
 
     def add(self, var, value, **kwargs):
         """
@@ -99,8 +98,8 @@ class SimpleCppIC(object):
         # FIXME:
         #   Not really efficient since JITting depends on the order in which
         #   values are added. At least checks value type.
-        SimpleCppIC._add_flag += 1
-        value, const_coeff = SimpleCppIC.__CONSTANTSUBST__(value)
+        self._add_flag += 1
+        value, const_coeff = self.__CONSTANTSUBST__(value)
         kwargs.update(const_coeff)
 
         # Update of attributes
@@ -131,13 +130,14 @@ class SimpleCppIC(object):
         :type N: int
         :param gdim: dimension of the velocity vector
         :type gdim: int
-        :param unified: if ``True`` then user coefficients are kept in
-                        a single dictionary
+        :param unified: if True then user coefficients are kept in a single
+                        dictionary
         :type unified: bool
         """
         zero = "0.0"
 
-        snippets = (N-1)*[(zero, {}),] if self.c is None else self.c
+        snippets = []
+        snippets += (N-1)*[(zero, {}),] if self.c is None else self.c
         assert len(snippets) == N-1
 
         snippets += (N-1)*[(zero, {}),] if self.mu is None else self.mu
