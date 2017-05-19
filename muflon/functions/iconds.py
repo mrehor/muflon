@@ -20,6 +20,8 @@ This module provides tools for easy initialization of functions at the 0-th
 time level that are typically used as initial conditions.
 """
 
+from six import integer_types
+
 class InitialCondition(object):
     """
     This class wraps initial conditions passed into it in the form of simple
@@ -28,31 +30,110 @@ class InitialCondition(object):
     schemes.
     """
 
+    _numtypes = tuple([float,] + list(integer_types))
+    _add_flag = 0
+
+    @staticmethod
+    def __CONSTANTSUBST__(value):
+        """
+        Prepares special substitutions to represent constant initial
+        conditions. (Prevents unnecessary JIT compilations whenever we change
+        the constant value.)
+
+        :param value: either a C++ code snippet or a real number
+        :type value: str, float, int, (long)
+        :returns: a pair of string and dictionary that can be used to \
+                  represent ``value`` in the constructor of
+                  :py:class:`dolfin.Expression` objects
+        :rtype: tuple
+        :raises TypeError: if ``value`` is not `str` or a real number
+        """
+        if isinstance(value, InitialCondition._numtypes):
+            universal_const_wrapper = \
+             "MUFLONCONSTANTIC%i" % InitialCondition._add_flag
+            return universal_const_wrapper, {universal_const_wrapper: value}
+        elif isinstance(value, str):
+            return value, {}
+        else:
+            msg = "Cannot prepare const. substitutions for objects" \
+                  " of the type '%s'" % type(value)
+            raise TypeError(msg)
+
     def __init__(self):
+        """
+        The constructor prepares attributes that will be used to store the cpp
+        snippets. The method :py:meth:`InitialCondition.add` must be used to
+        initialize these attributes.
+        """
         # Initialize attributes
         self._vars = ("c", "mu", "v", "p")
         for var in self._vars:
             setattr(self, var, None)
 
     def add(self, var, value, **kwargs):
-        if var == "th":
-            # The following attribute are not set in __init__() on purpose
-            self.th = [(str(value), kwargs),]
+        """
+        This method is used to add a C++ specification of **scalar**
+        primitive quantities. (This means that vector quantities must be added
+        component-wise.) For example, when we need to specify an initial
+        condition for a two-dimensional velocity vector in the form
+        :math:`v = (A \\sin{x}, 0)`, where :math:`A` is a constant, we need to
+        do the following:
+
+        .. code-block:: python
+
+            ic = InitialCondition()
+            ic.add("v", "A*sin(x[0])", A=42.0)
+            ic.add("v", 0.0)
+
+        **IMPORTANT:** Whenever user provides at least one of the components of
+        a vector quantity, the remaining components must be added as well,
+        even in the case when they are assumed to be zero.
+
+        :param var: primitive variable ``"c", "mu", "v", "p"`` or ``"th"``
+        :type var: str
+        :param value: either a C++ code snippet representing the value of the \
+                      scalar quantity or a real number
+        :type value: str, float, int, (long)
+        """
+        # Representation of constant values that helps to avoid some JITting
+        # FIXME:
+        #   Not really efficient since JITting depends on the order in which
+        #   values are added. At least checks value type.
+        InitialCondition._add_flag += 1
+        value, const_coeff = InitialCondition.__CONSTANTSUBST__(value)
+        kwargs.update(const_coeff)
+
+        # Update of attributes
+        if var == "th": # not set in __init__() on purpose
+            self.th = [(value, kwargs),]
         elif var == "p":
-            setattr(self, var, [(str(value), kwargs),])
+            setattr(self, var, [(value, kwargs),])
         elif var in self._vars:
             if getattr(self, var) is None:
-                setattr(self, var, [(str(value), kwargs),])
+                setattr(self, var, [(value, kwargs),])
             else:
-                getattr(self, var).append((str(value), kwargs))
+                getattr(self, var).append((value, kwargs))
         else:
             msg = "Cannot add attribute '%s' to '%s'" % (var, type(self))
             raise AttributeError(msg)
 
     def get_vals_and_coeffs(self, N, gdim, unified=False):
         """
-        Return initial conditions in the form appropriate for creating
-        :py:class:`dolfin.Expression`.
+        Unwrap the initial conditions that were previously added using
+        :py:meth:`InitialCondition.add`, and return them in the form
+        appropriate for creating :py:class:`dolfin.Expression` objects.
+
+        If one or more primitive quantities have not been initialized (meaning
+        that neither of their components has been provided), default zero
+        values will be returned.
+
+        :param N: number of phases in the system
+        :type N: int
+        :param gdim: dimension of the velocity vector
+        :type gdim: int
+        :param unified: if ``True`` then user coefficients are kept in \
+                        a single dictionary
+        :type unified: bool
         """
         zero = "0.0"
 
