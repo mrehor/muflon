@@ -29,7 +29,7 @@ import gc
 import itertools
 
 from muflon import mpset
-from muflon import DiscretizationFactory
+from muflon import DiscretizationFactory, SimpleCppIC
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
@@ -51,31 +51,31 @@ def create_domain(refinement_level):
 
     return mesh, boundary_markers
 
-def create_discretization(DS, mesh):
+def create_discretization(scheme, mesh):
     # Prepare finite elements
     P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
     P2 = FiniteElement("Lagrange", mesh.ufl_cell(), 2)
 
     # Choose discretization
-    ds = DiscretizationFactory.create("Monolithic", mesh, P1, P1, P2, P1)
+    DS = DiscretizationFactory.create(scheme, mesh, P1, P1, P2, P1)
 
-    return ds
+    return DS
 
-def create_forms(ds, boundary_markers):
+def create_forms(DS, boundary_markers):
 
     # Arguments and coefficients of the forms
-    #c, mu, v, p = ds.create_trial_fcns()
-    c_, mu_, v_, p_ = ds.create_test_fcns()
+    #c, mu, v, p = DS.create_trial_fcns()
+    c_, mu_, v_, p_ = DS.create_test_fcns()
 
     # Coefficients for non-linear forms
     # FIXME: Which split is correct? Which one uses 'restrict_as_ufc_function'?
-    c, mu, v, p = ds.primitive_vars_ctl(indexed=True)
-    #c, mu, v, p = ds.primitive_vars_ctl(indexed=False)
+    c, mu, v, p = DS.primitive_vars_ctl(indexed=True)
+    #c, mu, v, p = DS.primitive_vars_ctl(indexed=False)
 
-    V_c = ds.get_function_spaces()[0].sub(0).collapse()
-    c0 = Function(V_c) # FIXME: This should be obtained from ds
+    c0, mu0, v0, p0 = DS.primitive_vars_ctl(0, indexed=True)
+    del mu0, p0 # not needed
 
-    # Forms for monolithic ds
+    # Forms for monolithic DS
     idt = Constant(1.0) # 1.0/dt
     K1 = Constant(1.0) # Mo
     eqn_c = (
@@ -97,8 +97,15 @@ def create_forms(ds, boundary_markers):
 
     return forms
 
-@pytest.mark.parametrize("DS", ["Monolithic"]) # , "SemiDecoupled", "FullyDecoupled"
-def test_scaling_mesh(DS): #postprocessor
+def create_initial_conditions():
+    ic = SimpleCppIC()
+
+    # TODO: add values to ic
+
+    return ic
+
+@pytest.mark.parametrize("scheme", ["Monolithic"]) # , "SemiDecoupled", "FullyDecoupled"
+def test_scaling_mesh(scheme): #postprocessor
     """
     Compute convergence rates for fixed element order, fixed time step and
     gradually refined mesh.
@@ -112,13 +119,16 @@ def test_scaling_mesh(DS): #postprocessor
         with Timer("Prepare") as t_prepare:
             #mpset["discretization"]["N"] = 4
             mesh, boundary_markers = create_domain(level)
-            ds = create_discretization(DS, mesh)
-            ds.setup()
-            forms = create_forms(ds, boundary_markers)
+            DS = create_discretization(scheme, mesh)
+            DS.setup()
+            forms = create_forms(DS, boundary_markers)
             #problem = creare_problem(forms)
 
             # Prepare functions
-            w = ds.solution_ctl()
+            w = DS.solution_ctl()
+
+            ic = create_initial_conditions()
+            DS.load_ic_from_simple_cpp(ic)
 
 
         # Solve

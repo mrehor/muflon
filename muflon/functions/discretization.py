@@ -27,18 +27,18 @@ Typical usage:
   from muflon import DiscretizationFactory
 
   # create discretization scheme
-  ds = DiscretizationFactory.create(<name>, <args>)
+  DS = DiscretizationFactory.create(<name>, <args>)
 
-  # there is a space for updating 'ds.parameters'
+  # there is a space for updating 'DS.parameters'
 
   # finish the initialization process
-  ds.setup()
+  DS.setup()
 
-  # discretization scheme 'ds' is ready to be used
+  # discretization scheme 'DS' is ready to be used
 
 .. warning::
 
-  The two-stage initialization allowing updates of 'ds.parameters' could be
+  The two-stage initialization allowing updates of 'DS.parameters' could be
   dangerous. Does it make sense to create discretization schemes with different
   parameters (such as number of phases) within one application program?
 
@@ -68,19 +68,19 @@ class DiscretizationFactory(object):
     factories = {}
 
     @staticmethod
-    def _register(ds):
+    def _register(DS):
         """
-        Register ``Factory`` of a discretization scheme ``ds``.
+        Register ``Factory`` of a discretization scheme ``DS``.
 
-        :param ds: name of discretization scheme
-        :type ds: str
+        :param DS: name of discretization scheme
+        :type DS: str
         """
-        DiscretizationFactory.factories[ds] = eval(ds + ".Factory()")
+        DiscretizationFactory.factories[DS] = eval(DS + ".Factory()")
 
     @staticmethod
-    def create(ds, *args, **kwargs):
+    def create(DS, *args, **kwargs):
         """
-        Create an instance of discretization scheme ``ds`` and initialize it
+        Create an instance of discretization scheme ``DS`` and initialize it
         with given arguments.
 
         Currently implemented discretization schemes:
@@ -89,14 +89,14 @@ class DiscretizationFactory(object):
         * :py:class:`SemiDecoupled`
         * :py:class:`FullyDecoupled`
 
-        :param ds: name of discretization scheme
-        :type ds: str
+        :param DS: name of discretization scheme
+        :type DS: str
         :returns: instance of discretization scheme
         :rtype: (subclass of) :py:class:`Discretization`
         """
-        if not ds in DiscretizationFactory.factories:
-            DiscretizationFactory._register(ds)
-        return DiscretizationFactory.factories[ds].create(*args, **kwargs)
+        if not DS in DiscretizationFactory.factories:
+            DiscretizationFactory._register(DS)
+        return DiscretizationFactory.factories[DS].create(*args, **kwargs)
 
 # --- Generic class for creating discretization schemes -----------------------
 
@@ -113,8 +113,8 @@ class Discretization(object):
 
       (f_0, ..., f_M) == (c, mu, v, p, th)
 
-    Functions on the left hand are called *solution functions*, while
-    functions on the right hand are called *primitive variables*.
+    Functions on the left hand side are called *solution functions*, while
+    functions on the right hand side are called *primitive variables*.
 
     *Solution functions* are always represented by :py:class:`dolfin.Function`
     objects. Their number depends on particular discretization scheme.
@@ -136,14 +136,14 @@ class Discretization(object):
 
     .. code-block:: python
 
-      # let 'ds' is a discretization scheme that has already been setup
-      sol_ctl = ds.solution_ctl()
+      # let 'DS' is a discretization scheme that has already been setup
+      sol_ctl = DS.solution_ctl()
       assert isinstance(sol_ctl, tuple)
 
     *Primitive variables* are wrapped using the class
     :py:class:`muflon.functions.primitives.PrimitiveShell`.
-    Components of vector quantities can be obtained by calling the *split*
-    method in both cases.
+    Components of vector quantities can be obtained by calling the
+    *split* method.
 
     **IMPORTANT:** Note that ``c, mu, v`` are always represented as vector
     quantities (even in the case when there is only one component in the
@@ -166,8 +166,8 @@ class Discretization(object):
 
     .. code-block:: python
 
-      # let 'ds' is a discretization scheme that has already been setup
-      pv_ctl = ds.primitive_vars_ctl()
+      # let 'DS' is a discretization scheme that has already been setup
+      pv_ctl = DS.primitive_vars_ctl()
       assert isinstance(pv_ctl, tuple)
 
     **Previous time levels (PTL)**
@@ -182,12 +182,12 @@ class Discretization(object):
 
     .. code-block:: python
 
-      # let 'ds' is a discretization scheme that has already been setup
-      sol_ctl = ds.solution_ctl()              # time level: n+1
-      sol_ptl_0 = ds.solution_ptl(0)           # time level: n-0
+      # let 'DS' is a discretization scheme that has already been setup
+      sol_ctl = DS.solution_ctl()              # time level: n+1
+      sol_ptl_0 = DS.solution_ptl(0)           # time level: n-0
       assert isinstance(sol_ptl_0, tuple)
-      if ds.parameters["PTL"]) > 1:
-          sol_ptl_1 = ds.solution_ptl(1)       # time level: n-1
+      if DS.parameters["PTL"]) > 1:
+          sol_ptl_1 = DS.solution_ptl(1)       # time level: n-1
                                                # etc.
       # similarly for primitive variables
 
@@ -200,9 +200,9 @@ class Discretization(object):
 
     .. code-block:: python
 
-      # let 'ds' is a discretization scheme that has already been setup
-      sol_ctl = ds.solution_ctl()              # time level: n+1
-      sol_ptl_0 = ds.solution_ptl(0)           # time level: n-0
+      # let 'DS' is a discretization scheme that has already been setup
+      sol_ctl = DS.solution_ctl()              # time level: n+1
+      sol_ptl_0 = DS.solution_ptl(0)           # time level: n-0
       sol_ptl_0[0].assign(sol_ctl[0])          # f_0 @ CTL -> f_0 @ PTL-0
 
       # similarly for the remaining solution functions and other time levels

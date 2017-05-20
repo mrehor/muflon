@@ -20,46 +20,46 @@ def get_arguments(dim=2):
 def test_GenericDiscretization():
     args = get_arguments()
     with pytest.raises(NotImplementedError):
-        ds = DiscretizationFactory.create("Discretization", *args)
+        DS = DiscretizationFactory.create("Discretization", *args)
 
     from muflon.functions.discretization import Discretization
-    ds = Discretization(*args)
+    DS = Discretization(*args)
     with pytest.raises(NotImplementedError):
-        ds.setup()
+        DS.setup()
 
-@pytest.mark.parametrize("D", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
+@pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
 @pytest.mark.parametrize("N", [2, 3])
 @pytest.mark.parametrize("dim", range(1, 4))
-def test_discretization_schemes(D, N, dim):
+def test_discretization_schemes(scheme, N, dim):
 
     args = get_arguments(dim)
-    ds = DiscretizationFactory.create(D, *args)
+    DS = DiscretizationFactory.create(scheme, *args)
 
-    # --- Check that ds raises without calling the setup method ---------------
+    # --- Check that DS raises without calling the setup method ---------------
     for meth in ["solution_ctl", "primitive_vars_ctl", "get_function_spaces",
                  "create_trial_fcns", "create_test_fcns"]:
         with pytest.raises(AssertionError):
-            foo = eval("ds." + meth + "()")
+            foo = eval("DS." + meth + "()")
 
     # Do the necessary setup
-    ds.parameters["N"] = N
-    ds.setup()
+    DS.parameters["N"] = N
+    DS.setup()
 
     # --- Check solution functions --------------------------------------------
-    w = ds.solution_ctl()
+    w = DS.solution_ctl()
     assert isinstance(w, tuple)
     for foo in w:
         assert isinstance(foo, dolfin.Function)
 
-    if D == "SemiDecoupled": # check block size of CH part
+    if scheme == "SemiDecoupled": # check block size of CH part
         assert w[0].name() == "ctl_ch"
         bs = w[0].function_space().dofmap().block_size()
-        assert bs == 2*(ds.parameters["N"]-1)
+        assert bs == 2*(DS.parameters["N"]-1)
         del bs
     del w
 
     # --- Check primitive variables -------------------------------------------
-    pv = ds.primitive_vars_ctl()
+    pv = DS.primitive_vars_ctl()
     assert isinstance(pv, tuple)
     for foo in pv:
         assert isinstance(foo, PrimitiveShell)
@@ -76,7 +76,7 @@ def test_discretization_schemes(D, N, dim):
 
     # Try to unpack velocity vector
     v = pv[2]
-    gdim = ds.solution_ctl()[0].function_space().mesh().geometry().dim()
+    gdim = DS.solution_ctl()[0].function_space().mesh().geometry().dim()
     assert len(v) == gdim
     foo_list = v.split()
     assert isinstance(foo_list, tuple)
@@ -92,14 +92,14 @@ def test_discretization_schemes(D, N, dim):
     del v, p, pv
 
     # --- Test assignment to functions at the previous time level -------------
-    w, w0 = ds.solution_ctl(), ds.solution_ptl(0)
+    w, w0 = DS.solution_ctl(), DS.solution_ptl(0)
     assert len(w) == len(w0)
     # change solution @ CTL
     w[0].vector()[:] = 1.0
     # update solution @ PTL
     w0[0].assign(w[0])
     # check that first component of c0 has changed
-    pv0 = ds.primitive_vars_ptl(0, deepcopy=True) # 1st deepcopy
+    pv0 = DS.primitive_vars_ptl(0, deepcopy=True) # 1st deepcopy
     c0_1st = pv0[0].split(deepcopy=True)[0]       # 2nd deepcopy
     assert c0_1st.vector()[0] == 1.0
 
@@ -131,9 +131,9 @@ def test_discretization_schemes(D, N, dim):
     if gdim > 2:
         ic.add("v", 3.0)
     # assign to PTL-0
-    ds.load_ic_from_simple_cpp(ic)
+    DS.load_ic_from_simple_cpp(ic)
     # check the result
-    pv0 = ds.primitive_vars_ptl(0, deepcopy=True)
+    pv0 = DS.primitive_vars_ptl(0, deepcopy=True)
     v0 = pv0[2].split(deepcopy=True) # get components of v0
     assert v0[0].vector().array()[0] == 1.0
 
@@ -150,17 +150,17 @@ def test_discretization_schemes(D, N, dim):
 
     # prepare initial condition from files
     with pytest.raises(NotImplementedError):
-        ds.load_ic_from_file([])
+        DS.load_ic_from_file([])
 
     del pv0, v0, ic
 
     # --- Create trial and test functions -------------------------------------
-    pv = ds.primitive_vars_ctl()
-    tr_fcns = ds.create_trial_fcns()
+    pv = DS.primitive_vars_ctl()
+    tr_fcns = DS.create_trial_fcns()
     assert len(tr_fcns) == len(pv)
-    te_fcns = ds.create_test_fcns()
+    te_fcns = DS.create_test_fcns()
     assert len(te_fcns) == len(pv)
-    pv_ufl = ds.primitive_vars_ctl(indexed=True)
+    pv_ufl = DS.primitive_vars_ctl(indexed=True)
     assert len(pv_ufl) == len(pv)
 
     # # Visual check of the output
@@ -178,4 +178,4 @@ def test_discretization_schemes(D, N, dim):
 
     # --- Cleanup -------------------------------------------------------------
     del foo, foo_list, gdim
-    del ds, args
+    del DS, args
