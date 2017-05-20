@@ -2,7 +2,6 @@
 
 .. include:: ../../README.rst
 
-
 Documented demos
 ================
 
@@ -21,6 +20,7 @@ Manual and API Reference
 
    API Reference <api-doc/muflon>
 
+* :ref:`changelog`
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
