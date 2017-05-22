@@ -65,7 +65,7 @@ def test_discretization_schemes(scheme, N, dim):
         assert isinstance(foo, PrimitiveShell)
     assert len(pv) == len(args)-1 # mesh is the additional argument
 
-    # Try to unpack 'c' and 'mu' variables
+    # Try to unpack 'phi' and 'chi' variables
     assert len(pv[0]) == N-1
     assert len(pv[1]) == N-1
     for i in range(2):
@@ -98,33 +98,33 @@ def test_discretization_schemes(scheme, N, dim):
     w[0].vector()[:] = 1.0
     # update solution @ PTL
     w0[0].assign(w[0])
-    # check that first component of c0 has changed
+    # check that first component of phi0 has changed
     pv0 = DS.primitive_vars_ptl(0, deepcopy=True) # 1st deepcopy
-    c0_1st = pv0[0].split(deepcopy=True)[0]       # 2nd deepcopy
-    assert c0_1st.vector()[0] == 1.0
+    phi0_1st = pv0[0].split(deepcopy=True)[0]     # 2nd deepcopy
+    assert phi0_1st.vector()[0] == 1.0
 
     # Check effect of the 1st deepcopy
-    c0_dolfin = pv0[0].dolfin_repr()
-    if isinstance(c0_dolfin, dolfin.Function):
-        c0_dolfin.vector()[:] = 2.0
+    phi0_dolfin = pv0[0].dolfin_repr()
+    if isinstance(phi0_dolfin, dolfin.Function):
+        phi0_dolfin.vector()[:] = 2.0
     else:
-        c0_dolfin = tuple(c0_dolfin)
-        c0_dolfin[0].vector()[:] = 2.0
+        phi0_dolfin = tuple(phi0_dolfin)
+        phi0_dolfin[0].vector()[:] = 2.0
     assert w0[0].vector()[0] == 1.0
-    assert c0_1st.vector()[0] == 1.0
+    assert phi0_1st.vector()[0] == 1.0
 
     # Check effect of the 2nd deepcopy
-    c0_1st.vector()[:] = 3.0
+    phi0_1st.vector()[:] = 3.0
     assert w0[0].vector()[0] == 1.0
 
-    del w, w0, pv0, c0_1st
+    del w, w0, pv0, phi0_1st
 
     # --- Test loading of initial conditions ----------------------------------
     # prepare initial condition from simple C++ snippets
     ic = SimpleCppIC()
-    ic.add("c", "A*(1.0 - pow(x[0], 2.0))", A=2.0)
+    ic.add("phi", "A*(1.0 - pow(x[0], 2.0))", A=2.0)
     if N > 2:
-        ic.add("c", "B*pow(x[0], 2.0)", B=1.0)
+        ic.add("phi", "B*pow(x[0], 2.0)", B=1.0)
     ic.add("v", 1.0)
     if gdim > 1:
         ic.add("v", 2.0)

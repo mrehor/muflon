@@ -111,7 +111,7 @@ class Discretization(object):
 
     .. code-block:: python
 
-      (f_0, ..., f_M) == (c, mu, v, p, th)
+      (f_0, ..., f_M) == (phi, chi, v, p, th)
 
     Functions on the left hand side are called *solution functions*, while
     functions on the right hand side are called *primitive variables*.
@@ -121,10 +121,10 @@ class Discretization(object):
     Some examples:
 
     * ``f_0`` represents vector
-      :math:`(\\vec c, \\vec \\mu, \\vec v, p, \\vartheta)^T`,
+      :math:`(\\vec \\phi, \\vec \\chi, \\vec v, p, \\vartheta)^T`,
       then :math:`M = 0`
 
-    * ``f_0`` represents vector :math:`(\\vec c, \\vec \\mu)^T` and
+    * ``f_0`` represents vector :math:`(\\vec \\phi, \\vec \\chi)^T` and
       ``f_1`` represents vector :math:`(\\vec v, p, \\vartheta)^T`,
       then :math:`M = 1`
 
@@ -145,17 +145,17 @@ class Discretization(object):
     Components of vector quantities can be obtained by calling the
     *split* method.
 
-    **IMPORTANT:** Note that ``c, mu, v`` are always represented as vector
+    **IMPORTANT:** Note that ``phi, chi, v`` are always represented as vector
     quantities (even in the case when there is only one component in the
     vector), while ``p`` and ``th`` are always scalars.
 
     .. code-block:: python
 
-      if len(c) == 1:
-          c1 = c.split()[0]
+      if len(phi) == 1:
+          phi1 = phi.split()[0]
 
-      if len(c) == 2:
-          c1, c2 = c.split()
+      if len(phi) == 2:
+          phi1, phi2 = phi.split()
 
     Some primitive variables may be omitted depending on the
     particular setting, e.g. we do not consider ``th`` in the isothermal
@@ -213,17 +213,17 @@ class Discretization(object):
             Discretization._not_implemented_msg(self, msg)
 
     def __init__(self, mesh,
-                 FE_c, FE_mu, FE_v, FE_p, FE_th=None):
+                 FE_phi, FE_chi, FE_v, FE_p, FE_th=None):
         """
         Initialize :py:data:`Discretization.parameters` and store given
         arguments for later setup.
 
         :param mesh: computational mesh
         :type mesh: :py:class:`dolfin.Mesh`
-        :param FE_c: finite element for discretization of order parameters
-        :type FE_c: :py:class:`dolfin.FiniteElement`
-        :param FE_mu: finite element for discretization of chemical potentials
-        :type FE_mu: :py:class:`dolfin.FiniteElement`
+        :param FE_phi: finite element for discretization of order parameters
+        :type FE_phi: :py:class:`dolfin.FiniteElement`
+        :param FE_chi: finite element for discretization of chemical potentials
+        :type FE_chi: :py:class:`dolfin.FiniteElement`
         :param FE_v: finite element for discretization of velocity components
         :type FE_v: :py:class:`dolfin.FiniteElement`
         :param FE_p: finite element for discretization of pressure
@@ -236,7 +236,7 @@ class Discretization(object):
 
         # Store attributes
         self._mesh = mesh
-        self._varnames = ("c", "mu", "v", "p", "th")
+        self._varnames = ("phi", "chi", "v", "p", "th")
         self._FE = dict()
         for var in self._varnames:
             self._FE[var] = eval("FE_"+var)
@@ -295,7 +295,7 @@ class Discretization(object):
 
     def primitive_vars_ctl(self, deepcopy=False, indexed=False):
         """
-        Provides access to primitive variables ``c, mu, v, p, th``
+        Provides access to primitive variables ``phi, chi, v, p, th``
         (or allowable subset) at the current time level.
 
         (Note that it makes no sense to require indexed deep copy.)
@@ -326,7 +326,7 @@ class Discretization(object):
 
     def primitive_vars_ptl(self, level=0, deepcopy=False, indexed=False):
         """
-        Provides access to primitive variables ``c, mu, v, p, th``
+        Provides access to primitive variables ``phi, chi, v, p, th``
         (or allowable subset) at previous time levels.
 
         (Note that it makes no sense to require indexed deep copy.)
@@ -445,7 +445,7 @@ class Monolithic(Discretization):
         """
         Prepare vector of solution functions ``(f_0,)`` such that
 
-        * ``f_0`` wraps ``c, mu, v, p, th`` (or allowable subset)
+        * ``f_0`` wraps ``phi, chi, v, p, th`` (or allowable subset)
         """
         def fit_primitives(vec, deepcopy=False, indexed=True):
             assert not (deepcopy and indexed)
@@ -463,10 +463,10 @@ class Monolithic(Discretization):
         N = self.parameters["N"]
         gdim = self._mesh.geometry().dim()
 
-        # Group elements for c, mu, v
+        # Group elements for phi, chi, v
         elements = []
-        elements.append(VectorElement(self._FE["c"], dim=N-1))
-        elements.append(VectorElement(self._FE["mu"], dim=N-1))
+        elements.append(VectorElement(self._FE["phi"], dim=N-1))
+        elements.append(VectorElement(self._FE["chi"], dim=N-1))
         elements.append(VectorElement(self._FE["v"], dim=gdim))
 
         # Append elements for p and th
@@ -528,7 +528,7 @@ class SemiDecoupled(Discretization):
         """
         Prepare vector of solution functions ``(f_0, f_1)`` such that
 
-        * ``f_0`` wraps ``c, mu``
+        * ``f_0`` wraps ``phi, chi``
         * ``f_1`` wraps ``v, p, th`` (or allowable subset)
         """
         def fit_primitives(vec, deepcopy=False, indexed=True):
@@ -553,8 +553,8 @@ class SemiDecoupled(Discretization):
         N = self.parameters["N"]
         gdim = self._mesh.geometry().dim()
 
-        # Group elements for c, mu, v
-        elements_ch = (N-1)*[self._FE["c"],] + (N-1)*[self._FE["mu"],]
+        # Group elements for phi, chi, v
+        elements_ch = (N-1)*[self._FE["phi"],] + (N-1)*[self._FE["chi"],]
         elements_ns = [VectorElement(self._FE["v"], dim=gdim),]
 
         # Append elements for p and th
@@ -641,8 +641,8 @@ class FullyDecoupled(Discretization):
             if deepcopy:
                 vec = [f.copy(True) for f in vec]
             pv = []
-            pv.append(as_vector(vec[:N-1])) # append c
-            pv.append(as_vector(vec[N-1:2*(N-1)])) # append mu
+            pv.append(as_vector(vec[:N-1])) # append phi
+            pv.append(as_vector(vec[N-1:2*(N-1)])) # append chi
             pv.append(as_vector(vec[2*(N-1):2*(N-1)+gdim])) # append v
             pv.append(vec[2*(N-1)+gdim]) # append p
             try:
@@ -660,10 +660,10 @@ class FullyDecoupled(Discretization):
         N = self.parameters["N"]
         gdim = self._mesh.geometry().dim()
 
-        # Group elements for c, mu, v
+        # Group elements for phi, chi, v
         elements = []
-        elements += (N-1)*[self._FE["c"],]
-        elements += (N-1)*[self._FE["mu"],]
+        elements += (N-1)*[self._FE["phi"],]
+        elements += (N-1)*[self._FE["chi"],]
         elements += gdim*[self._FE["v"],]
 
         # Append elements for p and th

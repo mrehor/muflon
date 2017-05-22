@@ -12,9 +12,9 @@ def test_SimpleCppIC():
     with pytest.raises(AttributeError):
         ic.add("foo", 42.0)
     with pytest.raises(TypeError):
-        ic.add("c", (42, 42))
-    ic.add("c", "A*(1.0 - pow(x[0], 2.0))", A=2.0)
-    ic.add("c", "B*pow(x[0], 2.0)", B=1.0)
+        ic.add("phi", (42, 42))
+    ic.add("phi", "A*(1.0 - pow(x[0], 2.0))", A=2.0)
+    ic.add("phi", "B*pow(x[0], 2.0)", B=1.0)
     ic.add("v", 1.0)
     with pytest.raises(AssertionError): # one velocity component is missing
         values, coeffs = ic.get_vals_and_coeffs(N, gdim)

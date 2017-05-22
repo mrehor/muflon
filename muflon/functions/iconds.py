@@ -59,7 +59,7 @@ class SimpleCppIC(object):
         initialize these attributes.
         """
         # Initialize attributes
-        self._vars = ("c", "mu", "v", "p")
+        self._vars = ("phi", "chi", "v", "p")
         for var in self._vars:
             setattr(self, var, None)
 
@@ -82,7 +82,7 @@ class SimpleCppIC(object):
         a vector quantity, the remaining components must be added as well
         (even in the case when they are assumed to be zero).
 
-        :param var: primitive variable ``"c", "mu", "v", "p"`` or ``"th"``
+        :param var: primitive variable ``"phi", "chi", "v", "p"`` or ``"th"``
         :type var: str
         :param value: either a C++ code snippet representing the value of the
                       scalar quantity or a real number
@@ -125,10 +125,10 @@ class SimpleCppIC(object):
         zero = "0.0"
 
         snippets = []
-        snippets += (N-1)*[(zero, {}),] if self.c is None else self.c
+        snippets += (N-1)*[(zero, {}),] if self.phi is None else self.phi
         assert len(snippets) == N-1
 
-        snippets += (N-1)*[(zero, {}),] if self.mu is None else self.mu
+        snippets += (N-1)*[(zero, {}),] if self.chi is None else self.chi
         assert len(snippets) == 2*(N-1)
 
         snippets += gdim*[(zero, {}),] if self.v is None else self.v

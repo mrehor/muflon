@@ -30,7 +30,7 @@ def as_primitive(var):
     """
     Turn variable ``var`` to primitive quantity in the MUFLON's context.
 
-    :param var: one of the variables ``c, mu, v, p, th``
+    :param var: one of the variables ``phi, chi, v, p, th``
     :type var: :py:class:`dolfin.Function` or
                :py:class:`ufl.tensors.ListTensor`
     :returns: ``var`` wrapped as primitive quantity
