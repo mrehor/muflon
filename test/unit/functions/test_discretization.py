@@ -1,11 +1,12 @@
 import pytest
 
 import dolfin
+
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.primitives import PrimitiveShell
 from muflon.functions.iconds import SimpleCppIC
 
-def get_arguments(dim=2):
+def get_arguments(dim=2, th=False):
     nx = 2
     if dim == 1:
         mesh = dolfin.UnitIntervalMesh(nx)
@@ -15,7 +16,10 @@ def get_arguments(dim=2):
         mesh = dolfin.UnitCubeMesh(nx, nx, nx)
     P1 = dolfin.FiniteElement("Lagrange", mesh.ufl_cell(), 1)
     P2 = dolfin.FiniteElement("Lagrange", mesh.ufl_cell(), 2)
-    return (mesh, P1, P1, P2, P1)
+    args = [mesh, P1, P1, P2, P1]
+    if th:
+        args.append(P1)
+    return tuple(args)
 
 def test_GenericDiscretization():
     args = get_arguments()
@@ -27,12 +31,13 @@ def test_GenericDiscretization():
     with pytest.raises(NotImplementedError):
         DS.setup()
 
+@pytest.mark.parametrize("th", [False,]) # True
 @pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
 @pytest.mark.parametrize("N", [2, 3])
 @pytest.mark.parametrize("dim", range(1, 4))
-def test_discretization_schemes(scheme, N, dim):
+def test_discretization_schemes(scheme, N, dim, th):
 
-    args = get_arguments(dim)
+    args = get_arguments(dim, th)
     DS = DiscretizationFactory.create(scheme, *args)
 
     # --- Check that DS raises without calling the setup method ---------------
@@ -130,6 +135,8 @@ def test_discretization_schemes(scheme, N, dim):
         ic.add("v", 2.0)
     if gdim > 2:
         ic.add("v", 3.0)
+    if th:
+        ic.add("th", 42)
     # assign to PTL-0
     DS.load_ic_from_simple_cpp(ic)
     # check the result
