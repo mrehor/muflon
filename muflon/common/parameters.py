@@ -100,9 +100,16 @@ class MuflonParameterSet(Parameters, Singleton):
        Option                Suboption      Description
        ====================  =============  ===================================
        --discretization
+       \                     .dt            time step
        \                     .N             Number of phases
        \                     .PTL           number of Previous Time Levels
        --material
+       \                     .M0            mobility
+       \                     .nu.i          dynamic viscosity of phase i
+       \                     .rho.i         density of phase i
+       \                     .sigma.ij      surface tension between phases i,j
+       --model
+       \                     .eps           width of the interface (scale)
        ====================  =============  ===================================
     """
 
@@ -119,12 +126,22 @@ class MuflonParameterSet(Parameters, Singleton):
 
         # Discretization
         nested_prm = Parameters("discretization")
+        nested_prm.add("dt", 1.0)
         nested_prm.add("N", 2, 2, 7)
         nested_prm.add("PTL", 1, 1, 2)
         self.add(nested_prm)
 
         # Material parameters
         nested_prm = Parameters("material")
+        nested_prm.add("M0", 1.0)
+        nested_prm.add(Parameters("nu"))
+        nested_prm.add(Parameters("rho"))
+        nested_prm.add(Parameters("sigma"))
+        self.add(nested_prm)
+
+        # Model parameters
+        nested_prm = Parameters("model")
+        nested_prm.add("eps", 1.0)
         self.add(nested_prm)
 
     def show(self, verbose=False):
@@ -134,7 +151,7 @@ class MuflonParameterSet(Parameters, Singleton):
         Note that the value returned by :py:func:`dolfin.get_log_level` must be
         greater or equal than :py:data:`dolfin.INFO` to see the result.
 
-        :param verbose: if ``True`` show description of parameters \
+        :param verbose: if ``True`` show description of parameters
                         (additionally to their values)
         :type verbose: bool
         """
@@ -149,7 +166,7 @@ class MuflonParameterSet(Parameters, Singleton):
         """
         Read parameters from XML file.
 
-        :param filename: name of the input XML file (can be relative or \
+        :param filename: name of the input XML file (can be relative or
                          absolute path)
         :type filename: str
         """
@@ -168,7 +185,7 @@ class MuflonParameterSet(Parameters, Singleton):
 
         :param comm: MPI communicator
         :type comm: :py:class:`dolfin.MPI_Comm`
-        :param filename: name of the output XML file (can be relative or \
+        :param filename: name of the output XML file (can be relative or
                          absolute path)
         :type filename: str
         """

@@ -30,10 +30,36 @@ import itertools
 
 from muflon import mpset
 from muflon import DiscretizationFactory, SimpleCppIC
+from muflon import FormsICS
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 parameters["plotting_backend"] = "matplotlib"
+
+def set_parameter_values():
+    # FIXME: To be specified in the default XML file
+    mpset["discretization"]["dt"] = 0.001
+    mpset["discretization"]["N"] = 4
+    mpset["discretization"]["PTL"] = 1 #2
+
+    mpset["material"]["nu"].add("1", 0.01)
+    mpset["material"]["nu"].add("2", 0.02)
+    mpset["material"]["nu"].add("3", 0.03)
+    mpset["material"]["nu"].add("4", 0.04)
+
+    mpset["material"]["rho"].add("1", 1.0)
+    mpset["material"]["rho"].add("2", 3.0)
+    mpset["material"]["rho"].add("3", 2.0)
+    mpset["material"]["rho"].add("4", 4.0)
+
+    mpset["material"]["sigma"].add("12", 6.236e-3)
+    mpset["material"]["sigma"].add("13", 7.265e-3)
+    mpset["material"]["sigma"].add("14", 3.727e-3)
+    mpset["material"]["sigma"].add("23", 8.165e-3)
+    mpset["material"]["sigma"].add("24", 5.270e-3)
+    mpset["material"]["sigma"].add("34", 6.455e-3)
+
+    mpset["material"]["M0"] = 1.0e-5
 
 def create_domain(refinement_level):
     # Prepare mesh
@@ -56,44 +82,10 @@ def create_discretization(scheme, mesh):
     P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
     P2 = FiniteElement("Lagrange", mesh.ufl_cell(), 2)
 
-    # Choose discretization
-    DS = DiscretizationFactory.create(scheme, mesh, P1, P1, P2, P1)
-
-    return DS
+    return DiscretizationFactory.create(scheme, mesh, P1, P1, P2, P1)
 
 def create_forms(DS, boundary_markers):
-
-    # Arguments and coefficients of the forms
-    #c, mu, v, p = DS.create_trial_fcns()
-    c_, mu_, v_, p_ = DS.create_test_fcns()
-
-    # Coefficients for non-linear forms
-    # FIXME: Which split is correct? Which one uses 'restrict_as_ufc_function'?
-    c, mu, v, p = DS.primitive_vars_ctl(indexed=True)
-    #c, mu, v, p = DS.primitive_vars_ctl(indexed=False)
-
-    c0, mu0, v0, p0 = DS.primitive_vars_ctl(0, indexed=True)
-    del mu0, p0 # not needed
-
-    # Forms for monolithic DS
-    idt = Constant(1.0) # 1.0/dt
-    K1 = Constant(1.0) # Mo
-    eqn_c = (
-          idt*inner((c - c0), mu_)
-        + inner(dot(grad(c), v), mu_) # FIXME: div(c_i*v)
-        #- inner(g, mu_) # FIXME: artificial source term for MMS
-        + K1*inner(grad(mu), grad(mu_))
-    )*dx
-
-    K2 = Constant(1.0) # b/eps
-    K3 = Constant(1.0) # a*eps/2
-    eqn_mu = (
-          inner(mu, c_)
-        #+ K2* FIXME: potential term
-        - K3*inner(grad(c), grad(c_))
-    )*dx
-
-    forms = eqn_c + eqn_mu
+    forms = FormsICS(DS).create_forms()
 
     return forms
 
@@ -104,7 +96,7 @@ def create_initial_conditions():
 
     return ic
 
-@pytest.mark.parametrize("scheme", ["Monolithic"]) # , "SemiDecoupled", "FullyDecoupled"
+@pytest.mark.parametrize("scheme", ["Monolithic",]) # "SemiDecoupled", "FullyDecoupled"
 def test_scaling_mesh(scheme): #postprocessor
     """
     Compute convergence rates for fixed element order, fixed time step and
@@ -112,12 +104,13 @@ def test_scaling_mesh(scheme): #postprocessor
     """
     set_log_level(WARNING)
 
+    set_parameter_values()
+
     # Iterate over refinement level
     for level in range(1, 3):
 
         # Prepare problem and solvers
         with Timer("Prepare") as t_prepare:
-            #mpset["discretization"]["N"] = 4
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh)
             DS.setup()
