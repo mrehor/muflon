@@ -28,5 +28,5 @@ from muflon.common.parameters import mpset, MuflonParameterSet
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.primitives import as_primitive, PrimitiveShell
 from muflon.functions.iconds import SimpleCppIC
-from muflon.forms.models import ModelFactory
-from muflon.forms.potentials import doublewell, multiwell, multiwell_derivative
+from muflon.models.forms import ModelFactory
+from muflon.models.potentials import doublewell, multiwell, multiwell_derivative

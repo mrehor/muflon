@@ -6,7 +6,8 @@
       <parameter key="PTL" type="int" value="1" />
       <parameter key="dt" type="double" value="0.001" />
     </parameters>
-    <parameters name="material">
+    <parameters name="model">
+      <parameter key="eps" type="double" value="1" />
       <parameter key="M0" type="double" value="1.0e-05" />
       <parameters name="nu">
         <parameter key="1" type="double" value="0.01" />
@@ -28,9 +29,6 @@
         <parameter key="24" type="double" value="5.270e-03" />
         <parameter key="34" type="double" value="6.455e-03" />
       </parameters>
-    </parameters>
-    <parameters name="model">
-      <parameter key="eps" type="double" value="1" />
     </parameters>
   </parameters>
 </dolfin>

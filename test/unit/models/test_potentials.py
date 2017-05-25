@@ -3,9 +3,8 @@ import pytest
 from dolfin import (as_backend_type, as_vector, assemble, Constant, dx, info,
                     inner, near, derivative)
 
-#from muflon.forms.incompressible import FormsICS
-from muflon.forms.potentials import doublewell, multiwell, multiwell_derivative
-from muflon.forms.models import ModelFactory
+from muflon.models.potentials import doublewell, multiwell, multiwell_derivative
+from muflon.models.forms import ModelFactory
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.iconds import SimpleCppIC
 
@@ -34,7 +33,7 @@ def test_potentials(scheme, N, th):
         w[i].assign(w0[i])
 
     model = ModelFactory.create("Incompressible", DS)
-    prm = model.parameters["material"]["sigma"]
+    prm = model.parameters["sigma"]
     prm.add("12", 1.0)
     if N == 3:
         prm.add("13", 1.0)

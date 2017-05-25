@@ -29,7 +29,7 @@ from dolfin import dot, inner, dx, ds
 from dolfin import derivative, div, grad
 
 from muflon.common.parameters import mpset
-from muflon.forms.potentials import doublewell, multiwell, multiwell_derivative
+from muflon.models.potentials import doublewell, multiwell, multiwell_derivative
 
 # --- Generic interface for creating demanded systems of PDEs -----------------
 
@@ -85,10 +85,8 @@ class Model(object):
         :param DS: discretization scheme
         :type DS: :py:class:`muflon.functions.discretization.Discretization`
         """
-        # Initialize user-controlled parameters
-        prm = Parameters("forms")
-        prm.add(mpset["material"])
-        prm.add(mpset["model"])
+        # Initialize parameters
+        self.parameters = Parameters(mpset["model"])
 
         # Create test and trial functions
         test = DS.create_test_fcns()
@@ -113,14 +111,13 @@ class Model(object):
 
         # Store other attributes
         self.dt = DS.parameters["dt"]
-        self.parameters = prm
 
     def build_sigma_matrix(self, const=True):
         """
         :returns: N times N matrix
         :rtype: :py:class:`ufl.tensors.ListTensor`
         """
-        s = self.parameters["material"]["sigma"]
+        s = self.parameters["sigma"]
         i = 1
         j = 1
         # Build the first row of the upper triangular matrix S
@@ -191,11 +188,9 @@ class Incompressible(Model):
         # Discretization parameters
         idt = Constant(1.0/self.dt)
 
-        # Material parameters
-        Mo = Constant(prm["material"]["M0"]) # FIXME: degenerate mobility
-
-        # Model parameters
-        eps = Constant(prm["model"]["eps"])
+        # Wrap parameters as ``Constant``s
+        eps = Constant(prm["eps"])
+        Mo = Constant(prm["M0"]) # FIXME: degenerate mobility
 
         # Choose double-well potential
         f, df, a, b = doublewell("poly4")

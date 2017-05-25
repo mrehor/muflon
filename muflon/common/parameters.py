@@ -103,13 +103,12 @@ class MuflonParameterSet(Parameters, Singleton):
        \                     .dt            time step
        \                     .N             Number of phases
        \                     .PTL           number of Previous Time Levels
-       --material
+       --model
+       \                     .eps           width of the interface (scale)
        \                     .M0            mobility
        \                     .nu.i          dynamic viscosity of phase i
        \                     .rho.i         density of phase i
        \                     .sigma.ij      surface tension between phases i,j
-       --model
-       \                     .eps           width of the interface (scale)
        ====================  =============  ===================================
     """
 
@@ -131,17 +130,13 @@ class MuflonParameterSet(Parameters, Singleton):
         nested_prm.add("PTL", 1, 1, 2)
         self.add(nested_prm)
 
-        # Material parameters
-        nested_prm = Parameters("material")
+        # Model parameters
+        nested_prm = Parameters("model")
+        nested_prm.add("eps", 1.0)
         nested_prm.add("M0", 1.0)
         nested_prm.add(Parameters("nu"))
         nested_prm.add(Parameters("rho"))
         nested_prm.add(Parameters("sigma"))
-        self.add(nested_prm)
-
-        # Model parameters
-        nested_prm = Parameters("model")
-        nested_prm.add("eps", 1.0)
         self.add(nested_prm)
 
     def show(self, verbose=False):
