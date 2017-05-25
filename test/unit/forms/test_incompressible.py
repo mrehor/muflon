@@ -8,11 +8,12 @@ from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.iconds import SimpleCppIC
 
 from unit.functions.test_discretization import get_arguments
+@pytest.mark.parametrize("th", [False,]) # True
+@pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled"]) # "FullyDecoupled"
 # "FullyDecoupled" DS needs different treatment of nonlinear potential
-@pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled"])
 @pytest.mark.parametrize("N", [2, 3])
-def test_FormsICS(scheme, N):
-    args = get_arguments(2)
+def test_FormsICS(scheme, N, th):
+    args = get_arguments(2, th)
 
     DS = DiscretizationFactory.create(scheme, *args)
     DS.parameters["N"] = N
@@ -22,6 +23,8 @@ def test_FormsICS(scheme, N):
     ic.add("phi", "phi_1", phi_1=0.2)
     if N == 3:
         ic.add("phi", "phi_2", phi_2=0.2)
+    if th:
+        ic.add("th", "th_ref", th_ref=42.0)
     DS.load_ic_from_simple_cpp(ic)
     w = DS.solution_ctl()
     w0 = DS.solution_ptl(0)

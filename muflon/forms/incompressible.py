@@ -16,7 +16,7 @@
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
 """
-This module provides forms for (fully-)incompressible
+This module provides system for (fully-)incompressible
 Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) model.
 """
 
@@ -137,15 +137,21 @@ class FormsICS(object):
         prm["model"].add("a", 1.5)   # FIXME: Moreau-Yosida a = 4.0/pi
         prm["model"].add("b", 12.0)  # FIXME: Moreau-Yosida b = 8.0/pi
 
-        # Create trial and test functions
-        # trial = DS.create_trial_fcns()
-        # self._trial = dict(phi=trial[0], chi=trial[1],
-        #                    v=trial[2], p=trial[3]) # FIXME: add th
-        # test = DS.create_test_fcns()
-        # self._test = dict(phi=test[0], chi=test[1],
-        #                   v=test[2], p=test[3]) # FIXME: add th
+        # Create test and trial functions
+        test = DS.create_test_fcns()
+        self._test = dict(phi=test[0], chi=test[1],
+                          v=test[2], p=test[3])
+        trial = DS.create_trial_fcns()
+        self._trial = dict(phi=trial[0], chi=trial[1],
+                           v=trial[2], p=trial[3])
+        # Add test and trial fcn for temperature if available
+        try:
+            self._test.update(th=test[4])
+            self._trial.update(th=trial[4])
+        except IndexError:
+            pass
 
-        # Store attributes
+        # Store other attributes
         self.parameters = prm
         self._DS = DS
 
@@ -180,24 +186,31 @@ class FormsICS(object):
             S = [[Constant(S[i,j]) for j in range(N)] for i in range(N)]
         return as_matrix(S)
 
-    def create_forms(self):
+    def create_forms(self, gnum=None):
         """
-        :returns: prepared variational forms
+        :returns: prepared variational system
         :rtype: tuple
         """
         DS = self._DS
         prm = self.parameters
 
-        # Arguments of the forms
-        phi_tr, chi_tr, v_tr, p_tr = DS.create_trial_fcns()
-        phi_te, chi_te, v_te, p_te = DS.create_test_fcns()
+        # Arguments of the system
+        test = self._test
+        trial = self._trial
 
-        # Coefficients of the forms
+        # Coefficients of the system
         # FIXME: Which split is correct? Indexed or non-indexed?
         #        Which one uses 'restrict_as_ufc_function'?
         phi, chi, v, p = DS.primitive_vars_ctl(indexed=True)
         phi0, chi0, v0, p0 = DS.primitive_vars_ptl(0, indexed=True)
         del chi0, p0 # not needed
+
+        # Artificial source terms (for numerical tests only)
+        if gnum is None:
+            gnum = as_vector(len(phi)*[Constant(0.0),])
+        else:
+            assert isinstance(gnum, type(phi))
+            assert len(gnum) == len(phi)
 
         # Discretization parameters
         idt = Constant(1.0/DS.parameters["dt"])
@@ -217,11 +230,11 @@ class FormsICS(object):
         # Prepare non-linear potential term
         if len(phi) == 1:
             F = f(phi[0])
-            int_dF = df(phi[0])*phi_te[0]*dx
+            int_dF = df(phi[0])*test["phi"][0]*dx
         else:
             S = self.build_sigma_matrix()
             F = potential(phi, f, S)
-            int_dF = derivative(F*dx, phi, tuple(phi_te))
+            int_dF = derivative(F*dx, phi, tuple(test["phi"]))
             # UFL ISSUE:
             #   The above tuple is needed as long as `ListTensor` type is not
             #   explicitly treated in `ufl/formoperators.py:211`,
@@ -231,23 +244,27 @@ class FormsICS(object):
             # Alternative approach is to define the above derivative explicitly
             #dF = potential_derivative(phi, df, S)
             #assert len(dF) == len(phi)
-            #int_dF = inner(dF, phi_te)*dx
+            #int_dF = inner(dF, test["phi"])*dx
 
         # Forms for monolithic DS
         eqn_phi = (
-              idt*inner((phi - phi0), chi_te)
-            + inner(dot(grad(phi), v), chi_te) # FIXME: div(phi[i]*v)
-            #- inner(g, mu_) # FIXME: artificial source term for MMS
-            + Mo*inner(grad(chi), grad(chi_te))
+              idt*inner((phi - phi0), test["chi"])
+            + inner(dot(grad(phi), v), test["chi"]) # FIXME: div(phi[i]*v)
+            - inner(gnum, test["chi"])
+            + Mo*inner(grad(chi), grad(test["chi"]))
         )*dx
 
         eqn_chi = (
-              inner(chi, phi_te)
-            - 0.5*a*eps*inner(grad(phi), grad(phi_te))
+              inner(chi, test["phi"])
+            - 0.5*a*eps*inner(grad(phi), grad(test["phi"]))
         )*dx
         eqn_chi += (b/eps)*int_dF
 
-        forms = eqn_phi + eqn_chi
+        system = eqn_phi + eqn_chi
+        J = derivative(system, tuple(list(phi)+list(chi)),
+        tuple(list(trial["phi"])+list(trial["chi"])))
+        from dolfin import assemble
+        A = assemble(J)
 
         return F*dx, int_dF # FIXME: for testing purposes only
-        #return forms
+        #return system
