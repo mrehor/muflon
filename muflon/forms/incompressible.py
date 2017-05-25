@@ -149,6 +149,36 @@ class FormsICS(object):
         self.parameters = prm
         self._DS = DS
 
+    def build_sigma_matrix(self, const=True):
+        """
+        :returns: N times N matrix
+        :rtype: :py:class:`ufl.tensors.ListTensor`
+        """
+        s = self.parameters["material"]["sigma"]
+        i = 1
+        j = 1
+        # Build the first row of the upper triangular matrix S
+        S = [[0.0,],]
+        while s.has_key("%i%i" % (i, j+1)):
+            S[i-1].append(s["%i%i" % (i, j+1)])
+            j += 1
+
+        N = j
+        # Build the rest
+        i += 1
+        while i < N:
+            S.append(i*[0.0,])
+            j = i
+            while j < N:
+                S[i-1].append(s["%i%i" % (i, j+1)])
+                j += 1
+            i += 1
+        S.append(N*[0.0,])
+        S = np.array(S)                   # convert S to numpy representation
+        S += S.T                          # make the matrix symmetric
+        if const:
+            S = [[Constant(S[i,j]) for j in range(N)] for i in range(N)]
+        return as_matrix(S)
 
     def create_forms(self):
         """
@@ -185,15 +215,19 @@ class FormsICS(object):
         df = lambda c: 2.0*c*(1.0 - c)*(1.0 - 2.0*c)
 
         # Non-linear potential term
-        # FIXME: to be built from surface tensions
-        S = Identity(len(phi) + 1) # N x N
-        # -- 1st variant
+        S = self.build_sigma_matrix()
         F = potential(phi, f, S)
-        dF_bulk_part = derivative(F*dx, phi, phi_te)
-        # # -- 2nd variant
-        # dF = potential_derivative(phi, df, S)
-        # assert len(dF) == len(phi)
-        # dF_bulk_part = inner(dF, phi_te)*dx
+        int_dF = derivative(F*dx, phi, tuple(phi_te))
+        # UFL ISSUE:
+        #   The above tuple is needed as long as `ListTensor` type is not
+        #   explicitly treated in `ufl/formoperators.py:211`,
+        #   cf. `ufl/formoperators.py:168`
+        # FIXME: check if this is a bug and report it
+
+        # Alternative approach is to define the above derivative explicitly
+        #dF = potential_derivative(phi, df, S)
+        #assert len(dF) == len(phi)
+        #int_dF = inner(dF, phi_te)*dx
 
         # Forms for monolithic DS
         eqn_phi = (
@@ -207,8 +241,9 @@ class FormsICS(object):
               inner(chi, phi_te)
             - 0.5*a*eps*inner(grad(phi), grad(phi_te))
         )*dx
-        eqn_chi += (b/eps)*dF_bulk_part
+        eqn_chi += (b/eps)*int_dF
 
         forms = eqn_phi + eqn_chi
 
-        return forms
+        return F*dx, int_dF # FIXME: for testing purposes only
+        #return forms

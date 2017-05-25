@@ -6,8 +6,7 @@ from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.primitives import PrimitiveShell
 from muflon.functions.iconds import SimpleCppIC
 
-def get_arguments(dim=2, th=False):
-    nx = 2
+def get_arguments(dim=2, th=False, nx=2):
     if dim == 1:
         mesh = dolfin.UnitIntervalMesh(nx)
     elif dim == 2:
