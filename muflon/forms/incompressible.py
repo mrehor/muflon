@@ -20,10 +20,12 @@ This module provides forms for (fully-)incompressible
 Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) model.
 """
 
+import numpy as np
+
 from dolfin import Parameters
 from dolfin import Constant, Identity
 from dolfin import as_matrix, as_vector, diag, diag_vector
-#from dolfin import i as ii, j as ij, k as ik
+from dolfin import k as kk
 from dolfin import derivative, dot, grad, inner, dx, ds
 
 from muflon.common.parameters import mpset
@@ -105,15 +107,15 @@ def potential_derivative(phi, df, S):
     assert len(phis) == N
 
     df_vec = [df(phis[j]) for j in range(N)]
-    df_mat = [[df(phis[j] + phis[k]) for j in range(N)] for k in range(N)]
+    df_mat = [[df(phis[j] + phis[k]) for k in range(N)] for j in range(N)]
 
     df_vec = as_vector(df_vec) # N x 1
     df_mat = as_matrix(df_mat) # N x N
 
     ones = as_vector(N*[Constant(1.0),]) # N x 1
     dF = as_vector([
-          0.5*S[j, ik]*(df_vec[j]*ones[ik] - df_mat[ik, j])
-        - 0.5*S[-1, ik]*(df_vec[-1]*ones[ik] - df_mat[ik, -1])
+          0.5*S[j, kk]*(df_vec[j]*ones[kk] - df_mat[j, kk])
+        - 0.5*S[-1, kk]*(df_vec[-1]*ones[kk] - df_mat[-1, kk])
     for j in range(N-1)])
 
     return dF
