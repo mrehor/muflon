@@ -23,102 +23,12 @@ Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) model.
 import numpy as np
 
 from dolfin import Parameters
-from dolfin import Constant, Identity
-from dolfin import as_matrix, as_vector, diag, diag_vector
-from dolfin import k as kk
+from dolfin import Constant
+from dolfin import as_matrix, as_vector
 from dolfin import derivative, dot, grad, inner, dx, ds
 
 from muflon.common.parameters import mpset
-
-def potential(phi, f, S):
-    # FIXME: currently fully-implicit, propose also implicit-explicit variants
-    """
-    Returns multi-well nonlinear potential :math:`F`, the derivative of which
-    contributes to the Cahn-Hilliard part of the system. Here
-
-    .. math::
-
-      F(\\vec \\phi) = \\frac{1}{4} \\sum_{i,j=1}^N \\sigma_{ij} \\left(
-        f(\\phi_i) + f(\\phi_j) - f(\\phi_i + \\phi_j)
-      \\right) \\Big|_{\\phi_N = 1 - \\sum_{k=1}^{N-1} \\phi_k}
-
-    :param phi: vector of volume fractions at the current time level
-    :type phi: :py:class:`ufl.tensors.ListTensor`
-    :param f: callable function that stands for the standard
-              double-well potential
-    :type df: function
-    :param S: matrix of (constant) surface tensions with zero diagonal
-    :type S: :py:class:`ufl.tensors.ListTensor`
-    :returns: nonlinear potential :math:`F`
-    :rtype: :py:class:`ufl.algebra.Operator`
-    """
-    # Extend phi by adding the last component expressed from V.A.C.
-    N = len(phi) + 1
-    phi_N = 1.0 - inner(phi, as_vector(len(phi)*[Constant(1.0),]))
-    phis = list(phi) + [phi_N,]
-    assert len(phis) == N
-
-    f_vec = [f(phis[i]) for i in range(N)]
-    f_mat = [[f(phis[i] + phis[j]) for j in range(N)] for i in range(N)]
-
-    f_vec = as_vector(f_vec) # N x 1
-    f_mat = as_matrix(f_mat) # N x N
-
-    ones = as_vector(N*[Constant(1.0),]) # N x 1
-    F = 0.25*(
-          dot(dot(f_vec, S), ones)
-        + dot(ones, dot(S, f_vec))
-        - inner(S, f_mat)
-    )
-    return F
-
-def potential_derivative(phi, df, S):
-    # FIXME: currently fully-implicit, propose also implicit-explicit variants
-    """
-    Returns a vector of derivatives
-    :math:`\\frac{\\partial F}{\\partial \\phi_j}` treated implicitly. Here
-
-    .. math::
-
-      \\frac{\\partial F}{\\partial \\phi_j}(\\vec \\phi)
-      =
-      \\frac12 \\sum_{k=1}^N \\sigma_{jk} \\left(
-        f'(\\phi_j) - f'(\\phi_j + \\phi_k)
-      \\right) \\Big|_{\\phi_N = 1 - \\sum_{k=1}^{N-1} \\phi_k}
-      -
-      \\frac12 \\sum_{k=1}^N \\sigma_{Nk} \\left(
-        f'(\\phi_N) - f'(\\phi_N + \\phi_k)
-      \\right) \\Big|_{\\phi_N = 1 - \\sum_{k=1}^{N-1} \\phi_k}
-
-    :param phi: vector of volume fractions at the current time level
-    :type phi: :py:class:`ufl.tensors.ListTensor`
-    :param df: callable function that stands for the derivative of
-               a double-well potential
-    :type df: function
-    :param S: matrix of (constant) surface tensions with zero diagonal
-    :type S: :py:class:`ufl.tensors.ListTensor`
-    :returns: vector :math:`\\frac{\\partial F}{\\partial \\phi_j}`
-    :rtype: :py:class:`ufl.tensors.ListTensor`
-    """
-    # Extend phi by adding the last component expressed from V.A.C.
-    N = len(phi) + 1
-    phi_N = 1.0 - inner(phi, as_vector(len(phi)*[Constant(1.0),]))
-    phis = list(phi) + [phi_N,]
-    assert len(phis) == N
-
-    df_vec = [df(phis[j]) for j in range(N)]
-    df_mat = [[df(phis[j] + phis[k]) for k in range(N)] for j in range(N)]
-
-    df_vec = as_vector(df_vec) # N x 1
-    df_mat = as_matrix(df_mat) # N x N
-
-    ones = as_vector(N*[Constant(1.0),]) # N x 1
-    dF = as_vector([
-          0.5*S[j, kk]*(df_vec[j]*ones[kk] - df_mat[j, kk])
-        - 0.5*S[-1, kk]*(df_vec[-1]*ones[kk] - df_mat[-1, kk])
-    for j in range(N-1)])
-
-    return dF
+from muflon.forms.potentials import doublewell, multiwell, multiwell_derivative
 
 class FormsICS(object):
     """InCompressible System"""
@@ -132,10 +42,6 @@ class FormsICS(object):
         prm = Parameters("ICS")
         prm.add(mpset["material"])
         prm.add(mpset["model"])
-
-        # Initialize dev-controlled parameters
-        prm["model"].add("a", 1.5)   # FIXME: Moreau-Yosida a = 4.0/pi
-        prm["model"].add("b", 12.0)  # FIXME: Moreau-Yosida b = 8.0/pi
 
         # Create test and trial functions
         test = DS.create_test_fcns()
@@ -222,10 +128,8 @@ class FormsICS(object):
         eps = Constant(prm["model"]["eps"])
 
         # Choose double-well potential
-        a = Constant(prm["model"]["a"])
-        b = Constant(prm["model"]["b"])
-        f = lambda c: (c*(1.0 - c))**2.0
-        df = lambda c: 2.0*c*(1.0 - c)*(1.0 - 2.0*c)
+        f, df, a, b = doublewell("poly4")
+        a, b = Constant(a), Constant(b)
 
         # Prepare non-linear potential term
         if len(phi) == 1:
@@ -233,7 +137,7 @@ class FormsICS(object):
             int_dF = df(phi[0])*test["phi"][0]*dx
         else:
             S = self.build_sigma_matrix()
-            F = potential(phi, f, S)
+            F = multiwell(phi, f, S)
             int_dF = derivative(F*dx, phi, tuple(test["phi"]))
             # UFL ISSUE:
             #   The above tuple is needed as long as `ListTensor` type is not
@@ -242,7 +146,7 @@ class FormsICS(object):
             # FIXME: check if this is a bug and report it
 
             # Alternative approach is to define the above derivative explicitly
-            #dF = potential_derivative(phi, df, S)
+            #dF = multiwell_derivative(phi, df, S)
             #assert len(dF) == len(phi)
             #int_dF = inner(dF, test["phi"])*dx
 

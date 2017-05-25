@@ -29,3 +29,4 @@ from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.primitives import as_primitive, PrimitiveShell
 from muflon.functions.iconds import SimpleCppIC
 from muflon.forms.incompressible import FormsICS
+from muflon.forms.potentials import doublewell, multiwell, multiwell_derivative
