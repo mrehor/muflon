@@ -214,20 +214,24 @@ class FormsICS(object):
         f = lambda c: (c*(1.0 - c))**2.0
         df = lambda c: 2.0*c*(1.0 - c)*(1.0 - 2.0*c)
 
-        # Non-linear potential term
-        S = self.build_sigma_matrix()
-        F = potential(phi, f, S)
-        int_dF = derivative(F*dx, phi, tuple(phi_te))
-        # UFL ISSUE:
-        #   The above tuple is needed as long as `ListTensor` type is not
-        #   explicitly treated in `ufl/formoperators.py:211`,
-        #   cf. `ufl/formoperators.py:168`
-        # FIXME: check if this is a bug and report it
+        # Prepare non-linear potential term
+        if len(phi) == 1:
+            F = f(phi[0])
+            int_dF = df(phi[0])*phi_te[0]*dx
+        else:
+            S = self.build_sigma_matrix()
+            F = potential(phi, f, S)
+            int_dF = derivative(F*dx, phi, tuple(phi_te))
+            # UFL ISSUE:
+            #   The above tuple is needed as long as `ListTensor` type is not
+            #   explicitly treated in `ufl/formoperators.py:211`,
+            #   cf. `ufl/formoperators.py:168`
+            # FIXME: check if this is a bug and report it
 
-        # Alternative approach is to define the above derivative explicitly
-        #dF = potential_derivative(phi, df, S)
-        #assert len(dF) == len(phi)
-        #int_dF = inner(dF, phi_te)*dx
+            # Alternative approach is to define the above derivative explicitly
+            #dF = potential_derivative(phi, df, S)
+            #assert len(dF) == len(phi)
+            #int_dF = inner(dF, phi_te)*dx
 
         # Forms for monolithic DS
         eqn_phi = (
