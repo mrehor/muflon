@@ -47,4 +47,6 @@ def test_mpset():
     # Check that every other call points to the same object
     assert id(MuflonParameterSet()) == id(mpset)
 
-    #set_log_level(INFO)
+    # Cleanup
+    set_log_level(INFO)
+    mpset.refresh()

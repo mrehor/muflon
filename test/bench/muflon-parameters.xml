@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<dolfin xmlns:dolfin="http://fenicsproject.org">
+  <parameters name="muflon-parameters">
+    <parameters name="discretization">
+      <parameter key="N" type="int" value="4" />
+      <parameter key="PTL" type="int" value="1" />
+      <parameter key="dt" type="double" value="0.001" />
+    </parameters>
+    <parameters name="material">
+      <parameter key="M0" type="double" value="1.0e-05" />
+      <parameters name="nu">
+        <parameter key="1" type="double" value="0.01" />
+        <parameter key="2" type="double" value="0.02" />
+        <parameter key="3" type="double" value="0.03" />
+        <parameter key="4" type="double" value="0.04" />
+      </parameters>
+      <parameters name="rho">
+        <parameter key="1" type="double" value="1.0" />
+        <parameter key="2" type="double" value="3.0" />
+        <parameter key="3" type="double" value="2.0" />
+        <parameter key="4" type="double" value="4.0" />
+      </parameters>
+      <parameters name="sigma">
+        <parameter key="12" type="double" value="6.236e-03" />
+        <parameter key="13" type="double" value="7.265e-03" />
+        <parameter key="14" type="double" value="3.727e-03" />
+        <parameter key="23" type="double" value="8.165e-03" />
+        <parameter key="24" type="double" value="5.270e-03" />
+        <parameter key="34" type="double" value="6.455e-03" />
+      </parameters>
+    </parameters>
+    <parameters name="model">
+      <parameter key="eps" type="double" value="1" />
+    </parameters>
+  </parameters>
+</dolfin>

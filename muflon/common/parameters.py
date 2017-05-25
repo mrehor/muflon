@@ -198,6 +198,15 @@ class MuflonParameterSet(Parameters, Singleton):
         else:
             return
 
+    def refresh(self):
+        """
+        Reinitialize MUFLON's parameter set.
+
+        Comes in handy when running pytest.
+        """
+        self.clear()
+        self.__init__()
+
 # Create muflon parameter set
 mpset = MuflonParameterSet()
 """

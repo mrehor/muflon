@@ -36,31 +36,6 @@ parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 parameters["plotting_backend"] = "matplotlib"
 
-def set_parameter_values():
-    # FIXME: To be specified in the default XML file
-    mpset["discretization"]["dt"] = 0.001
-    mpset["discretization"]["N"] = 4
-    mpset["discretization"]["PTL"] = 1 #2
-
-    mpset["material"]["nu"].add("1", 0.01)
-    mpset["material"]["nu"].add("2", 0.02)
-    mpset["material"]["nu"].add("3", 0.03)
-    mpset["material"]["nu"].add("4", 0.04)
-
-    mpset["material"]["rho"].add("1", 1.0)
-    mpset["material"]["rho"].add("2", 3.0)
-    mpset["material"]["rho"].add("3", 2.0)
-    mpset["material"]["rho"].add("4", 4.0)
-
-    mpset["material"]["sigma"].add("12", 6.236e-3)
-    mpset["material"]["sigma"].add("13", 7.265e-3)
-    mpset["material"]["sigma"].add("14", 3.727e-3)
-    mpset["material"]["sigma"].add("23", 8.165e-3)
-    mpset["material"]["sigma"].add("24", 5.270e-3)
-    mpset["material"]["sigma"].add("34", 6.455e-3)
-
-    mpset["material"]["M0"] = 1.0e-5
-
 def create_domain(refinement_level):
     # Prepare mesh
     nx = 2*(2**(refinement_level))
@@ -104,7 +79,9 @@ def test_scaling_mesh(scheme): #postprocessor
     """
     set_log_level(WARNING)
 
-    set_parameter_values()
+    scriptdir = os.path.dirname(os.path.realpath(__file__))
+    prm_file = os.path.join(scriptdir, "muflon-parameters.xml")
+    mpset.read(prm_file)
 
     # Iterate over refinement level
     for level in range(1, 3):
@@ -133,6 +110,9 @@ def test_scaling_mesh(scheme): #postprocessor
     # Flush plots as we now have data for all ndofs values
 
     # Cleanup
+    set_log_level(INFO)
+    #mpset.write(mesh.mpi_comm(), prm_file) # uncomment to save parameters
+    mpset.refresh()
     gc.collect()
 
 # def test_scaling_time_step(data):
