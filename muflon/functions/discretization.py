@@ -357,6 +357,17 @@ class Discretization(object):
         else:
             return pv
 
+    def get_number_of_ptl(self):
+        """
+        Returns total number of slots created for storing primitive variables
+        at previous time levels.
+
+        :returns: number of PTL
+        :rtype: int
+        """
+        assert hasattr(self, "_solution_ptl")
+        return len(self._solution_ptl)
+
     def get_function_spaces(self):
         """
         Ask solution functions for the function spaces on which they live.

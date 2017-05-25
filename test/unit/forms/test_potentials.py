@@ -1,9 +1,11 @@
 import pytest
 
 from dolfin import (as_backend_type, as_vector, assemble, Constant, dx, info,
-                    inner, near)
+                    inner, near, derivative)
 
-from muflon.forms.incompressible import FormsICS
+#from muflon.forms.incompressible import FormsICS
+from muflon.forms.potentials import doublewell, multiwell, multiwell_derivative
+from muflon.forms.models import ModelFactory
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.iconds import SimpleCppIC
 
@@ -12,7 +14,7 @@ from unit.functions.test_discretization import get_arguments
 @pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled"]) # "FullyDecoupled"
 # "FullyDecoupled" DS needs different treatment of nonlinear potential
 @pytest.mark.parametrize("N", [2, 3])
-def test_FormsICS(scheme, N, th):
+def test_potentials(scheme, N, th):
     args = get_arguments(2, th)
 
     DS = DiscretizationFactory.create(scheme, *args)
@@ -31,15 +33,25 @@ def test_FormsICS(scheme, N, th):
     for i in range(len(w)):
         w[i].assign(w0[i])
 
-    ICS = FormsICS(DS)
-    prm = ICS.parameters["material"]["sigma"]
-    #import pdb; pdb.set_trace()
+    model = ModelFactory.create("Incompressible", DS)
+    prm = model.parameters["material"]["sigma"]
     prm.add("12", 1.0)
     if N == 3:
         prm.add("13", 1.0)
         prm.add("23", 1.0)
-    #info(ICS.parameters, True)
-    F, dF = ICS.create_forms()
+    #info(model.parameters, True)
+
+    # Prepare arguments for obtaining multi-well potential
+    phi = DS.primitive_vars_ctl(indexed=True)[0]
+    phi_te = DS.create_test_fcns()[0]
+    f, df, a, b = doublewell()
+    del a, b # not needed
+    S = model.build_sigma_matrix()
+    #import pdb; pdb.set_trace()
+
+    # Define functional and linear form
+    F = multiwell(phi, f, S)*dx
+    dF = derivative(F, phi, tuple(phi_te))
 
     # Check that the size of the domain is 1
     assert near(assemble(Constant(1.0)*dx(domain=args[0])), 1.0)

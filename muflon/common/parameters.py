@@ -64,16 +64,15 @@ Parameter values can be written to XML file by calling
 
 from __future__ import print_function
 
-from dolfin import (info, log, DEBUG, Parameters, File, MPI,
-                    get_log_level, set_log_level)
+from dolfin import Parameters, File, MPI
+from dolfin import info, log, DEBUG, get_log_level, set_log_level
 
 import os
 
 __all__ = ['MuflonParameterSet', 'mpset']
 
 
-#------------------------------------------------------------------------------
-# Singleton interface
+# --- Singleton interface -----------------------------------------------------
 # [http://stackoverflow.com/questions/6760685/creating-a-singleton-in-python]
 
 class _Singleton(type):
@@ -88,7 +87,8 @@ class _Singleton(type):
 class Singleton(_Singleton('SingletonMeta', (object,), {})):
     """Singleton base class."""
     pass
-#------------------------------------------------------------------------------
+
+# --- MUFLON's parameter set --------------------------------------------------
 
 class MuflonParameterSet(Parameters, Singleton):
     """

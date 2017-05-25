@@ -30,7 +30,7 @@ import itertools
 
 from muflon import mpset
 from muflon import DiscretizationFactory, SimpleCppIC
-from muflon import FormsICS
+from muflon import ModelFactory
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
@@ -60,7 +60,8 @@ def create_discretization(scheme, mesh):
     return DiscretizationFactory.create(scheme, mesh, P1, P1, P2, P1)
 
 def create_forms(DS, boundary_markers):
-    forms = FormsICS(DS).create_forms()
+    model = ModelFactory.create("Incompressible", DS)
+    forms = model.get_forms()
 
     return forms
 

@@ -16,8 +16,8 @@
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
 """
-This module provides system for (fully-)incompressible
-Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) model.
+This module provides tools for creating UFL forms representing different
+variants of Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) type models.
 """
 
 import numpy as np
@@ -25,13 +25,60 @@ import numpy as np
 from dolfin import Parameters
 from dolfin import Constant
 from dolfin import as_matrix, as_vector
-from dolfin import derivative, dot, grad, inner, dx, ds
+from dolfin import dot, inner, dx, ds
+from dolfin import derivative, div, grad
 
 from muflon.common.parameters import mpset
 from muflon.forms.potentials import doublewell, multiwell, multiwell_derivative
 
-class FormsICS(object):
-    """InCompressible System"""
+# --- Generic interface for creating demanded systems of PDEs -----------------
+
+class ModelFactory(object):
+    """
+    Factory for creating UFL forms for systems of PDEs representing different
+    variants of CHNSF type models.
+    """
+    factories = {}
+
+    @staticmethod
+    def _register(model):
+        """
+        Register ``Factory`` of a ``model``.
+
+        :param model: name of a specific model
+        :type model: str
+        """
+        ModelFactory.factories[model] = eval(model + ".Factory()")
+
+    @staticmethod
+    def create(model, *args, **kwargs):
+        """
+        Create an instance of ``model`` and initialize it with given arguments.
+
+        Currently implemented models:
+
+        * :py:class:`Incompressible`
+
+        :param model: name of a specific model
+        :type model: str
+        :returns: a wrapper of UFL forms representing the model
+        :rtype: (subclass of) :py:class:`Model`
+        """
+        if not model in ModelFactory.factories:
+            ModelFactory._register(model)
+        return ModelFactory.factories[model].create(*args, **kwargs)
+
+# --- Generic class for creating models ---------------------------------------
+
+class Model(object):
+    """
+    This class provides a generic interface for creating UFL forms representing
+    different variants of CHNSF type models.
+    """
+    class Factory(object):
+        def create(self, *args, **kwargs):
+            msg = "Cannot create model from a generic class. "
+            Model._not_implemented_msg(self, msg)
 
     def __init__(self, DS):
         """
@@ -39,7 +86,7 @@ class FormsICS(object):
         :type DS: :py:class:`muflon.functions.discretization.Discretization`
         """
         # Initialize user-controlled parameters
-        prm = Parameters("ICS")
+        prm = Parameters("forms")
         prm.add(mpset["material"])
         prm.add(mpset["model"])
 
@@ -50,16 +97,23 @@ class FormsICS(object):
         trial = DS.create_trial_fcns()
         self._trial = dict(phi=trial[0], chi=trial[1],
                            v=trial[2], p=trial[3])
-        # Add test and trial fcn for temperature if available
-        try:
+        try: # add test and trial fcn for temperature if available
             self._test.update(th=test[4])
             self._trial.update(th=trial[4])
         except IndexError:
             pass
 
+        # Store coefficients representing primitive variables
+        # FIXME: Which split is correct? Indexed or non-indexed?
+        #        Which one uses 'restrict_as_ufc_function'?
+        self._pv_ctl = DS.primitive_vars_ctl(indexed=True)
+        for i in range(DS.get_number_of_ptl()):
+            setattr(self, "_pv_ptl%i" % i,
+                    DS.primitive_vars_ptl(i, indexed=True))
+
         # Store other attributes
+        self.dt = DS.parameters["dt"]
         self.parameters = prm
-        self._DS = DS
 
     def build_sigma_matrix(self, const=True):
         """
@@ -87,17 +141,34 @@ class FormsICS(object):
             i += 1
         S.append(N*[0.0,])
         S = np.array(S)                   # convert S to numpy representation
+        assert S.shape[0] == S.shape[1]   # check we have a square matrix
         S += S.T                          # make the matrix symmetric
         if const:
             S = [[Constant(S[i,j]) for j in range(N)] for i in range(N)]
         return as_matrix(S)
 
-    def create_forms(self, gnum=None):
+    def _not_implemented_msg(self, msg=""):
+        import inspect
+        caller = inspect.stack()[1][3]
+        _msg = "You need to implement a method '%s' of class '%s'." \
+          % (caller, self.__str__())
+        raise NotImplementedError(msg + _msg)
+
+# --- Incompressible CHNSF model ----------------------------------------------
+
+class Incompressible(Model):
+    """
+    This class wraps UFL forms representing the incompressible CHNSF model.
+    """
+    class Factory(object):
+        def create(self, *args, **kwargs):
+            return Incompressible(*args, **kwargs)
+
+    def get_forms(self, gnum=None):
         """
         :returns: prepared variational system
         :rtype: tuple
         """
-        DS = self._DS
         prm = self.parameters
 
         # Arguments of the system
@@ -105,10 +176,9 @@ class FormsICS(object):
         trial = self._trial
 
         # Coefficients of the system
-        # FIXME: Which split is correct? Indexed or non-indexed?
-        #        Which one uses 'restrict_as_ufc_function'?
-        phi, chi, v, p = DS.primitive_vars_ctl(indexed=True)
-        phi0, chi0, v0, p0 = DS.primitive_vars_ptl(0, indexed=True)
+        # FIXME: add th
+        phi, chi, v, p = self._pv_ctl
+        phi0, chi0, v0, p0 = self._pv_ptl0
         del chi0, p0 # not needed
 
         # Artificial source terms (for numerical tests only)
@@ -119,7 +189,7 @@ class FormsICS(object):
             assert len(gnum) == len(phi)
 
         # Discretization parameters
-        idt = Constant(1.0/DS.parameters["dt"])
+        idt = Constant(1.0/self.dt)
 
         # Material parameters
         Mo = Constant(prm["material"]["M0"]) # FIXME: degenerate mobility
@@ -150,9 +220,9 @@ class FormsICS(object):
             #assert len(dF) == len(phi)
             #int_dF = inner(dF, test["phi"])*dx
 
-        # Forms for monolithic DS
+        # System of CH eqns
         eqn_phi = (
-              idt*inner((phi - phi0), test["chi"])
+              idt*inner(phi - phi0, test["chi"])
             + inner(dot(grad(phi), v), test["chi"]) # FIXME: div(phi[i]*v)
             - inner(gnum, test["chi"])
             + Mo*inner(grad(chi), grad(test["chi"]))
@@ -164,11 +234,21 @@ class FormsICS(object):
         )*dx
         eqn_chi += (b/eps)*int_dF
 
-        system = eqn_phi + eqn_chi
-        J = derivative(system, tuple(list(phi)+list(chi)),
-        tuple(list(trial["phi"])+list(trial["chi"])))
-        from dolfin import assemble
-        A = assemble(J)
+        system_ch = eqn_phi + eqn_chi
+        # J_ch = derivative(system_ch, tuple(list(phi)+list(chi)),
+        # tuple(list(trial["phi"])+list(trial["chi"])))
+        # from dolfin import assemble
+        # A = assemble(J_ch)
 
-        return F*dx, int_dF # FIXME: for testing purposes only
-        #return system
+        # System of NS eqns
+        eqn_v = (
+            idt*inner(v - v0, test["v"]) # FIXME: *rho
+        )*dx
+
+        eqn_p = div(v)*test["p"]*dx
+
+        # FIXME: Which one to use?
+        system_ns = eqn_v + eqn_p
+        #system_ns = eqn_v - eqn_p
+
+        return system_ch + system_ns
