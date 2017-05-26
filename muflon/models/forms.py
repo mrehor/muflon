@@ -29,27 +29,8 @@ from dolfin import dot, inner, dx, ds, sym
 from dolfin import derivative, div, grad
 
 from muflon.common.parameters import mpset
-from muflon.models.potentials import doublewell, multiwell, multiwell_derivative
-
-# FIXME: move to 'varcoeffs' module
-def total_flux(Mo, rho_mat, chi):
-    """
-    :returns: total flux
-    :rtype: :py:class:`ufl.core.expr.Expr`
-    """
-    N = len(rho_mat)
-    rho_mat = list(map(Constant, rho_mat))
-    rho_diff = as_vector(rho_mat[:-1]) - as_vector((N-1)*[rho_mat[-1],])
-    J = - Mo*dot(grad(chi).T, rho_diff)
-    return J
-
-def capillary_force(phi, chi, A):
-    """
-    :returns: capillary force
-    :rtype: :py:class:`ufl.core.expr.Expr`
-    """
-    f_cap = dot(grad(phi).T, dot(A, chi))
-    return f_cap
+from muflon.models.potentials import doublewell, multiwell
+from muflon.models.varcoeffs import capillary_force, total_flux
 
 # --- Generic interface for creating demanded systems of PDEs -----------------
 
@@ -132,7 +113,39 @@ class Model(object):
         # Store other attributes
         self.dt = DS.parameters["dt"]
 
-    def build_stension_matrices(self, const=True):
+    def setup(self, *args, **kwargs):
+        """
+        An abstract method.
+
+        When creating a new class by subclassing this generic class,
+        one must override this method in such a way that it sets attributes
+        ``_forms_ch`` and ``_forms_ns`` to the new class. These attributes
+        store tuple of forms for Cahn-Hilliard and Navier-Stokes(-Fourier)
+        parts of the system respectively.
+        """
+        self._not_implemented_msg()
+
+    def forms_ch(self):
+        """
+        :returns: tuple of forms for the CH part of the system
+        :rtype: tuple
+        """
+        if not hasattr(self, "_forms_ch"):
+            msg = "You need to call 'setup' method to create required forms"
+            raise AttributeError(msg)
+        return self._forms_ch
+
+    def forms_ns(self):
+        """
+        :returns: tuple of forms for the NSF part of the system
+        :rtype: tuple
+        """
+        if not hasattr(self, "_forms_ch"):
+            msg = "You need to call 'setup' method to create required forms"
+            raise AttributeError(msg)
+        return self._forms_ns
+
+    def _build_stension_matrices(self, const=True):
         """
         :returns: tuple of matrices :math:`\\bf{\\Sigma}, \\bf{\\Lambda}`
                   and :math:`\\bf{\\Lambda^{-1}}`
@@ -179,7 +192,7 @@ class Model(object):
 
         return (as_matrix(S), as_matrix(A), as_matrix(iA))
 
-    def collect_material_params(self, key):
+    def _collect_material_params(self, key):
         """
         Converts material parameters like density and viscosity into
         a single list which is then returned.
@@ -198,7 +211,7 @@ class Model(object):
         assert N == len(self._test["phi"]) + 1
         return q
 
-    def homogenized_quantity(self, q, phi, cut=True):
+    def _homogenized_quantity(self, q, phi, cut=True):
         """
         From given material parameters (density, viscosity, conductivity)
         builds homogenized quantity and returns the result.
@@ -245,10 +258,17 @@ class Incompressible(Model):
         super(Incompressible, self).__init__(*args)
         self.parameters.add("omega_2", 1.0)
 
-    def get_forms(self, f_ext=None, g_num=None):
+    def setup(self, f_ext=None, g_num=None):
+        # FIXME: Does not work for all DS
         """
-        :returns: prepared variational system
-        :rtype: tuple
+        Create forms based on provided parameters.
+
+        :param f_ext: external source term in the balance of linear momentum
+                      (defaults to zero vector)
+        :type f_ext: :py:class:`dolfin.Expression` (or anything reasonable)
+        :param g_num: artificial source term in the CH part of the system,
+                      for numerical testing only (defaults to zero vector)
+        :type g_num: :py:class:`dolfin.Expression` (or anything reasonable)
         """
         prm = self.parameters
 
@@ -283,13 +303,13 @@ class Incompressible(Model):
         omega_2 = Constant(prm["omega_2"])
 
         # Matrices built from surface tensions
-        S, A, iA = self.build_stension_matrices()
+        S, A, iA = self._build_stension_matrices()
 
         # Prepare homogenized quantities
-        rho_mat = self.collect_material_params("rho")
-        nu_mat = self.collect_material_params("nu")
-        rho = self.homogenized_quantity(rho_mat, phi)
-        nu = self.homogenized_quantity(nu_mat, phi)
+        rho_mat = self._collect_material_params("rho")
+        nu_mat = self._collect_material_params("nu")
+        rho = self._homogenized_quantity(rho_mat, phi)
+        nu = self._homogenized_quantity(nu_mat, phi)
 
         # Prepare variable coefficients
         Mo = Constant(prm["M0"]) # FIXME: degenerate mobility
@@ -301,25 +321,26 @@ class Incompressible(Model):
         a, b = Constant(a), Constant(b)
 
         # Prepare non-linear potential term
-        if len(phi) == 1:
-            s = Constant(prm["sigma"]["12"])
-            # iA = Constant(0.5/s) # see (3.46) in the thesis
-            # iA*s = Constant(0.5)
-            F = s*f(phi[0])
-            int_dF = Constant(0.5)*df(phi[0])*test["phi"][0]*dx
-        else:
-            F = multiwell(phi, f, S)
-            int_dF = derivative(F*dx, phi, tuple(dot(iA.T, test["phi"])))
-            # UFL ISSUE:
-            #   The above tuple is needed as long as `ListTensor` type is not
-            #   explicitly treated in `ufl/formoperators.py:211`,
-            #   cf. `ufl/formoperators.py:168`
-            # FIXME: check if this is a bug and report it
+        # if len(phi) == 1:
+        #     s = Constant(prm["sigma"]["12"])
+        #     # iA = Constant(0.5/s) # see (3.46) in the thesis
+        #     # iA*s = Constant(0.5)
+        #     F = s*f(phi[0])
+        #     int_dF = Constant(0.5)*df(phi[0])*test["phi"][0]*dx
+        # else:
+        F = multiwell(phi, f, S)
+        int_dF = derivative(F*dx, phi, tuple(dot(iA.T, test["phi"])))
+        # UFL ISSUE:
+        #   The above tuple is needed as long as `ListTensor` type is not
+        #   explicitly treated in `ufl/formoperators.py:211`,
+        #   cf. `ufl/formoperators.py:168`
+        # FIXME: check if this is a bug and report it
 
-            # Alternative approach is to define the above derivative explicitly
-            #dF = multiwell_derivative(phi, df, S)
-            #assert len(dF) == len(phi)
-            #int_dF = inner(dot(iA, dF), test["phi"])*dx
+        # Alternative approach is to define the above derivative explicitly
+        #from muflon.models.potentials import multiwell_derivative
+        #dF = multiwell_derivative(phi, df, S)
+        #assert len(dF) == len(phi)
+        #int_dF = inner(dot(iA, dF), test["phi"])*dx
 
         # System of CH eqns
         eqn_phi = (
@@ -359,4 +380,6 @@ class Incompressible(Model):
         system_ns = eqn_v + eqn_p
         #system_ns = eqn_v - eqn_p
 
-        return system_ch + system_ns
+        # Store created forms
+        self._forms_ch = (system_ch,)
+        self._forms_ns = (system_ns,)

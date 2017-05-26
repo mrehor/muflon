@@ -61,9 +61,11 @@ def create_discretization(scheme, mesh):
 
 def create_forms(DS, boundary_markers):
     model = ModelFactory.create("Incompressible", DS)
-    forms = model.get_forms()
+    model.setup()
+    forms_ch = model.forms_ch()
+    forms_ns = model.forms_ns()
 
-    return forms
+    return forms_ch, forms_ns
 
 def create_initial_conditions():
     ic = SimpleCppIC()
@@ -92,7 +94,7 @@ def test_scaling_mesh(scheme): #postprocessor
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh)
             DS.setup()
-            forms = create_forms(DS, boundary_markers)
+            forms_ch, forms_ns = create_forms(DS, boundary_markers)
             #problem = creare_problem(forms)
 
             # Prepare functions

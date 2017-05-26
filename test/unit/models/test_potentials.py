@@ -3,36 +3,18 @@ import pytest
 from dolfin import (as_backend_type, as_vector, assemble, Constant, dx, info,
                     inner, near, derivative, dot)
 
-from muflon.models.potentials import doublewell, multiwell, multiwell_derivative
-from muflon.models.forms import ModelFactory
-from muflon.functions.discretization import DiscretizationFactory
-from muflon.functions.iconds import SimpleCppIC
+from muflon.models.potentials import doublewell, multiwell
+from muflon.models.potentials import multiwell_derivative
 
-from unit.functions.test_discretization import get_arguments
+from unit.models.test_forms import prepare_model
+
 @pytest.mark.parametrize("th", [False,]) # True
 @pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled"]) # "FullyDecoupled"
 # "FullyDecoupled" DS needs different treatment of nonlinear potential
 @pytest.mark.parametrize("N", [2, 3])
-def test_potentials(scheme, N, th):
-    args = get_arguments(2, th)
-
-    DS = DiscretizationFactory.create(scheme, *args)
-    DS.parameters["N"] = N
-    DS.setup()
-
-    ic = SimpleCppIC()
-    ic.add("phi", "phi_1", phi_1=0.2)
-    if N == 3:
-        ic.add("phi", "phi_2", phi_2=0.2)
-    if th:
-        ic.add("th", "th_ref", th_ref=42.0)
-    DS.load_ic_from_simple_cpp(ic)
-    w = DS.solution_ctl()
-    w0 = DS.solution_ptl(0)
-    for i in range(len(w)):
-        w[i].assign(w0[i])
-
-    model = ModelFactory.create("Incompressible", DS)
+@pytest.mark.parametrize("dim", [2,])
+def test_potentials(scheme, N, dim, th):
+    model, DS = prepare_model(scheme, N, dim, th)
     prm = model.parameters["sigma"]
     prm.add("12", 2.0)
     if N == 3:
@@ -45,14 +27,18 @@ def test_potentials(scheme, N, th):
     phi_te = DS.create_test_fcns()[0]
     f, df, a, b = doublewell()
     del a, b # not needed
-    S, A, iA = model.build_stension_matrices()
+    S, A, iA = model._build_stension_matrices()
 
     # Define functional and linear form
     F = multiwell(phi, f, S)*dx
     dF = derivative(F, phi, tuple(dot(iA.T, phi_te)))
+    # -- test alternative (manual) approach
+    #dF = multiwell_derivative(phi, df, S)
+    #dF = inner(dot(iA, dF), phi_te)*dx
 
     # Check that the size of the domain is 1
-    assert near(assemble(Constant(1.0)*dx(domain=args[0])), 1.0)
+    mesh = DS.get_function_spaces()[0].mesh()
+    assert near(assemble(Constant(1.0)*dx(domain=mesh)), 1.0)
     # Assemble "inner(\vec{1}, phi_)*dx" (for later check of the derivative)
     phi_ = DS.create_test_fcns()[0]
     b1 = assemble(inner(as_vector(len(phi_)*[Constant(1.0),]), phi_)*dx)
