@@ -302,16 +302,14 @@ class Incompressible(Model):
 
         # Prepare non-linear potential term
         if len(phi) == 1:
-            # FIXME: Check this once again
             s = Constant(prm["sigma"]["12"])
-            # iA = Constant(0.5/prm["sigma"]["12"])
-            # dot(iA, s) = 0.5
+            # iA = Constant(0.5/s) # see (3.46) in the thesis
+            # iA*s = Constant(0.5)
             F = s*f(phi[0])
             int_dF = Constant(0.5)*df(phi[0])*test["phi"][0]*dx
         else:
             F = multiwell(phi, f, S)
-            #int_dF = derivative(F*dx, phi, tuple(dot(iA.T, test["phi"])))
-            # FIXME: Check if 'iA' as above is correctly plugged-in?
+            int_dF = derivative(F*dx, phi, tuple(dot(iA.T, test["phi"])))
             # UFL ISSUE:
             #   The above tuple is needed as long as `ListTensor` type is not
             #   explicitly treated in `ufl/formoperators.py:211`,
@@ -319,9 +317,9 @@ class Incompressible(Model):
             # FIXME: check if this is a bug and report it
 
             # Alternative approach is to define the above derivative explicitly
-            dF = multiwell_derivative(phi, df, S)
-            assert len(dF) == len(phi)
-            int_dF = inner(dot(iA, dF), test["phi"])*dx
+            #dF = multiwell_derivative(phi, df, S)
+            #assert len(dF) == len(phi)
+            #int_dF = inner(dot(iA, dF), test["phi"])*dx
 
         # System of CH eqns
         eqn_phi = (
