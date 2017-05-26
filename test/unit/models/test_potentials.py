@@ -45,8 +45,7 @@ def test_potentials(scheme, N, th):
     phi_te = DS.create_test_fcns()[0]
     f, df, a, b = doublewell()
     del a, b # not needed
-    S = model.build_sigma_matrix()
-    #import pdb; pdb.set_trace()
+    S = model.build_stension_matrices()[0]
 
     # Define functional and linear form
     F = multiwell(phi, f, S)*dx

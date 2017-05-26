@@ -78,7 +78,7 @@ def multiwell(phi, f, S):
     :param S: matrix of (constant) surface tensions with zero diagonal
     :type S: :py:class:`ufl.tensors.ListTensor`
     :returns: nonlinear potential :math:`F`
-    :rtype: :py:class:`ufl.algebra.Operator`
+    :rtype: :py:class:`ufl.core.expr.Expr`
     """
     # Extend phi by adding the last component expressed from V.A.C.
     N = len(phi) + 1
