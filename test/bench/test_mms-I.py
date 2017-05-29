@@ -60,56 +60,81 @@ def create_discretization(scheme, mesh):
 
     return DiscretizationFactory.create(scheme, mesh, P1, P1, P2, P1)
 
-def create_initial_conditions():
+def create_manufactured_solution():
+    coeffs_NS = dict(A0=2.0, a0=pi, b0=pi, w0=1.0)
+
+    ms = {}
+    ms["u"] = {"expr": "A0*sin(a0*x[0])*cos(b0*x[1])*sin(w0*t)",
+               "prms": coeffs_NS}
+    ms["v"] = {"expr": "-(A0*a0/pi)*cos(a0*x[0])*sin(b0*x[1])*sin(w0*t)",
+               "prms": coeffs_NS}
+    ms["p"] = {"expr": "A0*sin(a0*x[0])*sin(b0*x[1])*cos(w0*t)",
+               "prms": coeffs_NS}
+    ms["phi1"] = {"expr": "(1.0 + A1*cos(a1*x[0])*cos(b1*x[1])*sin(w1*t))/6.0",
+                  "prms": dict(A1=1.0, a1=pi, b1=pi, w1=1.0)}
+    ms["phi2"] = {"expr": "(1.0 + A2*cos(a2*x[0])*cos(b2*x[1])*sin(w2*t))/6.0",
+                  "prms": dict(A2=1.0, a2=pi, b2=pi, w2=1.2)}
+    ms["phi3"] = {"expr": "(1.0 + A3*cos(a3*x[0])*cos(b3*x[1])*sin(w3*t))/6.0",
+                  "prms": dict(A3=1.0, a3=pi, b3=pi, w3=0.8)}
+    return ms
+
+def create_initial_conditions(ms):
     ic = SimpleCppIC()
 
-    ic.add("phi", "(1.0 + A1*cos(a1*x[0])*cos(b1*x[1])*sin(w1*t))/6.0",
-           A1=1.0, a1=pi, b1=pi, w1=1.0, t=0.0)
-    ic.add("phi", "(1.0 + A2*cos(a2*x[0])*cos(b2*x[1])*sin(w2*t))/6.0",
-           A2=1.0, a2=pi, b2=pi, w2=1.2, t=0.0)
-    ic.add("phi", "(1.0 + A3*cos(a3*x[0])*cos(b3*x[1])*sin(w3*t))/6.0",
-           A3=1.0, a3=pi, b3=pi, w3=0.8, t=0.0)
-    ic.add("v", "A0*sin(a0*x[0])*cos(b0*x[1])*sin(w0*t)",
-           A0=2.0, a0=pi, b0=pi, w0=1.0, t=0.0)
-    ic.add("v", "-(A0*a0/pi)*cos(a0*x[0])*sin(b0*x[1])*sin(w0*t)",
-           A0=2.0, a0=pi, b0=pi, w0=1.0, t=0.0)
-    ic.add("p", "A0*sin(a0*x[0])*sin(b0*x[1])*cos(w0*t)",
-           A0=2.0, a0=pi, b0=pi, w0=1.0, t=0.0)
+    ic.add("phi", ms["phi1"]["expr"], t=0.0, **ms["phi1"]["prms"])
+    ic.add("phi", ms["phi2"]["expr"], t=0.0, **ms["phi2"]["prms"])
+    ic.add("phi", ms["phi3"]["expr"], t=0.0, **ms["phi3"]["prms"])
+    ic.add("v",   ms["u"]["expr"],    t=0.0, **ms["u"]["prms"])
+    ic.add("v",   ms["v"]["expr"],    t=0.0, **ms["v"]["prms"])
+    ic.add("p",   ms["p"]["expr"],    t=0.0, **ms["p"]["prms"])
 
     return ic
 
-def create_forms(DS, boundary_markers):
-    model = ModelFactory.create("Incompressible", DS)
+def create_source_terms(mesh, model, msol):
     S, LA, iLA = model.build_stension_matrices()
 
     # Space and time variables
-    mesh = DS.mesh()
     x = SpatialCoordinate(mesh)
     R = FunctionSpace(mesh, "R", 0)
     t_src = Function(R) # time function
     t = variable(t_src) # time variable
 
-    # Manufactured solution (components)
-    # FIXME: already defined in 'create_initial_conditions'
-    A0, A1, A2, A3 = Constant(2.0), Constant(1.0), Constant(1.0), Constant(1.0)
-    a0, a1, a2, a3 = Constant(pi), Constant(pi), Constant(pi), Constant(pi)
-    b0, b1, b2, b3 = Constant(pi), Constant(pi), Constant(pi), Constant(pi)
-    w0, w1, w2, w3 = Constant(1.0), Constant(1.0), Constant(1.2), Constant(0.8)
-    phi1 = (1.0 + A1*cos(a1*x[0])*cos(b1*x[1])*sin(w1*t))/6.0
-    phi2 = (1.0 + A2*cos(a2*x[0])*cos(b2*x[1])*sin(w2*t))/6.0
-    phi3 = (1.0 + A3*cos(a3*x[0])*cos(b3*x[1])*sin(w3*t))/6.0
-    v1 = A0*sin(a0*x[0])*cos(b0*x[1])*sin(w0*t)
-    v2 = -(A0*a0/pi)*cos(a0*x[0])*sin(b0*x[1])*sin(w0*t)
-    p = A0*sin(a0*x[0])*sin(b0*x[1])*cos(w0*t)
+    # Manufactured solution
+    A0 = Constant(msol["v"]["prms"]["A0"])
+    a0 = Constant(msol["v"]["prms"]["a0"])
+    b0 = Constant(msol["v"]["prms"]["b0"])
+    w0 = Constant(msol["v"]["prms"]["w0"])
 
-    # Solution vectors
+    A1 = Constant(msol["phi1"]["prms"]["A1"])
+    a1 = Constant(msol["phi1"]["prms"]["a1"])
+    b1 = Constant(msol["phi1"]["prms"]["b1"])
+    w1 = Constant(msol["phi1"]["prms"]["w1"])
+
+    A2 = Constant(msol["phi2"]["prms"]["A2"])
+    a2 = Constant(msol["phi2"]["prms"]["a2"])
+    b2 = Constant(msol["phi2"]["prms"]["b2"])
+    w2 = Constant(msol["phi2"]["prms"]["w2"])
+
+    A3 = Constant(msol["phi3"]["prms"]["A3"])
+    a3 = Constant(msol["phi3"]["prms"]["a3"])
+    b3 = Constant(msol["phi3"]["prms"]["b3"])
+    w3 = Constant(msol["phi3"]["prms"]["w3"])
+
+    phi1 = eval(msol["phi1"]["expr"])
+    phi2 = eval(msol["phi2"]["expr"])
+    phi3 = eval(msol["phi3"]["expr"])
+    v1   = eval(msol["u"]["expr"])
+    v2   = eval(msol["v"]["expr"])
+    p    = eval(msol["p"]["expr"])
+
     phi = as_vector([phi1, phi2, phi3])
-    v = as_vector([v1, v2])
+    v   = as_vector([v1, v2])
 
     # Intermediate manipulations
     prm = model.parameters
-    eps, Mo = Constant(prm["eps"]), Constant(prm["M0"])
     omega_2 = Constant(prm["omega_2"])
+    eps = Constant(prm["eps"])
+    Mo = Constant(prm["M0"])
     f, df, a, b = doublewell("poly4")
     a, b = Constant(a), Constant(b)
     varphi = variable(phi)
@@ -138,22 +163,7 @@ def create_forms(DS, boundary_markers):
         - f_cap
     )
 
-    # FIXME: Delete the following block
-    # W = DS.get_function_spaces()[0]
-    # g1_ = Function(W.sub(0).sub(0).collapse())
-    # t_src.assign(Constant(1.0))
-    # g1 = project(g_src[0], function=g1_)
-    # pyplot.figure()
-    # plot(g1, title="g1", mode="warp")
-    # pyplot.figure()
-    # plot(f_src, mesh=mesh, title="f")
-    # pyplot.show()
-
-    model.setup(f_src, g_src)
-    forms_ch = model.forms_ch()
-    forms_ns = model.forms_ns()
-
-    return forms_ch, forms_ns, t_src
+    return f_src, g_src, t_src
 
 @pytest.mark.parametrize("scheme", ["Monolithic",]) # "SemiDecoupled", "FullyDecoupled"
 def test_scaling_mesh(scheme): #postprocessor
@@ -167,6 +177,9 @@ def test_scaling_mesh(scheme): #postprocessor
     prm_file = os.path.join(scriptdir, "muflon-parameters.xml")
     mpset.read(prm_file)
 
+    msol = create_manufactured_solution()
+    ic = create_initial_conditions(msol)
+
     # Iterate over refinement level
     for level in range(4, 5):
 
@@ -175,11 +188,16 @@ def test_scaling_mesh(scheme): #postprocessor
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh)
             DS.setup()
-
-            ic = create_initial_conditions()
             DS.load_ic_from_simple_cpp(ic)
 
-            forms_ch, forms_ns, t_src = create_forms(DS, boundary_markers)
+            model = ModelFactory.create("Incompressible", DS)
+            f_src, g_src, t_src = create_source_terms(mesh, model, msol)
+            # NOTE: Source terms are time-dependent. The updates to these terms
+            #       are possible via ``t_src.assign(Constant(t))``, where ``t``
+            #       denotes the actual time value.
+            model.setup(f_src, g_src)
+            forms_ch = model.forms_ch()
+            forms_ns = model.forms_ns()
 
             #problem = creare_problem()
 
