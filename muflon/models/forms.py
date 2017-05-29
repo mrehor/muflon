@@ -192,7 +192,7 @@ class Model(object):
 
         return (as_matrix(S), as_matrix(A), as_matrix(iA))
 
-    def _collect_material_params(self, key):
+    def collect_material_params(self, key):
         """
         Converts material parameters like density and viscosity into
         a single list which is then returned.
@@ -211,7 +211,7 @@ class Model(object):
         assert N == len(self._test["phi"]) + 1
         return q
 
-    def _homogenized_quantity(self, q, phi, cut=True):
+    def homogenized_quantity(self, q, phi, cut=True):
         """
         From given material parameters (density, viscosity, conductivity)
         builds homogenized quantity and returns the result.
@@ -304,10 +304,10 @@ class Incompressible(Model):
         S, A, iA = self.build_stension_matrices()
 
         # Prepare homogenized quantities
-        rho_mat = self._collect_material_params("rho")
-        nu_mat = self._collect_material_params("nu")
-        rho = self._homogenized_quantity(rho_mat, phi)
-        nu = self._homogenized_quantity(nu_mat, phi)
+        rho_mat = self.collect_material_params("rho")
+        nu_mat = self.collect_material_params("nu")
+        rho = self.homogenized_quantity(rho_mat, phi)
+        nu = self.homogenized_quantity(nu_mat, phi)
 
         # Prepare variable coefficients
         Mo = Constant(prm["M0"]) # FIXME: degenerate mobility

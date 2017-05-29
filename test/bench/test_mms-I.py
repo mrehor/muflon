@@ -124,10 +124,10 @@ def create_forms(DS, boundary_markers):
                            # FIXME: use div in the 2nd term
 
     # Source term for NS part
-    rho_mat = model._collect_material_params("rho")
-    nu_mat = model._collect_material_params("nu")
-    rho = model._homogenized_quantity(rho_mat, phi)
-    nu = model._homogenized_quantity(nu_mat, phi)
+    rho_mat = model.collect_material_params("rho")
+    nu_mat = model.collect_material_params("nu")
+    rho = model.homogenized_quantity(rho_mat, phi)
+    nu = model.homogenized_quantity(nu_mat, phi)
     J = total_flux(Mo, rho_mat, chi)
     f_cap = capillary_force(phi, chi, LA)
     f_src = (
