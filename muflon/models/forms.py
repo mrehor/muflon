@@ -175,22 +175,22 @@ class Model(object):
         assert S.shape[0] == S.shape[1]   # check we have a square matrix
         S += S.T                          # make the matrix symmetric
 
-        # Build (N-1) x (N-1) matrix A (or Lambda)
-        A = S[:-1, :-1].copy()
-        for i in range(A.shape[0]):
-            for j in range(A.shape[1]):
-                A[i,j] = S[i,-1] + S[j,-1] - S[i,j]
+        # Build (N-1) x (N-1) matrix LA (or LAmbda)
+        LA = S[:-1, :-1].copy()
+        for i in range(LA.shape[0]):
+            for j in range(LA.shape[1]):
+                LA[i,j] = S[i,-1] + S[j,-1] - S[i,j]
 
-        # Compute inverse of A
-        iA = np.linalg.inv(A)
+        # Compute inverse of LA
+        iLA = np.linalg.inv(LA)
 
         # Wrap components using ``Constant`` if required
         if const:
             S = [[Constant(S[i,j]) for j in range(N)] for i in range(N)]
-            A = [[Constant(A[i,j]) for j in range(N-1)] for i in range(N-1)]
-            iA = [[Constant(iA[i,j]) for j in range(N-1)] for i in range(N-1)]
+            LA = [[Constant(LA[i,j]) for j in range(N-1)] for i in range(N-1)]
+            iLA = [[Constant(iLA[i,j]) for j in range(N-1)] for i in range(N-1)]
 
-        return (as_matrix(S), as_matrix(A), as_matrix(iA))
+        return (as_matrix(S), as_matrix(LA), as_matrix(iLA))
 
     def collect_material_params(self, key):
         """
@@ -301,7 +301,7 @@ class Incompressible(Model):
         omega_2 = Constant(prm["omega_2"])
 
         # Matrices built from surface tensions
-        S, A, iA = self.build_stension_matrices()
+        S, LA, iLA = self.build_stension_matrices()
 
         # Prepare homogenized quantities
         rho_mat = self.collect_material_params("rho")
@@ -312,7 +312,7 @@ class Incompressible(Model):
         # Prepare variable coefficients
         Mo = Constant(prm["M0"]) # FIXME: degenerate mobility
         J = total_flux(Mo, rho_mat, chi)
-        f_cap = capillary_force(phi, chi, A)
+        f_cap = capillary_force(phi, chi, LA)
 
         # Choose double-well potential
         f, df, a, b = doublewell("poly4")
@@ -321,13 +321,13 @@ class Incompressible(Model):
         # Prepare non-linear potential term
         # if len(phi) == 1:
         #     s = Constant(prm["sigma"]["12"])
-        #     # iA = Constant(0.5/s) # see (3.46) in the thesis
-        #     # iA*s = Constant(0.5)
+        #     # iLA = Constant(0.5/s) # see (3.46) in the thesis
+        #     # iLA*s = Constant(0.5)
         #     F = s*f(phi[0])
         #     int_dF = Constant(0.5)*df(phi[0])*test["phi"][0]*dx
         # else:
         F = multiwell(phi, f, S)
-        int_dF = derivative(F*dx, phi, tuple(dot(iA.T, test["phi"])))
+        int_dF = derivative(F*dx, phi, tuple(dot(iLA.T, test["phi"])))
         # UFL ISSUE:
         #   The above tuple is needed as long as `ListTensor` type is not
         #   explicitly treated in `ufl/formoperators.py:211`,
@@ -338,7 +338,7 @@ class Incompressible(Model):
         #from muflon.models.potentials import multiwell_derivative
         #dF = multiwell_derivative(phi, df, S)
         #assert len(dF) == len(phi)
-        #int_dF = inner(dot(iA, dF), test["phi"])*dx
+        #int_dF = inner(dot(iLA, dF), test["phi"])*dx
 
         # System of CH eqns
         eqn_phi = (

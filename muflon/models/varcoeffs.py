@@ -23,7 +23,7 @@ that are used in UFL forms representing CHNSF type models.
 from dolfin import as_vector, Constant
 from dolfin import dot, grad
 
-def capillary_force(phi, chi, A):
+def capillary_force(phi, chi, LA):
     """
     Builds capillary force in the form
 
@@ -36,7 +36,7 @@ def capillary_force(phi, chi, A):
     :returns: vector representing the capillary force
     :rtype: :py:class:`ufl.core.expr.Expr`
     """
-    f_cap = dot(grad(phi).T, dot(A, chi))
+    f_cap = dot(grad(phi).T, dot(LA, chi))
     return f_cap
 
 def total_flux(Mo, rho_mat, chi):
