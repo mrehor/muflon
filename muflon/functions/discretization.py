@@ -241,6 +241,13 @@ class Discretization(object):
         for var in self._varnames:
             self._FE[var] = eval("FE_"+var)
 
+    def mesh(self):
+        """
+        :returns: computational mesh
+        :rtype: :py:class:`dolfin.Mesh`
+        """
+        return self._mesh
+
     def setup(self):
         """
         An abstract method.

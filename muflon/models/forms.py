@@ -145,7 +145,7 @@ class Model(object):
             raise AttributeError(msg)
         return self._forms_ns
 
-    def _build_stension_matrices(self, const=True):
+    def build_stension_matrices(self, const=True):
         """
         :returns: tuple of matrices :math:`\\bf{\\Sigma}, \\bf{\\Lambda}`
                   and :math:`\\bf{\\Lambda^{-1}}`
@@ -258,17 +258,17 @@ class Incompressible(Model):
         super(Incompressible, self).__init__(*args)
         self.parameters.add("omega_2", 1.0)
 
-    def setup(self, f_ext=None, g_num=None):
+    def setup(self, f_src=None, g_src=None):
         # FIXME: Does not work for all DS
         """
         Create forms based on provided parameters.
 
-        :param f_ext: external source term in the balance of linear momentum
+        :param f_src: external source term in the balance of linear momentum
                       (defaults to zero vector)
-        :type f_ext: :py:class:`dolfin.Expression` (or anything reasonable)
-        :param g_num: artificial source term in the CH part of the system,
+        :type f_src: :py:class:`dolfin.Expression` (or anything reasonable)
+        :param g_src: artificial source term in the CH part of the system,
                       for numerical testing only (defaults to zero vector)
-        :type g_num: :py:class:`dolfin.Expression` (or anything reasonable)
+        :type g_src: :py:class:`dolfin.Expression` (or anything reasonable)
         """
         prm = self.parameters
 
@@ -283,17 +283,15 @@ class Incompressible(Model):
         del chi0, p0 # not needed
 
         # Source terms
-        if f_ext is None:
-            f_ext = as_vector(len(v)*[Constant(0.0),])
+        if f_src is None:
+            f_src = as_vector(len(v)*[Constant(0.0),])
         else:
-            assert isinstance(f_ext, type(v))
-            assert len(f_ext) == len(v)
+            assert len(f_src) == len(v)
 
-        if g_num is None:
-            g_num = as_vector(len(phi)*[Constant(0.0),])
+        if g_src is None:
+            g_src = as_vector(len(phi)*[Constant(0.0),])
         else: # for numerical testing only
-            assert isinstance(g_num, type(phi))
-            assert len(g_num) == len(phi)
+            assert len(g_src) == len(phi)
 
         # Discretization parameters
         idt = Constant(1.0/self.dt)
@@ -303,7 +301,7 @@ class Incompressible(Model):
         omega_2 = Constant(prm["omega_2"])
 
         # Matrices built from surface tensions
-        S, A, iA = self._build_stension_matrices()
+        S, A, iA = self.build_stension_matrices()
 
         # Prepare homogenized quantities
         rho_mat = self._collect_material_params("rho")
@@ -346,7 +344,7 @@ class Incompressible(Model):
         eqn_phi = (
               idt*inner(phi - phi0, test["chi"])
             + inner(dot(grad(phi), v), test["chi"]) # FIXME: div(phi[i]*v)
-            - inner(g_num, test["chi"])
+            - inner(g_src, test["chi"])
             + Mo*inner(grad(chi), grad(test["chi"]))
         )*dx
 
@@ -354,7 +352,7 @@ class Incompressible(Model):
               inner(chi, test["phi"])
             - 0.5*a*eps*inner(grad(phi), grad(test["phi"]))
         )*dx
-        eqn_chi += (b/eps)*int_dF
+        eqn_chi -= (b/eps)*int_dF
 
         system_ch = eqn_phi + eqn_chi
         # J_ch = derivative(system_ch, tuple(list(phi)+list(chi)),
@@ -370,8 +368,8 @@ class Incompressible(Model):
             + inner(dot(grad(v), rho*v + omega_2*J), test["v"])
             + Constant(2.0)*nu*inner(Dv, Dv_)
             - p*div(test["v"])
-            - inner(f_ext, test["v"])
-            - Constant(0.5)*a*eps*inner(f_cap, test["v"])
+            - inner(f_cap, test["v"])
+            - inner(f_src, test["v"])
         )*dx
 
         eqn_p = div(v)*test["p"]*dx

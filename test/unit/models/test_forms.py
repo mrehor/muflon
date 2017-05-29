@@ -30,7 +30,7 @@ def prepare_model(scheme, N, dim, th):
 
     return model, DS
 
-# FIXME: does not work with the temperature yes
+# FIXME: does not work with the temperature yet
 @pytest.mark.parametrize("th", [False,]) # True
 @pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled"]) # "FullyDecoupled"
 @pytest.mark.parametrize("N", [2, 3])
