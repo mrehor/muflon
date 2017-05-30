@@ -25,6 +25,8 @@ __license__ = "GNU LGPL v3"
 
 # Import public API
 from muflon.common.parameters import mpset, MuflonParameterSet
+from muflon.common.boilerplate import prepare_output_directory
+from muflon.io.writers import XDMFWriter, HDF5Writer
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.primitives import as_primitive, PrimitiveShell
 from muflon.functions.iconds import SimpleCppIC
