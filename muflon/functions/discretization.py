@@ -240,13 +240,7 @@ class Discretization(object):
         self._FE = dict()
         for var in self._varnames:
             self._FE[var] = eval("FE_"+var)
-
-    def mesh(self):
-        """
-        :returns: computational mesh
-        :rtype: :py:class:`dolfin.Mesh`
-        """
-        return self._mesh
+        self._subspace = {}
 
     def setup(self):
         """
@@ -267,6 +261,12 @@ class Discretization(object):
                to fit the vector of primitive variables.
                \"\"\"
                pass # need to be implemented
+
+        Moreover, the implementation of this method must equip the private
+        attribute ``_subspace``, which is has been initialized as an empty
+        dictionary, with subspaces for individual primitive variables.
+        These subspaces then can be requested throughout the method
+        :py:meth:`subspace`.
 
         Examples:
 
@@ -364,18 +364,22 @@ class Discretization(object):
         else:
             return pv
 
-    def get_number_of_ptl(self):
+    def mesh(self):
         """
-        Returns total number of slots created for storing primitive variables
-        at previous time levels.
-
-        :returns: number of PTL
-        :rtype: int
+        :returns: computational mesh
+        :rtype: :py:class:`dolfin.Mesh`
         """
-        assert hasattr(self, "_solution_ptl")
-        return len(self._solution_ptl)
+        return self._mesh
 
-    def get_function_spaces(self):
+    def finite_elements(self):
+        """
+        :returns: dictionary with finite elements used to approximate
+                  individual components of primitive variables
+        :rtype: dict
+        """
+        return self._FE
+
+    def function_spaces(self):
         """
         Ask solution functions for the function spaces on which they live.
 
@@ -386,6 +390,41 @@ class Discretization(object):
         spaces = [w.function_space() for w in self._solution_ctl]
         return tuple(spaces)
 
+    def subspace(self, var, i=None):
+        """
+        Get subspace of variable ``var[i]``, where ``i`` must be ``None`` for
+        scalar variables.
+
+        (Appropriate for generating boundary conditions.)
+
+        :param var: variable name
+        :type var: str
+        :param i: component number (``None`` for scalar variables)
+        :type i: int
+        :returns: subspace on which requested variable lives
+        :rtype: :py:class:`dolfin.FunctionSpace`
+        """
+        assert bool(self._subspace) # check if dict is not empty
+        if i is None:
+            if var in ["phi", "chi", "v"]:
+                msg = "For vector quantities only subspaces for individual" \
+                      " components can be extracted"
+                raise ValueError(msg)
+            return self._subspace[var]
+        else:
+            return self._subspace[var][i]
+
+    def number_of_ptl(self):
+        """
+        Returns total number of slots created for storing primitive variables
+        at previous time levels.
+
+        :returns: number of PTL
+        :rtype: int
+        """
+        assert hasattr(self, "_solution_ptl")
+        return len(self._solution_ptl)
+
     def create_test_fcns(self):
         """
         Create test functions corresponding to primitive variables.
@@ -394,7 +433,7 @@ class Discretization(object):
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
-        spaces = self.get_function_spaces()
+        spaces = self.function_spaces()
         te_fcns = [TestFunction(V) for V in spaces]
 
         return self._fit_primitives(te_fcns)
@@ -407,7 +446,7 @@ class Discretization(object):
         :rtype: tuple
         """
         assert hasattr(self, "_fit_primitives")
-        spaces = self.get_function_spaces()
+        spaces = self.function_spaces()
         tr_fcns = [TrialFunction(V) for V in spaces]
 
         return self._fit_primitives(tr_fcns)
@@ -494,6 +533,19 @@ class Monolithic(Discretization):
 
         # Build function spaces
         W = FunctionSpace(self._mesh, MixedElement(elements))
+        if N == 2:
+            self._subspace["phi"] = [W.sub(0),]
+            self._subspace["chi"] = [W.sub(1),]
+        else:
+            self._subspace["phi"] = [W.sub(0).sub(i) for i in range(N-1)]
+            self._subspace["chi"] = [W.sub(1).sub(i) for i in range(N-1)]
+        if gdim == 1:
+            self._subspace["v"] = [W.sub(2),]
+        else:
+            self._subspace["v"] = [W.sub(2).sub(i) for i in range(gdim)]
+        self._subspace["p"] = W.sub(3)
+        if W.num_sub_spaces() == 5:
+            self._subspace["th"] = W.sub(4)
 
         # Create solution variable at ctl
         w_ctl = (Function(W),)
@@ -583,6 +635,15 @@ class SemiDecoupled(Discretization):
         # Build function spaces
         W_ch = FunctionSpace(self._mesh, MixedElement(elements_ch))
         W_ns = FunctionSpace(self._mesh, MixedElement(elements_ns))
+        self._subspace["phi"] = [W_ch.sub(i) for i in range(N-1)]
+        self._subspace["chi"] = [W_ch.sub(i) for i in range(N-1, 2*(N-1))]
+        if gdim == 1:
+            self._subspace["v"] = [W_ns.sub(0),]
+        else:
+            self._subspace["v"] = [W_ns.sub(0).sub(i) for i in range(gdim)]
+        self._subspace["p"] = W_ns.sub(1)
+        if W_ns.num_sub_spaces() == 3:
+            self._subspace["th"] = W_ns.sub(2)
 
         # Create solution variables at ctl
         w_ctl = (Function(W_ch), Function(W_ns))
@@ -691,6 +752,12 @@ class FullyDecoupled(Discretization):
 
         # Build function spaces
         spaces = list(map(lambda FE: FunctionSpace(self._mesh, FE), elements))
+        self._subspace["phi"] = [spaces[i] for i in range(N-1)]
+        self._subspace["chi"] = [spaces[i] for i in range(N-1, 2*(N-1))]
+        self._subspace["v"] = [spaces[2*(N-1)+i] for i in range(gdim)]
+        self._subspace["p"] = spaces[2*(N-1)+gdim]
+        if len(spaces) == 2*(N-1)+gdim+2:
+            self._subspace["th"] = spaces[2*(N-1)+gdim+1]
 
         # Create solution variables at ctl
         w_ctl = tuple(map(lambda FS: Function(FS), spaces))

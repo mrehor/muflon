@@ -37,7 +37,7 @@ def test_potentials(scheme, N, dim, th):
     #dF = inner(dot(iA, dF), phi_te)*dx
 
     # Check that the size of the domain is 1
-    mesh = DS.get_function_spaces()[0].mesh()
+    mesh = DS.function_spaces()[0].mesh()
     assert near(assemble(Constant(1.0)*dx(domain=mesh)), 1.0)
     # Assemble "inner(\vec{1}, phi_)*dx" (for later check of the derivative)
     phi_ = DS.create_test_fcns()[0]

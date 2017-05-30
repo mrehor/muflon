@@ -106,7 +106,7 @@ class Model(object):
         # FIXME: Which split is correct? Indexed or non-indexed?
         #        Which one uses 'restrict_as_ufc_function'?
         self._pv_ctl = DS.primitive_vars_ctl(indexed=True)
-        for i in range(DS.get_number_of_ptl()):
+        for i in range(DS.number_of_ptl()):
             setattr(self, "_pv_ptl%i" % i,
                     DS.primitive_vars_ptl(i, indexed=True))
 

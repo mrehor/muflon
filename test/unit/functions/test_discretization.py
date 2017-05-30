@@ -40,14 +40,24 @@ def test_discretization_schemes(scheme, N, dim, th):
     DS = DiscretizationFactory.create(scheme, *args)
 
     # --- Check that DS raises without calling the setup method ---------------
-    for meth in ["solution_ctl", "primitive_vars_ctl", "get_function_spaces",
+    for meth in ["solution_ctl", "primitive_vars_ctl", "function_spaces",
                  "create_trial_fcns", "create_test_fcns"]:
         with pytest.raises(AssertionError):
             foo = eval("DS." + meth + "()")
+    with pytest.raises(AssertionError):
+        V_v = DS.subspace("v", 0)
 
     # Do the necessary setup
     DS.parameters["N"] = N
     DS.setup()
+
+    # --- Check function spaces -----------------------------------------------
+    with pytest.raises(ValueError):
+        V_v = DS.subspace("v")
+    with pytest.raises(TypeError):
+        V_p = DS.subspace("p", 0)
+    V_v = DS.subspace("v", 0)
+    V_p = DS.subspace("p")
 
     # --- Check solution functions --------------------------------------------
     w = DS.solution_ctl()
