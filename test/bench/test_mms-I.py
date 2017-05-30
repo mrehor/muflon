@@ -62,11 +62,10 @@ def create_discretization(scheme, mesh):
 
 def create_manufactured_solution():
     coeffs_NS = dict(A0=2.0, a0=pi, b0=pi, w0=1.0)
-
     ms = {}
-    ms["u"] = {"expr": "A0*sin(a0*x[0])*cos(b0*x[1])*sin(w0*t)",
+    ms["v1"] = {"expr": "A0*sin(a0*x[0])*cos(b0*x[1])*sin(w0*t)",
                "prms": coeffs_NS}
-    ms["v"] = {"expr": "-(A0*a0/pi)*cos(a0*x[0])*sin(b0*x[1])*sin(w0*t)",
+    ms["v2"] = {"expr": "-(A0*a0/pi)*cos(a0*x[0])*sin(b0*x[1])*sin(w0*t)",
                "prms": coeffs_NS}
     ms["p"] = {"expr": "A0*sin(a0*x[0])*sin(b0*x[1])*cos(w0*t)",
                "prms": coeffs_NS}
@@ -78,17 +77,45 @@ def create_manufactured_solution():
                   "prms": dict(A3=1.0, a3=pi, b3=pi, w3=0.8)}
     return ms
 
+def create_exact_solution(ms, FE):
+    es = {}
+    es["phi1"] = Expression(ms["phi1"]["expr"], element=FE["phi"],
+                            t=0.0, **ms["phi1"]["prms"])
+    es["phi2"] = Expression(ms["phi2"]["expr"], element=FE["phi"],
+                            t=0.0, **ms["phi2"]["prms"])
+    es["phi3"] = Expression(ms["phi3"]["expr"], element=FE["phi"],
+                            t=0.0, **ms["phi3"]["prms"])
+    es["v1"] = Expression(ms["v1"]["expr"], element=FE["v"],
+                          t=0.0, **ms["v1"]["prms"])
+    es["v2"] = Expression(ms["v2"]["expr"], element=FE["v"],
+                          t=0.0, **ms["v2"]["prms"])
+    es["v"] = Expression((ms["v1"]["expr"], ms["v2"]["expr"]),
+                          element=VectorElement(FE["v"], dim=2),
+                          t=0.0, **ms["v2"]["prms"])
+    es["p"] = Expression(ms["p"]["expr"], element=FE["p"],
+                         t=0.0, **ms["p"]["prms"])
+
+    return es
+
 def create_initial_conditions(ms):
     ic = SimpleCppIC()
-
     ic.add("phi", ms["phi1"]["expr"], t=0.0, **ms["phi1"]["prms"])
     ic.add("phi", ms["phi2"]["expr"], t=0.0, **ms["phi2"]["prms"])
     ic.add("phi", ms["phi3"]["expr"], t=0.0, **ms["phi3"]["prms"])
-    ic.add("v",   ms["u"]["expr"],    t=0.0, **ms["u"]["prms"])
-    ic.add("v",   ms["v"]["expr"],    t=0.0, **ms["v"]["prms"])
+    ic.add("v",   ms["v1"]["expr"],   t=0.0, **ms["v1"]["prms"])
+    ic.add("v",   ms["v2"]["expr"],   t=0.0, **ms["v2"]["prms"])
     ic.add("p",   ms["p"]["expr"],    t=0.0, **ms["p"]["prms"])
 
     return ic
+
+def create_bcs(DS, boundary_markers, esol):
+    bcs_v1 = DirichletBC(DS.subspace("v", 0), esol["v1"], boundary_markers, 0)
+    bcs_v2 = DirichletBC(DS.subspace("v", 1), esol["v2"], boundary_markers, 0)
+    bcs_v = [bcs_v1, bcs_v2]
+    bcs_p = []
+    #bcs_p.append(DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0))
+
+    return bcs_v, bcs_p
 
 def create_source_terms(mesh, model, msol):
     S, LA, iLA = model.build_stension_matrices()
@@ -100,10 +127,10 @@ def create_source_terms(mesh, model, msol):
     t = variable(t_src) # time variable
 
     # Manufactured solution
-    A0 = Constant(msol["v"]["prms"]["A0"])
-    a0 = Constant(msol["v"]["prms"]["a0"])
-    b0 = Constant(msol["v"]["prms"]["b0"])
-    w0 = Constant(msol["v"]["prms"]["w0"])
+    A0 = Constant(msol["v1"]["prms"]["A0"])
+    a0 = Constant(msol["v1"]["prms"]["a0"])
+    b0 = Constant(msol["v1"]["prms"]["b0"])
+    w0 = Constant(msol["v1"]["prms"]["w0"])
 
     A1 = Constant(msol["phi1"]["prms"]["A1"])
     a1 = Constant(msol["phi1"]["prms"]["a1"])
@@ -123,8 +150,8 @@ def create_source_terms(mesh, model, msol):
     phi1 = eval(msol["phi1"]["expr"])
     phi2 = eval(msol["phi2"]["expr"])
     phi3 = eval(msol["phi3"]["expr"])
-    v1   = eval(msol["u"]["expr"])
-    v2   = eval(msol["v"]["expr"])
+    v1   = eval(msol["v1"]["expr"])
+    v2   = eval(msol["v2"]["expr"])
     p    = eval(msol["p"]["expr"])
 
     phi = as_vector([phi1, phi2, phi3])
@@ -189,6 +216,8 @@ def test_scaling_mesh(scheme): #postprocessor
             DS = create_discretization(scheme, mesh)
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
+            esol = create_exact_solution(msol, DS.finite_elements())
+            bcs_v, bcs_p = create_bcs(DS, boundary_markers, esol)
 
             model = ModelFactory.create("Incompressible", DS)
             f_src, g_src, t_src = create_source_terms(mesh, model, msol)
@@ -218,17 +247,28 @@ def test_scaling_mesh(scheme): #postprocessor
     # Flush plots as we now have data for all ndofs values
 
     # # Plot solution
+    # t = 4.0
     # pyplot.figure()
     # pyplot.subplot(2, 2, 1)
-    # plot(phi1, title="phi1")
+    # #plot(phi1, title="phi1")
+    # esol["phi1"].t = t
+    # plot(esol["phi1"], mesh=mesh, title="phi1_ex")
     # pyplot.subplot(2, 2, 2)
-    # plot(phi2, title="phi2")
+    # #plot(phi2, title="phi2")
+    # esol["phi2"].t = t
+    # plot(esol["phi2"], mesh=mesh, title="phi2_ex")
     # pyplot.subplot(2, 2, 3)
-    # plot(phi3, title="phi3")
+    # # plot(phi3, title="phi3")
+    # esol["phi3"].t = t
+    # plot(esol["phi3"], mesh=mesh, title="phi3_ex")
     # pyplot.figure()
-    # plot(v.dolfin_repr(), title="velocity")
+    # # plot(v.dolfin_repr(), title="velocity")
+    # esol["v"].t = t
+    # plot(esol["v"], mesh=mesh, title="v_ex")
     # pyplot.figure()
-    # plot(p.dolfin_repr(), title="pressure", mode="warp")
+    # # plot(p.dolfin_repr(), title="pressure", mode="warp")
+    # esol["p"].t = t
+    # plot(esol["p"], mesh=mesh, title="p_ex", mode="warp")
     # pyplot.show()
 
     # Cleanup
