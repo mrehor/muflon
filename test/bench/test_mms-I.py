@@ -115,7 +115,7 @@ def create_bcs(DS, boundary_markers, esol):
     bcs_p = []
     #bcs_p.append(DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0))
 
-    return bcs_v, bcs_p
+    return bcs_v + bcs_p
 
 def create_source_terms(mesh, model, msol):
     S, LA, iLA = model.build_stension_matrices()
@@ -192,6 +192,16 @@ def create_source_terms(mesh, model, msol):
 
     return f_src, g_src, t_src
 
+def create_solver(scheme, sol_ctl, forms, bcs):
+    if scheme == "Monolithic":
+        w = sol_ctl[0]
+        F = forms["linear"][0]
+        J = derivative(F, w)
+        problem = NonlinearVariationalProblem(F, w, bcs, J)
+        solver = NonlinearVariationalSolver(problem)
+
+    return solver
+
 @pytest.mark.parametrize("scheme", ["Monolithic",]) # "SemiDecoupled", "FullyDecoupled"
 def test_scaling_mesh(scheme): #postprocessor
     """
@@ -217,21 +227,24 @@ def test_scaling_mesh(scheme): #postprocessor
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
             esol = create_exact_solution(msol, DS.finite_elements())
-            bcs_v, bcs_p = create_bcs(DS, boundary_markers, esol)
+            bcs = create_bcs(DS, boundary_markers, esol)
 
             model = ModelFactory.create("Incompressible", DS)
             f_src, g_src, t_src = create_source_terms(mesh, model, msol)
             # NOTE: Source terms are time-dependent. The updates to these terms
             #       are possible via ``t_src.assign(Constant(t))``, where ``t``
             #       denotes the actual time value.
-            model.setup(f_src, g_src)
-            forms_ch = model.forms_ch()
-            forms_ns = model.forms_ns()
+            model.load_sources(f_src, g_src)
+            forms = model.create_forms(scheme)
+            # NOTE: Here is the possibility to modify forms, e.g. by adding
+            #       boundary integrals.
 
-            #problem = creare_problem()
+            sol_ctl = DS.solution_ctl()
+            solver = create_solver(scheme, sol_ctl, forms, bcs)
+            # FIXME: implement SolverFactory
 
-            # Prepare functions
-            w = DS.solution_ctl()
+            # FIXME: Delete the following block of code
+            # w = DS.solution_ctl()
             # w0 = DS.solution_ptl(0)
             # for i in range(len(w)):
             #     w[i].assign(w0[i])
@@ -239,6 +252,8 @@ def test_scaling_mesh(scheme): #postprocessor
             # phi1, phi2, phi3 = phi.split(True)
 
         # Solve
+        with Timer("Solve") as t_solve:
+            solver.solve()
 
         # Prepare results
 
