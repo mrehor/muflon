@@ -1,5 +1,3 @@
-"""Method of Manufactured Solutions - test case I."""
-
 # Copyright (C) 2017 Martin Rehor
 #
 # This file is part of MUFLON.
@@ -17,12 +15,16 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
+"""
+Method of Manufactured Solutions - test case I.
+"""
+
 from __future__ import print_function
 
 import pytest
 import os
 import gc
-import itertools
+import six
 
 from dolfin import *
 from matplotlib import pyplot
@@ -77,22 +79,29 @@ def create_manufactured_solution():
                   "prms": dict(A3=1.0, a3=pi, b3=pi, w3=0.8)}
     return ms
 
-def create_exact_solution(ms, FE):
+def create_exact_solution(ms, FE, degrise=3):
     es = {}
-    es["phi1"] = Expression(ms["phi1"]["expr"], element=FE["phi"],
+    es["phi1"] = Expression(ms["phi1"]["expr"], #element=FE["phi"],
+                            degree=FE["phi"].degree()+degrise,
                             t=0.0, **ms["phi1"]["prms"])
-    es["phi2"] = Expression(ms["phi2"]["expr"], element=FE["phi"],
+    es["phi2"] = Expression(ms["phi2"]["expr"], #element=FE["phi"],
+                            degree=FE["phi"].degree()+degrise,
                             t=0.0, **ms["phi2"]["prms"])
-    es["phi3"] = Expression(ms["phi3"]["expr"], element=FE["phi"],
+    es["phi3"] = Expression(ms["phi3"]["expr"], #element=FE["phi"],
+                            degree=FE["phi"].degree()+degrise,
                             t=0.0, **ms["phi3"]["prms"])
-    es["v1"] = Expression(ms["v1"]["expr"], element=FE["v"],
+    es["v1"] = Expression(ms["v1"]["expr"], #element=FE["v"],
+                          degree=FE["v"].degree()+degrise,
                           t=0.0, **ms["v1"]["prms"])
-    es["v2"] = Expression(ms["v2"]["expr"], element=FE["v"],
+    es["v2"] = Expression(ms["v2"]["expr"], #element=FE["v"],
+                          degree=FE["v"].degree()+degrise,
                           t=0.0, **ms["v2"]["prms"])
     es["v"] = Expression((ms["v1"]["expr"], ms["v2"]["expr"]),
-                          element=VectorElement(FE["v"], dim=2),
+                          #element=VectorElement(FE["v"], dim=2),
+                          degree=FE["v"].degree()+degrise,
                           t=0.0, **ms["v2"]["prms"])
-    es["p"] = Expression(ms["p"]["expr"], element=FE["p"],
+    es["p"] = Expression(ms["p"]["expr"], #element=FE["p"],
+                         degree=FE["p"].degree()+degrise,
                          t=0.0, **ms["p"]["prms"])
 
     return es
@@ -112,10 +121,9 @@ def create_bcs(DS, boundary_markers, esol):
     bcs_v1 = DirichletBC(DS.subspace("v", 0), esol["v1"], boundary_markers, 0)
     bcs_v2 = DirichletBC(DS.subspace("v", 1), esol["v2"], boundary_markers, 0)
     bcs_v = [bcs_v1, bcs_v2]
-    bcs_p = []
-    #bcs_p.append(DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0))
+    bcs_p = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
 
-    return bcs_v + bcs_p
+    return bcs_v, bcs_p
 
 def create_source_terms(mesh, model, msol):
     S, LA, iLA = model.build_stension_matrices()
@@ -199,6 +207,11 @@ def create_solver(scheme, sol_ctl, forms, bcs):
         J = derivative(F, w)
         problem = NonlinearVariationalProblem(F, w, bcs, J)
         solver = NonlinearVariationalSolver(problem)
+        solver.parameters['newton_solver']['absolute_tolerance'] = 1E-8
+        solver.parameters['newton_solver']['relative_tolerance'] = 1E-16
+        solver.parameters['newton_solver']['maximum_iterations'] = 25
+        solver.parameters['newton_solver']['linear_solver'] = "mumps"
+        #solver.parameters['newton_solver']['relaxation_parameter'] = 1.0
 
     return solver
 
@@ -210,6 +223,8 @@ def test_scaling_mesh(scheme): #postprocessor
     """
     #set_log_level(WARNING)
 
+    degrise = 3 # degree rise for computation of errornorms
+
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     prm_file = os.path.join(scriptdir, "muflon-parameters.xml")
     mpset.read(prm_file)
@@ -218,7 +233,7 @@ def test_scaling_mesh(scheme): #postprocessor
     ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
-    for level in range(4, 5):
+    for level in range(3, 4):
 
         # Prepare problem and solvers
         with Timer("Prepare") as t_prepare:
@@ -226,8 +241,9 @@ def test_scaling_mesh(scheme): #postprocessor
             DS = create_discretization(scheme, mesh)
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
-            esol = create_exact_solution(msol, DS.finite_elements())
-            bcs = create_bcs(DS, boundary_markers, esol)
+            esol = create_exact_solution(msol, DS.finite_elements(), degrise)
+            bcs_v, bcs_p = create_bcs(DS, boundary_markers, esol)
+            bcs = bcs_v + bcs_p if scheme == "Monolithic" else bcs_v
 
             model = ModelFactory.create("Incompressible", DS)
             f_src, g_src, t_src = create_source_terms(mesh, model, msol)
@@ -239,52 +255,66 @@ def test_scaling_mesh(scheme): #postprocessor
             # NOTE: Here is the possibility to modify forms, e.g. by adding
             #       boundary integrals.
 
-            sol_ctl = DS.solution_ctl()
-            solver = create_solver(scheme, sol_ctl, forms, bcs)
+            # Get access to solution functions
+            sol_ctl  = DS.solution_ctl()
+            sol_ptl0 = DS.solution_ptl(0)
+
             # FIXME: implement SolverFactory
+            solver = create_solver(scheme, sol_ctl, forms, bcs)
 
-            # FIXME: Delete the following block of code
-            # w = DS.solution_ctl()
-            # w0 = DS.solution_ptl(0)
-            # for i in range(len(w)):
-            #     w[i].assign(w0[i])
-            # phi, chi, v, p = DS.primitive_vars_ctl(deepcopy=True)
-            # phi1, phi2, phi3 = phi.split(True)
+            # FIXME: Do not store XDMF files in the final version of this benchmark
+            from muflon import XDMFWriter
+            comm = mesh.mpi_comm()
+            outdir = os.path.join(scriptdir, __name__)
+            phi, chi, v, p = DS.primitive_vars_ctl()
+            phi_ = phi.split()
+            v_ = v.split()
+            p = p.dolfin_repr()
+            fields = list(phi_) + list(v_) + [p,]
+            xdmf_writer = XDMFWriter(comm, outdir, fields, flush_output=True)
 
-        # Solve
-        with Timer("Solve") as t_solve:
-            solver.solve()
+        # Time stepping
+        t, it = 0.0, 0
+        t_end = 0.1
+        dt = DS.parameters["dt"]
+        while t < t_end:
+            # Move to the current time level
+            t += dt                   # update time
+            it += 1                   # update iteration number
+            t_src.assign(Constant(t)) # update source terms
+            for key in six.iterkeys(esol):
+                esol[key].t = t # update exact solution (including bcs)
+
+            # Solve
+            info("t = %g, step = %g" % (t, it))
+            with Timer("Solve") as t_solve:
+                solver.solve()
+
+            # FIXME: Do not save the results
+            xdmf_writer.write(t)
+
+            # Error computations
+            for (i, var) in enumerate(["phi1", "phi2", "phi3"]):
+                err = errornorm(esol[var], phi_[i], norm_type="L2",
+                                degree_rise=degrise)
+                info("||%s_err|| = %g" % (var, err))
+            for (i, var) in enumerate(["v1", "v2"]):
+                err = errornorm(esol[var], v_[i], norm_type="L2",
+                                degree_rise=degrise)
+                info("||%s_err|| = %g" % (var, err))
+            err = errornorm(esol["p"], p, norm_type="L2",
+                            degree_rise=degrise)
+            info("||%s_err|| = %g" % ("p", err))
+
+            # Update variables at previous time levels
+            for (i, w) in enumerate(sol_ctl):
+                sol_ptl0[i].assign(w)
 
         # Prepare results
 
         # Send to posprocessor
 
     # Flush plots as we now have data for all ndofs values
-
-    # # Plot solution
-    # t = 4.0
-    # pyplot.figure()
-    # pyplot.subplot(2, 2, 1)
-    # #plot(phi1, title="phi1")
-    # esol["phi1"].t = t
-    # plot(esol["phi1"], mesh=mesh, title="phi1_ex")
-    # pyplot.subplot(2, 2, 2)
-    # #plot(phi2, title="phi2")
-    # esol["phi2"].t = t
-    # plot(esol["phi2"], mesh=mesh, title="phi2_ex")
-    # pyplot.subplot(2, 2, 3)
-    # # plot(phi3, title="phi3")
-    # esol["phi3"].t = t
-    # plot(esol["phi3"], mesh=mesh, title="phi3_ex")
-    # pyplot.figure()
-    # # plot(v.dolfin_repr(), title="velocity")
-    # esol["v"].t = t
-    # plot(esol["v"], mesh=mesh, title="v_ex")
-    # pyplot.figure()
-    # # plot(p.dolfin_repr(), title="pressure", mode="warp")
-    # esol["p"].t = t
-    # plot(esol["p"], mesh=mesh, title="p_ex", mode="warp")
-    # pyplot.show()
 
     # Cleanup
     set_log_level(INFO)
