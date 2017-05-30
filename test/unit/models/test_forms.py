@@ -50,22 +50,11 @@ def test_forms(scheme, N, dim, th):
             prm.add("3", 1.0)
     #dolfin.info(model.parameters, True)
 
-    # Check that specific methods raise if setup has not been called
-    for meth in ["forms_ch", "forms_ns"]:
-        with pytest.raises(AttributeError):
-            forms = getattr(model, meth)()
-
     # Create forms
-    model.setup()
-    forms_ch = model.forms_ch()
-    forms_ns = model.forms_ns()
+    forms = model.create_forms(scheme)
 
-    # Check assembly of residuals
+    # Check assembly of returned forms
     if scheme == "Monolithic":
-        F = forms_ch[0] + forms_ns[0]
+        assert forms["bilinear"] is None
+        F = forms["linear"][0]
         r = dolfin.assemble(F)
-    elif scheme == "SemiDecoupled":
-        F_ch = forms_ch[0]
-        F_ns = forms_ns[0]
-        r_ch = dolfin.assemble(F_ch)
-        r_ns = dolfin.assemble(F_ns)

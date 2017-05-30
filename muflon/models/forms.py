@@ -110,40 +110,72 @@ class Model(object):
             setattr(self, "_pv_ptl%i" % i,
                     DS.primitive_vars_ptl(i, indexed=True))
 
+        # Initialize source terms
+        self._f_src = as_vector(len(test[2])*[Constant(0.0),])
+        self._g_src = as_vector(len(test[0])*[Constant(0.0),])
+
         # Store other attributes
         self.dt = DS.parameters["dt"]
 
-    def setup(self, *args, **kwargs):
+    def test_fcns(self):
         """
-        An abstract method.
+        Returns dictionary with created test functions.
 
-        When creating a new class by subclassing this generic class,
-        one must override this method in such a way that it sets attributes
-        ``_forms_ch`` and ``_forms_ns`` to the new class. These attributes
-        store tuple of forms for Cahn-Hilliard and Navier-Stokes(-Fourier)
-        parts of the system respectively.
+        :returns: test functions
+        :rtype: dict
         """
-        self._not_implemented_msg()
+        return self._test
 
-    def forms_ch(self):
+    def trial_fcns(self):
         """
-        :returns: tuple of forms for the CH part of the system
-        :rtype: tuple
-        """
-        if not hasattr(self, "_forms_ch"):
-            msg = "You need to call 'setup' method to create required forms"
-            raise AttributeError(msg)
-        return self._forms_ch
+        Returns dictionary with created trial functions.
 
-    def forms_ns(self):
+        :returns: trial functions
+        :rtype: dict
         """
-        :returns: tuple of forms for the NSF part of the system
-        :rtype: tuple
+        return self._trial
+
+    def load_sources(self, f_src, g_src=None):
         """
-        if not hasattr(self, "_forms_ch"):
-            msg = "You need to call 'setup' method to create required forms"
-            raise AttributeError(msg)
-        return self._forms_ns
+        Load external source terms.
+
+        This method must be called before calling :py:meth:`Model.create_forms`
+        otherwise the source terms are automatically set to zero in the created
+        forms.
+
+        :param f_src: external source term in the balance of linear momentum
+        :type f_src: :py:class:`dolfin.Expression` or anything reasonable
+        :param g_src: artificial source term in the CH part of the system,
+                      for numerical testing only
+        :type g_src: :py:class:`dolfin.Expression` or anything reasonable
+        """
+        assert len(f_src) == len(self._test["v"])
+        self._f_src = f_src
+
+        if g_src is not None:
+            assert len(g_src) == len(self._test["phi"])
+            self._g_src = g_src
+
+    def create_forms(self, scheme, *args, **kwargs):
+        """
+        Create forms for a given scheme.
+
+        This is a common interface for calling methods
+        ``<model>.forms_<scheme>()``, where ``<model>``
+        represents a subclass of :py:class:`Model`.
+
+        :param scheme: which scheme will be used
+        :type scheme: str
+        :returns: dictonary with items ``'linear'`` and ``'bilinear'``
+        :rtype: dict
+        """
+        try:
+            return getattr(self, "forms_" + scheme)(*args, **kwargs)
+        except AttributeError:
+            msg  = "Cannot create forms for '%s' scheme." % scheme
+            msg += " Reason: Method '%s' of class '%s' is not implemented" \
+                   % ("forms_" + scheme, self.__str__())
+            raise NotImplementedError(msg)
 
     def build_stension_matrices(self, const=True):
         """
@@ -242,7 +274,7 @@ class Model(object):
         caller = inspect.stack()[1][3]
         _msg = "You need to implement a method '%s' of class '%s'." \
           % (caller, self.__str__())
-        raise NotImplementedError(msg + _msg)
+        raise NotImplementedError(" ".join((msg, _msg)))
 
 # --- Incompressible CHNSF model ----------------------------------------------
 
@@ -256,19 +288,23 @@ class Incompressible(Model):
 
     def __init__(self, *args):
         super(Incompressible, self).__init__(*args)
+
+        # Add specific model parameters
         self.parameters.add("omega_2", 1.0)
 
-    def setup(self, f_src=None, g_src=None):
-        # FIXME: Does not work for all DS
+    def forms_Monolithic(self, OTD=1):
         """
-        Create forms based on provided parameters.
+        Create linear forms for incompressible model using ``Monolithic``
+        scheme. (Forms are linear in arguments, but otherwise **nonlinear**.)
 
-        :param f_src: external source term in the balance of linear momentum
-                      (defaults to zero vector)
-        :type f_src: :py:class:`dolfin.Expression` (or anything reasonable)
-        :param g_src: artificial source term in the CH part of the system,
-                      for numerical testing only (defaults to zero vector)
-        :type g_src: :py:class:`dolfin.Expression` (or anything reasonable)
+        Forms are wrapped in a tuple and returned in a dictionary under
+        ``'linear'`` item.
+
+        :param OTD: Order of Time Discretization
+        :type OTD: int
+        :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
+                  the second one being set to ``None``
+        :rtype: dict
         """
         prm = self.parameters
 
@@ -283,15 +319,8 @@ class Incompressible(Model):
         del chi0, p0 # not needed
 
         # Source terms
-        if f_src is None:
-            f_src = as_vector(len(v)*[Constant(0.0),])
-        else:
-            assert len(f_src) == len(v)
-
-        if g_src is None:
-            g_src = as_vector(len(phi)*[Constant(0.0),])
-        else: # for numerical testing only
-            assert len(g_src) == len(phi)
+        f_src = self._f_src
+        g_src = self._g_src
 
         # Discretization parameters
         idt = Constant(1.0/self.dt)
@@ -355,10 +384,6 @@ class Incompressible(Model):
         eqn_chi -= (b/eps)*int_dF
 
         system_ch = eqn_phi + eqn_chi
-        # J_ch = derivative(system_ch, tuple(list(phi)+list(chi)),
-        # tuple(list(trial["phi"])+list(trial["chi"])))
-        # from dolfin import assemble
-        # A = assemble(J_ch)
 
         # System of NS eqns
         Dv  = sym(grad(v))
@@ -378,6 +403,16 @@ class Incompressible(Model):
         system_ns = eqn_v + eqn_p
         #system_ns = eqn_v - eqn_p
 
-        # Store created forms
-        self._forms_ch = (system_ch,)
-        self._forms_ns = (system_ns,)
+        return dict(linear=(system_ch + system_ns,), bilinear=None)
+
+    def forms_SemiDecoupled(self, OTD=1):
+        """
+        .. todo:: missing implementation
+        """
+        return None
+
+    def forms_FullyDecoupled(self, OTD=1):
+        """
+        .. todo:: missing implementation
+        """
+        return None
