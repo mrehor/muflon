@@ -191,6 +191,7 @@ class Model(object):
         :param scheme: which scheme will be used
         :type scheme: str
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``
+                  containing :py:class:`ufl.form.Form` objects
         :rtype: dict
         """
         try:
@@ -310,16 +311,26 @@ class Incompressible(Model):
         def create(self, *args, **kwargs):
             return Incompressible(*args, **kwargs)
 
-    def __init__(self, *args):
-        super(Incompressible, self).__init__(*args)
+    def __init__(self, *args, **kwargs):
+        """
+        Create nonlinear solver for
+        :py:class:`Monolithic <muflon.functions.discretization.Monolithic>`
+        discretization scheme.
+
+        See :py:class:`Solver <muflon.models.forms.Model>` for the list of
+        valid initialization arguments.
+        """
+        super(Incompressible, self).__init__(*args, **kwargs)
 
         # Add specific model parameters
         self.parameters.add("omega_2", 1.0)
 
     def forms_Monolithic(self, OTD=1):
         """
-        Create linear forms for incompressible model using ``Monolithic``
-        scheme. (Forms are linear in arguments, but otherwise **nonlinear**.)
+        Create linear forms for incompressible model using
+        :py:class:`Monolithic <muflon.functions.discretization.Monolithic>`
+        discretization scheme. (Forms are linear in arguments, but generally
+        **nonlinear** in coefficients.)
 
         Forms are wrapped in a tuple and returned in a dictionary under
         ``'linear'`` item.

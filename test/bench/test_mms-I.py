@@ -33,6 +33,7 @@ from matplotlib import pyplot, gridspec
 from muflon import mpset
 from muflon import DiscretizationFactory, SimpleCppIC
 from muflon import ModelFactory
+from muflon import SolverFactory
 from muflon import MuflonLogger
 from muflon.models.potentials import doublewell, multiwell
 from muflon.models.varcoeffs import capillary_force, total_flux
@@ -122,10 +123,11 @@ def create_initial_conditions(ms):
 def create_bcs(DS, boundary_markers, esol):
     bcs_v1 = DirichletBC(DS.subspace("v", 0), esol["v1"], boundary_markers, 0)
     bcs_v2 = DirichletBC(DS.subspace("v", 1), esol["v2"], boundary_markers, 0)
-    bcs_v = [bcs_v1, bcs_v2]
-    bcs_p = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
+    bcs = {}
+    bcs["v"] = [bcs_v1, bcs_v2]
+    bcs["p"] = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
 
-    return bcs_v, bcs_p
+    return bcs
 
 def create_source_terms(t_src, mesh, model, msol):
     S, LA, iLA = model.build_stension_matrices()
@@ -200,21 +202,6 @@ def create_source_terms(t_src, mesh, model, msol):
 
     return f_src, g_src
 
-def create_solver(scheme, sol_ctl, forms, bcs):
-    if scheme == "Monolithic":
-        w = sol_ctl[0]
-        F = forms["linear"][0]
-        J = derivative(F, w)
-        problem = NonlinearVariationalProblem(F, w, bcs, J)
-        solver = NonlinearVariationalSolver(problem)
-        solver.parameters['newton_solver']['absolute_tolerance'] = 1E-8
-        solver.parameters['newton_solver']['relative_tolerance'] = 1E-16
-        solver.parameters['newton_solver']['maximum_iterations'] = 25
-        solver.parameters['newton_solver']['linear_solver'] = "mumps"
-        #solver.parameters['newton_solver']['relaxation_parameter'] = 1.0
-
-    return solver
-
 @pytest.mark.parametrize("scheme", ["Monolithic",]) #"SemiDecoupled", "FullyDecoupled"
 def test_scaling_mesh(scheme, postprocessor):
     """
@@ -245,8 +232,7 @@ def test_scaling_mesh(scheme, postprocessor):
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
             esol = create_exact_solution(msol, DS.finite_elements(), degrise)
-            bcs_v, bcs_p = create_bcs(DS, boundary_markers, esol)
-            bcs = bcs_v + bcs_p if scheme == "Monolithic" else bcs_v
+            bcs = create_bcs(DS, boundary_markers, esol)
 
             # Prepare model
             model = ModelFactory.create("Incompressible", dt, DS)
@@ -270,8 +256,7 @@ def test_scaling_mesh(scheme, postprocessor):
             p = p.dolfin_repr()
 
             # Prepare solver
-            # FIXME: implement SolverFactory
-            solver = create_solver(scheme, sol_ctl, forms, bcs)
+            solver = SolverFactory.create(scheme, sol_ctl, forms, bcs)
 
             # Prepare loggers and writers
             comm = mesh.mpi_comm()

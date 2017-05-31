@@ -206,7 +206,7 @@ class Discretization(object):
       # similarly for the remaining solution functions and other time levels
     """
     class Factory(object):
-        def create(self, ds_name, *args, **kwargs):
+        def create(self, *args, **kwargs):
             msg = "Cannot create discretization scheme from a generic class. "
             Discretization._not_implemented_msg(self, msg)
 
