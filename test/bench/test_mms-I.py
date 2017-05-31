@@ -127,14 +127,12 @@ def create_bcs(DS, boundary_markers, esol):
 
     return bcs_v, bcs_p
 
-def create_source_terms(mesh, model, msol):
+def create_source_terms(t_src, mesh, model, msol):
     S, LA, iLA = model.build_stension_matrices()
 
     # Space and time variables
     x = SpatialCoordinate(mesh)
-    R = FunctionSpace(mesh, "R", 0)
-    t_src = Function(R) # time function
-    t = variable(t_src) # time variable
+    t = variable(t_src)
 
     # Manufactured solution
     A0 = Constant(msol["v1"]["prms"]["A0"])
@@ -200,7 +198,7 @@ def create_source_terms(mesh, model, msol):
         - f_cap
     )
 
-    return f_src, g_src, t_src
+    return f_src, g_src
 
 def create_solver(scheme, sol_ctl, forms, bcs):
     if scheme == "Monolithic":
@@ -236,6 +234,9 @@ def test_scaling_mesh(scheme, postprocessor):
 
     # Iterate over refinement level
     for level in range(1, 6):
+        # Fixed parameters
+        dt = 0.001
+        t_end = postprocessor.t_end
 
         with Timer("Prepare") as t_prepare:
             # Prepare discretization
@@ -248,8 +249,9 @@ def test_scaling_mesh(scheme, postprocessor):
             bcs = bcs_v + bcs_p if scheme == "Monolithic" else bcs_v
 
             # Prepare model
-            model = ModelFactory.create("Incompressible", DS)
-            f_src, g_src, t_src = create_source_terms(mesh, model, msol)
+            model = ModelFactory.create("Incompressible", dt, DS)
+            t_src = Function(DS.reals())
+            f_src, g_src = create_source_terms(t_src, mesh, model, msol)
             # NOTE: Source terms are time-dependent. The updates to these terms
             #       are possible via ``t_src.assign(Constant(t))``, where ``t``
             #       denotes the actual time value.
@@ -274,7 +276,8 @@ def test_scaling_mesh(scheme, postprocessor):
             # Prepare loggers and writers
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            logfile = os.path.join(outdir, "log-%s-%i.dat" % (scheme, level))
+            logfile = os.path.join(outdir,
+                                   "log-%s-%i-%g.dat" % (scheme, level, dt))
             logger = MuflonLogger(comm, logfile)
             #from muflon import XDMFWriter
             #fields = list(phi_) + list(v_) + [p,]
@@ -283,8 +286,6 @@ def test_scaling_mesh(scheme, postprocessor):
         # Time stepping
         # FIXME: implement TimeSteppingFactory
         t, it = 0.0, 0
-        dt = DS.parameters["dt"]
-        t_end = postprocessor.t_end
         while t < t_end:
             # Move to the current time level
             t += dt                   # update time
@@ -294,7 +295,7 @@ def test_scaling_mesh(scheme, postprocessor):
                 esol[key].t = t # update exact solution (including bcs)
 
             # Solve
-            info("t = %g, step = %g" % (t, it))
+            info("t = %g, step = %g, dt = %g" % (t, it, dt))
             with Timer("Solve") as t_solve:
                 solver.solve()
 
@@ -326,7 +327,7 @@ def test_scaling_mesh(scheme, postprocessor):
         # Prepare results
         del logger # flushes data to logfile
         ndofs = DS.num_dofs()
-        name = "level_{}".format(level)
+        name = "level_{}-dt_{}".format(level, dt)
         print(scheme, name, ndofs["total"], t_solve.elapsed()[0])
         result = {
             "scheme": scheme,
@@ -355,6 +356,7 @@ def postprocessor():
     t_end = 0.002 # FIXME: set t_end = 0.1
     proc = Postprocessor(t_end)
     proc.add_plot((("dt", 0.001), ("t_end", t_end)))
+    #pyplot.show(); exit() # uncomment to explore current layout of plots
     return proc
 
 class Postprocessor(object):
@@ -438,24 +440,20 @@ class Postprocessor(object):
         fig = pyplot.figure()
         gs = gridspec.GridSpec(3, 2, width_ratios=[1, 0.01],
                                height_ratios=[10, 10, 1], hspace=0.1)
+        # Set subplots
         ax2 = fig.add_subplot(gs[1, 0])
         ax1 = fig.add_subplot(gs[0, 0], sharex=ax2)
-        ax1.xaxis.set_label_position('top')
-        ax1.xaxis.set_tick_params(labeltop='on', labelbottom='off')
+        ax1.xaxis.set_label_position("top")
+        ax1.xaxis.set_tick_params(labeltop="on", labelbottom="off")
         pyplot.setp(ax2.get_xticklabels(), visible=False)
-        ax1.set_yscale('log')
-        ax2.set_yscale('log')
-        ax1.set_xlabel('Level of mesh refinement $L$; $n_x = 2^{(L+1)}$')
-        ax1.set_ylabel('$L^2$ errors')
-        ax2.set_ylabel('CPU time')
+        # Set scales
+        ax1.set_yscale("log")
+        ax2.set_yscale("log")
+        # Set labels
+        ax1.set_xlabel("Level of mesh refinement $L$; $n_x = 2^{(L+1)}$")
+        ax1.set_ylabel("$L^2$ errors")
+        ax2.set_ylabel("CPU time")
         ax1.set_ylim(0, None, auto=True)
         ax2.set_ylim(0, None, auto=True)
+
         return fig, (ax1, ax2)
-
-# def test_scaling_time_step(data):
-#     """Compute convergence rates for fixed element order, fixed mesh and
-#     gradually decreasing time step."""
-
-#     # Iterate over time step
-
-#     gc.collect()

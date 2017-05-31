@@ -4,7 +4,6 @@
     <parameters name="discretization">
       <parameter key="N" type="int" value="4" />
       <parameter key="PTL" type="int" value="1" />
-      <parameter key="dt" type="double" value="0.001" />
     </parameters>
     <parameters name="model">
       <!-- eps = eta*2.0*sqrt(2.0), where eta = 0.1 -->
