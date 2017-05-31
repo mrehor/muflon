@@ -241,6 +241,7 @@ class Discretization(object):
         for var in self._varnames:
             self._FE[var] = eval("FE_"+var)
         self._subspace = {}
+        self._ndofs = {}
 
     def setup(self):
         """
@@ -248,10 +249,16 @@ class Discretization(object):
 
         When creating a new class by subclassing this generic class,
         one must override this method in such a way that it sets attributes
-        ``_solution_ctl``, ``_solution_ptl`` and ``_fit_primitives`` to the new
-        class. The first two attributes represent vectors of solution
-        functions at current and previous time levels, while the third
-        attribute must be a callable function with the following signature:
+
+        * ``_solution_ctl``
+        * ``_solution_ptl``
+        * ``_fit_primitives``
+        * ``_ndofs``
+
+        to the new class. The first two attributes represent vectors of
+        solution functions at current and previous time levels respectively,
+        while the third attribute must be a callable function with the
+        following signature:
 
         .. code-block:: python
 
@@ -261,6 +268,16 @@ class Discretization(object):
                to fit the vector of primitive variables.
                \"\"\"
                pass # need to be implemented
+
+        The last attribute represents a dictionary with the following keys:
+
+        * ``'total'``, ``'CH'``, ``'NS'``
+        * ``'phi'``, ``'chi'``, ``'v'``, ``'p'`` and ``'th'``
+
+        Each item contains number of degrees of freedom. Symbolically written,
+        we have the relation ``total = (N-1)*(phi + chi) + gdim*v + p + th``,
+        where ``N`` is the number of components and ``gdim`` is geometrical
+        dimension.
 
         Moreover, the implementation of this method must equip the private
         attribute ``_subspace``, which is has been initialized as an empty
@@ -276,6 +293,17 @@ class Discretization(object):
         """
         self._not_implemented_msg()
 
+    def num_dofs(self):
+        """
+        Returns total number of degrees of freedom as well as number of degrees
+        of freedom for individual components of primitive variables.
+
+        :returns: number of degrees of freedom
+        :rtype: dict
+        """
+        assert bool(self._ndofs) # check if dict is not empty
+        return self._ndofs
+
     def solution_ctl(self):
         """
         Provides access to solution functions representing the discrete
@@ -287,18 +315,23 @@ class Discretization(object):
         assert hasattr(self, "_solution_ctl")
         return self._solution_ctl
 
-    def solution_ptl(self, level=0):
+    def solution_ptl(self, level=None):
         """
         Provides access to solution functions representing the discrete
-        solution at previous time levels.
+        solution at previous time levels (PTL).
 
-        :param level: determines which previous time level will be returned
+        :param level: determines which PTL will be returned (if ``None``
+                      then all available PTL are returned as a list of tuples)
         :type level: int
         :returns: vector of :py:class:`dolfin.Function` objects
         :rtype: tuple
         """
         assert hasattr(self, "_solution_ptl")
-        return self._solution_ptl[level]
+        if level is None:
+            return self._solution_ptl
+        else:
+            assert isinstance(level, int)
+            return self._solution_ptl[level]
 
     def primitive_vars_ctl(self, deepcopy=False, indexed=False):
         """
@@ -533,19 +566,36 @@ class Monolithic(Discretization):
 
         # Build function spaces
         W = FunctionSpace(self._mesh, MixedElement(elements))
+        self._ndofs["total"] = W.dim()
         if N == 2:
             self._subspace["phi"] = [W.sub(0),]
             self._subspace["chi"] = [W.sub(1),]
+            self._ndofs["phi"] = W.sub(0).dim()
+            self._ndofs["chi"] = W.sub(1).dim()
         else:
             self._subspace["phi"] = [W.sub(0).sub(i) for i in range(N-1)]
             self._subspace["chi"] = [W.sub(1).sub(i) for i in range(N-1)]
+            self._ndofs["phi"] = W.sub(0).sub(0).dim()
+            self._ndofs["chi"] = W.sub(1).sub(0).dim()
         if gdim == 1:
             self._subspace["v"] = [W.sub(2),]
+            self._ndofs["v"] = W.sub(2).dim()
         else:
             self._subspace["v"] = [W.sub(2).sub(i) for i in range(gdim)]
+            self._ndofs["v"] = W.sub(2).sub(0).dim()
         self._subspace["p"] = W.sub(3)
+        self._ndofs["p"] = W.sub(3).dim()
+        self._ndofs["th"] = 0
         if W.num_sub_spaces() == 5:
             self._subspace["th"] = W.sub(4)
+            self._ndofs["th"] = W.sub(4).dim()
+        self._ndofs["CH"] = (N-1)*(self._ndofs["phi"] + self._ndofs["chi"])
+        self._ndofs["NS"] = (
+              gdim*self._ndofs["v"]
+            + self._ndofs["p"]
+            + self._ndofs["th"]
+        )
+        #assert self._ndofs["total"] == self._ndofs["CH"] + self._ndofs["NS"]
 
         # Create solution variable at ctl
         w_ctl = (Function(W),)
@@ -635,15 +685,32 @@ class SemiDecoupled(Discretization):
         # Build function spaces
         W_ch = FunctionSpace(self._mesh, MixedElement(elements_ch))
         W_ns = FunctionSpace(self._mesh, MixedElement(elements_ns))
+        self._ndofs["CH"] = W_ch.dim()
+        self._ndofs["NS"] = W_ns.dim()
+        self._ndofs["total"] = W_ch.dim() + W_ns.dim()
         self._subspace["phi"] = [W_ch.sub(i) for i in range(N-1)]
         self._subspace["chi"] = [W_ch.sub(i) for i in range(N-1, 2*(N-1))]
+        self._ndofs["phi"] = W_ch.sub(0).dim()
+        self._ndofs["chi"] = W_ch.sub(N-1).dim()
         if gdim == 1:
             self._subspace["v"] = [W_ns.sub(0),]
+            self._ndofs["v"] = W_ns.sub(0).dim()
         else:
             self._subspace["v"] = [W_ns.sub(0).sub(i) for i in range(gdim)]
+            self._ndofs["v"] = W_ns.sub(0).sub(0).dim()
         self._subspace["p"] = W_ns.sub(1)
+        self._ndofs["p"] = W_ns.sub(1).dim()
+        self._ndofs["th"] = 0
         if W_ns.num_sub_spaces() == 3:
             self._subspace["th"] = W_ns.sub(2)
+            self._ndofs["th"] = W_ns.sub(2).dim()
+        # ndofs = (
+        #       (N-1)*(self._ndofs["phi"] + self._ndofs["chi"])
+        #     + gdim*self._ndofs["v"]
+        #     + self._ndofs["p"]
+        #     + self._ndofs["th"]
+        # )
+        # assert self._ndofs["total"] == ndofs
 
         # Create solution variables at ctl
         w_ctl = (Function(W_ch), Function(W_ns))
@@ -753,11 +820,24 @@ class FullyDecoupled(Discretization):
         # Build function spaces
         spaces = list(map(lambda FE: FunctionSpace(self._mesh, FE), elements))
         self._subspace["phi"] = [spaces[i] for i in range(N-1)]
+        self._ndofs["phi"] = spaces[0].dim()
         self._subspace["chi"] = [spaces[i] for i in range(N-1, 2*(N-1))]
+        self._ndofs["chi"] = spaces[N-1].dim()
         self._subspace["v"] = [spaces[2*(N-1)+i] for i in range(gdim)]
+        self._ndofs["v"] = spaces[N].dim()
         self._subspace["p"] = spaces[2*(N-1)+gdim]
+        self._ndofs["p"] = spaces[2*(N-1)+gdim].dim()
+        self._ndofs["th"] = 0
         if len(spaces) == 2*(N-1)+gdim+2:
             self._subspace["th"] = spaces[2*(N-1)+gdim+1]
+            self._ndofs["th"] = spaces[2*(N-1)+gdim+1].dim()
+        self._ndofs["CH"] = (N-1)*(self._ndofs["phi"] + self._ndofs["chi"])
+        self._ndofs["NS"] = (
+              gdim*self._ndofs["v"]
+            + self._ndofs["p"]
+            + self._ndofs["th"]
+        )
+        self._ndofs["total"] = self._ndofs["CH"] + self._ndofs["NS"]
 
         # Create solution variables at ctl
         w_ctl = tuple(map(lambda FS: Function(FS), spaces))
