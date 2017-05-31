@@ -7,6 +7,7 @@
 # Data files
 *.xdmf
 *.h5
+*.dat
 
 # Installation
 /MUFLON.egg-info/

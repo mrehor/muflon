@@ -32,6 +32,7 @@ from matplotlib import pyplot
 from muflon import mpset
 from muflon import DiscretizationFactory, SimpleCppIC
 from muflon import ModelFactory
+from muflon import MuflonLogger
 from muflon.models.potentials import doublewell, multiwell
 from muflon.models.varcoeffs import capillary_force, total_flux
 
@@ -215,8 +216,8 @@ def create_solver(scheme, sol_ctl, forms, bcs):
 
     return solver
 
-@pytest.mark.parametrize("scheme", ["Monolithic",]) # "SemiDecoupled", "FullyDecoupled"
-def test_scaling_mesh(scheme): #postprocessor
+@pytest.mark.parametrize("scheme", ["Monolithic",]) #"SemiDecoupled", "FullyDecoupled"
+def test_scaling_mesh(scheme, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed time step and
     gradually refined mesh.
@@ -235,8 +236,8 @@ def test_scaling_mesh(scheme): #postprocessor
     # Iterate over refinement level
     for level in range(3, 4):
 
-        # Prepare problem and solvers
         with Timer("Prepare") as t_prepare:
+            # Prepare discretization
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh)
             DS.setup()
@@ -245,6 +246,7 @@ def test_scaling_mesh(scheme): #postprocessor
             bcs_v, bcs_p = create_bcs(DS, boundary_markers, esol)
             bcs = bcs_v + bcs_p if scheme == "Monolithic" else bcs_v
 
+            # Prepare model
             model = ModelFactory.create("Incompressible", DS)
             f_src, g_src, t_src = create_source_terms(mesh, model, msol)
             # NOTE: Source terms are time-dependent. The updates to these terms
@@ -258,25 +260,28 @@ def test_scaling_mesh(scheme): #postprocessor
             # Get access to solution functions
             sol_ctl  = DS.solution_ctl()
             sol_ptl0 = DS.solution_ptl(0)
+            phi, chi, v, p = DS.primitive_vars_ctl()
+            phi_ = phi.split()
+            chi_ = chi.split()
+            v_ = v.split()
+            p = p.dolfin_repr()
 
             # FIXME: implement SolverFactory
             solver = create_solver(scheme, sol_ctl, forms, bcs)
 
-            # FIXME: Do not store XDMF files in the final version of this benchmark
-            from muflon import XDMFWriter
+            # Prepare loggers and writers
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            phi, chi, v, p = DS.primitive_vars_ctl()
-            phi_ = phi.split()
-            v_ = v.split()
-            p = p.dolfin_repr()
-            fields = list(phi_) + list(v_) + [p,]
-            xdmf_writer = XDMFWriter(comm, outdir, fields, flush_output=True)
+            logfile = os.path.join(outdir, "log-%s-%i.dat" % (scheme, level))
+            logger = MuflonLogger(comm, logfile)
+            #from muflon import XDMFWriter
+            #fields = list(phi_) + list(v_) + [p,]
+            #xdmf_writer = XDMFWriter(comm, outdir, fields, flush_output=True)
 
         # Time stepping
         t, it = 0.0, 0
-        t_end = 0.1
         dt = DS.parameters["dt"]
+        t_end = 0.1
         while t < t_end:
             # Move to the current time level
             t += dt                   # update time
@@ -290,27 +295,33 @@ def test_scaling_mesh(scheme): #postprocessor
             with Timer("Solve") as t_solve:
                 solver.solve()
 
-            # FIXME: Do not save the results
-            xdmf_writer.write(t)
-
             # Error computations
+            err = {}
+            err["p"] = errornorm(esol["p"], p, norm_type="L2",
+                                 degree_rise=degrise)
             for (i, var) in enumerate(["phi1", "phi2", "phi3"]):
-                err = errornorm(esol[var], phi_[i], norm_type="L2",
-                                degree_rise=degrise)
-                info("||%s_err|| = %g" % (var, err))
+                err[var] = errornorm(esol[var], phi_[i], norm_type="L2",
+                                     degree_rise=degrise)
             for (i, var) in enumerate(["v1", "v2"]):
-                err = errornorm(esol[var], v_[i], norm_type="L2",
-                                degree_rise=degrise)
-                info("||%s_err|| = %g" % (var, err))
-            err = errornorm(esol["p"], p, norm_type="L2",
-                            degree_rise=degrise)
-            info("||%s_err|| = %g" % ("p", err))
+                err[var] = errornorm(esol[var], v_[i], norm_type="L2",
+                                     degree_rise=degrise)
+
+            # Logging and reporting
+            info("")
+            begin("Errors in L^2 norm:")
+            for (key, val) in six.iteritems(err):
+                desc = "||{:4s} - {:>4s}_h|| = %g".format(key, key)
+                logger.info(desc, (val,), ("err_"+key,), t)
+            end()
+            info("")
+            #xdmf_writer.write(t)
 
             # Update variables at previous time levels
             for (i, w) in enumerate(sol_ctl):
                 sol_ptl0[i].assign(w)
 
         # Prepare results
+        del logger # flushes data to logfile
 
         # Send to posprocessor
 
@@ -321,6 +332,16 @@ def test_scaling_mesh(scheme): #postprocessor
     #mpset.write(mesh.mpi_comm(), prm_file) # uncomment to save parameters
     mpset.refresh()
     gc.collect()
+
+@pytest.fixture(scope='module')
+def postprocessor():
+    proc = Postprocessor()
+    return proc
+
+class Postprocessor(object):
+    def __init__(self):
+        self.plots = {}
+        self.results = []
 
 # def test_scaling_time_step(data):
 #     """Compute convergence rates for fixed element order, fixed mesh and
