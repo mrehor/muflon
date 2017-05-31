@@ -23,7 +23,7 @@ variants of Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) type models.
 import numpy as np
 
 from dolfin import Parameters
-from dolfin import Constant
+from dolfin import Constant, Function
 from dolfin import as_matrix, as_vector, conditional
 from dolfin import dot, inner, dx, ds, sym
 from dolfin import derivative, div, grad
@@ -81,8 +81,10 @@ class Model(object):
             msg = "Cannot create model from a generic class. "
             Model._not_implemented_msg(self, msg)
 
-    def __init__(self, DS):
+    def __init__(self, dt, DS):
         """
+        :param dt: time step
+        :type dt: float
         :param DS: discretization scheme
         :type DS: :py:class:`muflon.functions.discretization.Discretization`
         """
@@ -114,8 +116,30 @@ class Model(object):
         self._f_src = as_vector(len(test[2])*[Constant(0.0),])
         self._g_src = as_vector(len(test[0])*[Constant(0.0),])
 
-        # Store other attributes
-        self.dt = DS.parameters["dt"]
+        # Store time step
+        self._dt_float = dt                # float representation of dt
+        self._dt = Function(DS.reals())    # function that wraps dt
+        self._dt.rename("dt", "time_step") # rename for easy identification
+        self._dt.assign(Constant(dt))      # assign the correct value
+
+    def time_step_value(self):
+        """
+        Returns value of the time step that is currently set in the UFL forms.
+
+        :returns: value of the time step
+        :rtype: float
+        """
+        return self._dt_float
+
+    def update_time_step_value(self, dt):
+        """
+        Update value of the time step in the UFL forms.
+
+        :param dt: new value of the time step
+        :type dt: float
+        """
+        self._dt_float = dt
+        self._dt.assign(Constant(dt))
 
     def test_fcns(self):
         """
@@ -323,7 +347,7 @@ class Incompressible(Model):
         g_src = self._g_src
 
         # Discretization parameters
-        idt = Constant(1.0/self.dt)
+        idt = 1.0/self._dt
 
         # Model parameters
         eps = Constant(prm["eps"])

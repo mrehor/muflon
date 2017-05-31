@@ -100,7 +100,6 @@ class MuflonParameterSet(Parameters, Singleton):
        Option                Suboption      Description
        ====================  =============  ===================================
        --discretization
-       \                     .dt            time step
        \                     .N             Number of phases
        \                     .PTL           number of Previous Time Levels
        --model
@@ -125,7 +124,6 @@ class MuflonParameterSet(Parameters, Singleton):
 
         # Discretization
         nested_prm = Parameters("discretization")
-        nested_prm.add("dt", 1.0)
         nested_prm.add("N", 2, 2, 7)
         nested_prm.add("PTL", 1, 1, 2)
         self.add(nested_prm)

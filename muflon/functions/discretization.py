@@ -56,8 +56,6 @@ from muflon.common.parameters import mpset
 from muflon.functions.primitives import PrimitiveShell
 from muflon.functions.iconds import SimpleCppIC
 
-#__all__ = ['DiscretizationFactory']
-
 
 # --- Generic interface for discretization schemes (factory pattern) ----------
 
@@ -234,6 +232,9 @@ class Discretization(object):
         # Initialize parameters
         self.parameters = Parameters(mpset["discretization"])
 
+        # Create R space on the given mesh
+        self._R = FunctionSpace(mesh, "R", 0) # can be used to define constants
+
         # Store attributes
         self._mesh = mesh
         self._varnames = ("phi", "chi", "v", "p", "th")
@@ -292,6 +293,70 @@ class Discretization(object):
         * :py:meth:`FullyDecoupled.setup`
         """
         self._not_implemented_msg()
+
+    def mesh(self):
+        """
+        :returns: computational mesh
+        :rtype: :py:class:`dolfin.Mesh`
+        """
+        return self._mesh
+
+    def reals(self):
+        """
+        Returns space of real numbers :math:`\\bf{R}`, that is space for
+        constant functions on the given mesh.
+
+        This space can be used to create constants in the UFL forms that are
+        supposed to change from time to time. (Useful for implementation
+        of schemes with variable time step.)
+
+        :returns: function space of real constant functions
+        :rtype: :py:class:`dolfin.FunctionSpace`
+        """
+        return self._R
+
+    def finite_elements(self):
+        """
+        :returns: dictionary with finite elements used to approximate
+                  individual components of primitive variables
+        :rtype: dict
+        """
+        return self._FE
+
+    def function_spaces(self):
+        """
+        Ask solution functions for the function spaces on which they live.
+
+        :returns: vector of :py:class:`dolfin.FunctionSpace` objects
+        :rtype: tuple
+        """
+        assert hasattr(self, "_solution_ctl")
+        spaces = [w.function_space() for w in self._solution_ctl]
+        return tuple(spaces)
+
+    def subspace(self, var, i=None):
+        """
+        Get subspace of variable ``var[i]``, where ``i`` must be ``None`` for
+        scalar variables.
+
+        (Appropriate for generating boundary conditions.)
+
+        :param var: variable name
+        :type var: str
+        :param i: component number (``None`` for scalar variables)
+        :type i: int
+        :returns: subspace on which requested variable lives
+        :rtype: :py:class:`dolfin.FunctionSpace`
+        """
+        assert bool(self._subspace) # check if dict is not empty
+        if i is None:
+            if var in ["phi", "chi", "v"]:
+                msg = "For vector quantities only subspaces for individual" \
+                      " components can be extracted"
+                raise ValueError(msg)
+            return self._subspace[var]
+        else:
+            return self._subspace[var][i]
 
     def num_dofs(self):
         """
@@ -396,56 +461,6 @@ class Discretization(object):
             return tuple(wrapped_pv)
         else:
             return pv
-
-    def mesh(self):
-        """
-        :returns: computational mesh
-        :rtype: :py:class:`dolfin.Mesh`
-        """
-        return self._mesh
-
-    def finite_elements(self):
-        """
-        :returns: dictionary with finite elements used to approximate
-                  individual components of primitive variables
-        :rtype: dict
-        """
-        return self._FE
-
-    def function_spaces(self):
-        """
-        Ask solution functions for the function spaces on which they live.
-
-        :returns: vector of :py:class:`dolfin.FunctionSpace` objects
-        :rtype: tuple
-        """
-        assert hasattr(self, "_solution_ctl")
-        spaces = [w.function_space() for w in self._solution_ctl]
-        return tuple(spaces)
-
-    def subspace(self, var, i=None):
-        """
-        Get subspace of variable ``var[i]``, where ``i`` must be ``None`` for
-        scalar variables.
-
-        (Appropriate for generating boundary conditions.)
-
-        :param var: variable name
-        :type var: str
-        :param i: component number (``None`` for scalar variables)
-        :type i: int
-        :returns: subspace on which requested variable lives
-        :rtype: :py:class:`dolfin.FunctionSpace`
-        """
-        assert bool(self._subspace) # check if dict is not empty
-        if i is None:
-            if var in ["phi", "chi", "v"]:
-                msg = "For vector quantities only subspaces for individual" \
-                      " components can be extracted"
-                raise ValueError(msg)
-            return self._subspace[var]
-        else:
-            return self._subspace[var][i]
 
     def number_of_ptl(self):
         """

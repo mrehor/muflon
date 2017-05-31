@@ -26,7 +26,8 @@ def prepare_model(scheme, N, dim, th):
     for i in range(len(w)):
         w[i].assign(w0[i])
 
-    model = ModelFactory.create("Incompressible", DS)
+    dt = 1.0
+    model = ModelFactory.create("Incompressible", dt, DS)
 
     return model, DS
 
@@ -58,3 +59,13 @@ def test_forms(scheme, N, dim, th):
         assert forms["bilinear"] is None
         F = forms["linear"][0]
         r = dolfin.assemble(F)
+
+    # Test variable time step
+    dt = 42
+    model.update_time_step_value(dt)
+    assert dt == model.time_step_value()
+    if scheme == "Monolithic":
+        F = forms["linear"][0]
+        for c in F.coefficients():
+            if c.name == "dt":
+                assert dt == c(0.0, 0.0)
