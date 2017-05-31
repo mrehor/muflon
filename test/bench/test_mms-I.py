@@ -25,9 +25,10 @@ import pytest
 import os
 import gc
 import six
+import itertools
 
 from dolfin import *
-from matplotlib import pyplot
+from matplotlib import pyplot, gridspec
 
 from muflon import mpset
 from muflon import DiscretizationFactory, SimpleCppIC
@@ -222,9 +223,9 @@ def test_scaling_mesh(scheme, postprocessor):
     Compute convergence rates for fixed element order, fixed time step and
     gradually refined mesh.
     """
-    #set_log_level(WARNING)
+    set_log_level(WARNING)
 
-    degrise = 3 # degree rise for computation of errornorms
+    degrise = 3 # degree rise for computation of errornorm
 
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     prm_file = os.path.join(scriptdir, "muflon-parameters.xml")
@@ -234,7 +235,7 @@ def test_scaling_mesh(scheme, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
-    for level in range(3, 4):
+    for level in range(1, 6):
 
         with Timer("Prepare") as t_prepare:
             # Prepare discretization
@@ -266,6 +267,7 @@ def test_scaling_mesh(scheme, postprocessor):
             v_ = v.split()
             p = p.dolfin_repr()
 
+            # Prepare solver
             # FIXME: implement SolverFactory
             solver = create_solver(scheme, sol_ctl, forms, bcs)
 
@@ -279,9 +281,10 @@ def test_scaling_mesh(scheme, postprocessor):
             #xdmf_writer = XDMFWriter(comm, outdir, fields, flush_output=True)
 
         # Time stepping
+        # FIXME: implement TimeSteppingFactory
         t, it = 0.0, 0
         dt = DS.parameters["dt"]
-        t_end = 0.1
+        t_end = postprocessor.t_end
         while t < t_end:
             # Move to the current time level
             t += dt                   # update time
@@ -322,10 +325,24 @@ def test_scaling_mesh(scheme, postprocessor):
 
         # Prepare results
         del logger # flushes data to logfile
+        ndofs = DS.num_dofs()
+        name = "level_{}".format(level)
+        print(scheme, name, ndofs["total"], t_solve.elapsed()[0])
+        result = {
+            "scheme": scheme,
+            "err": err,
+            "level": level,
+            "dt": dt,
+            "t_end": t_end,
+            #"ndofs": ndofs["total"],
+            "t_solve": t_solve.elapsed()[0]
+        }
 
         # Send to posprocessor
+        postprocessor.add_result(result)
 
-    # Flush plots as we now have data for all ndofs values
+    # Flush plots as we now have data for all level values
+    postprocessor.flush_plots(outdir)
 
     # Cleanup
     set_log_level(INFO)
@@ -335,13 +352,105 @@ def test_scaling_mesh(scheme, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor():
-    proc = Postprocessor()
+    t_end = 0.002 # FIXME: set t_end = 0.1
+    proc = Postprocessor(t_end)
+    proc.add_plot((("dt", 0.001), ("t_end", t_end)))
     return proc
 
 class Postprocessor(object):
-    def __init__(self):
+    def __init__(self, t_end):
         self.plots = {}
         self.results = []
+        self.t_end = t_end
+
+        # So far hardcoded values
+        self.x_var = "level"
+        self.y_var0 = "err"
+        self.y_var1 = "t_solve"
+
+    def add_plot(self, fixed_variables=None):
+        fixed_variables = fixed_variables or ()
+        assert isinstance(fixed_variables, tuple)
+        assert all(len(var)==2 and isinstance(var[0], str)
+                   for var in fixed_variables)
+        self.plots[fixed_variables] = self._create_figure()
+
+    def add_result(self, result):
+        self.results.append(result)
+
+    def flush_plots(self, outdir=""):
+        coord_vars = (self.x_var, self.y_var0, self.y_var1)
+
+        for fixed_vars, fig in six.iteritems(self.plots):
+            fixed_var_names = next(six.moves.zip(*fixed_vars))
+            data = {}
+            for result in self.results:
+                if not all(result[name] == value for name, value in fixed_vars):
+                    continue
+                free_vars = tuple((var, val) for var, val in six.iteritems(result)
+                                  if var not in coord_vars
+                                  and var not in fixed_var_names)
+                datapoints = data.setdefault(free_vars, {})
+                # NOTE: Variable 'datapoints' is now a "pointer" to an empty
+                #       dict that is stored inside 'data' under key 'free_vars'
+                xs = datapoints.setdefault("xs", [])
+                ys0 = datapoints.setdefault("ys0", [])
+                ys1 = datapoints.setdefault("ys1", [])
+                xs.append(result[self.x_var])
+                ys0.append(result[self.y_var0])
+                ys1.append(result[self.y_var1])
+
+            for free_vars, datapoints in six.iteritems(data):
+                xs = datapoints["xs"]
+                ys0 = datapoints["ys0"]
+                ys1 = datapoints["ys1"]
+                self._plot(fig, xs, ys0, ys1, free_vars)
+            self._save_plot(fig, fixed_vars, outdir)
+
+        self.results = []
+
+    @staticmethod
+    def _plot(fig, xs, ys0, ys1, free_vars):
+        fig, (ax1, ax2) = fig
+        label = "_".join(map(str, itertools.chain(*free_vars)))
+        for (i, var) in enumerate(["phi1", "phi2", "phi3"]):
+            ax1.plot(xs, [d[var] for d in ys0], '+--', linewidth=0.2,
+                     label=r"$L^2$-$\phi_{}$".format(i+1))
+        for (i, var) in enumerate(["v1", "v2"]):
+            ax1.plot(xs, [d[var] for d in ys0], '+--', linewidth=0.2,
+                     label=r"$L^2$-$v_{}$".format(i+1))
+        ax1.plot(xs, [d["p"] for d in ys0], '+--', linewidth=0.2,
+                 label=r"$L^2$-$p$")
+        ax2.plot(xs, ys1, '*--', linewidth=0.2, label=label)
+        ax1.legend(bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0,
+                   fontsize='x-small', ncol=1)
+        ax2.legend(bbox_to_anchor=(0, -0.05), loc=2, borderaxespad=0,
+                   fontsize='x-small', ncol=3)
+
+    @staticmethod
+    def _save_plot(fig, fixed_vars, outdir=""):
+        fig, (ax1, ax2) = fig
+        filename = "_".join(map(str, itertools.chain(*fixed_vars)))
+        fig.savefig(os.path.join(outdir, "fig_" + filename + ".pdf"))
+
+    @staticmethod
+    def _create_figure():
+        fig = pyplot.figure()
+        gs = gridspec.GridSpec(3, 2, width_ratios=[1, 0.01],
+                               height_ratios=[10, 10, 1], hspace=0.1)
+        ax2 = fig.add_subplot(gs[1, 0])
+        ax1 = fig.add_subplot(gs[0, 0], sharex=ax2)
+        ax1.xaxis.set_label_position('top')
+        ax1.xaxis.set_tick_params(labeltop='on', labelbottom='off')
+        pyplot.setp(ax2.get_xticklabels(), visible=False)
+        ax1.set_yscale('log')
+        ax2.set_yscale('log')
+        ax1.set_xlabel('Level of mesh refinement $L$; $n_x = 2^{(L+1)}$')
+        ax1.set_ylabel('$L^2$ errors')
+        ax2.set_ylabel('CPU time')
+        ax1.set_ylim(0, None, auto=True)
+        ax2.set_ylim(0, None, auto=True)
+        return fig, (ax1, ax2)
 
 # def test_scaling_time_step(data):
 #     """Compute convergence rates for fixed element order, fixed mesh and
