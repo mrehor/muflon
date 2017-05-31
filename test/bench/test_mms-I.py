@@ -340,10 +340,11 @@ def test_scaling_mesh(scheme, postprocessor):
         }
 
         # Send to posprocessor
-        postprocessor.add_result(result)
+        rank = MPI.rank(comm)
+        postprocessor.add_result(rank, result)
 
     # Flush plots as we now have data for all level values
-    postprocessor.flush_plots(outdir)
+    postprocessor.flush_plots(rank, outdir)
 
     # Cleanup
     set_log_level(INFO)
@@ -377,10 +378,14 @@ class Postprocessor(object):
                    for var in fixed_variables)
         self.plots[fixed_variables] = self._create_figure()
 
-    def add_result(self, result):
+    def add_result(self, rank, result):
+        if rank > 0:
+            return
         self.results.append(result)
 
-    def flush_plots(self, outdir=""):
+    def flush_plots(self, rank, outdir=""):
+        if rank > 0:
+            return
         coord_vars = (self.x_var, self.y_var0, self.y_var1)
 
         for fixed_vars, fig in six.iteritems(self.plots):
