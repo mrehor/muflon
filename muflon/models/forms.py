@@ -188,6 +188,8 @@ class Model(object):
         ``<model>.forms_<scheme>()``, where ``<model>``
         represents a subclass of :py:class:`Model`.
 
+        .. todo:: add currently implemented schemes
+
         :param scheme: which scheme will be used
         :type scheme: str
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``
