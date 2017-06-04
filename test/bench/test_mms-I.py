@@ -34,7 +34,7 @@ from muflon import mpset
 from muflon import DiscretizationFactory, SimpleCppIC
 from muflon import ModelFactory
 from muflon import SolverFactory
-from muflon import MuflonLogger
+from muflon import TimeSteppingFactory, TSHook
 from muflon.models.potentials import doublewell, multiwell
 from muflon.models.varcoeffs import capillary_force, total_flux
 
@@ -202,13 +202,50 @@ def create_source_terms(t_src, mesh, model, msol):
 
     return f_src, g_src
 
+def prepare_hook(t_src, DS, esol, degrise, err):
+
+    class TailoredHook(TSHook):
+        def head(self, t, it, logger):
+            self.t_src.assign(Constant(t)) # update source terms
+            for key in six.iterkeys(self.esol):
+                self.esol[key].t = t # update exact solution (including bcs)
+        def tail(self, t, it, logger):
+            esol = self.esol
+            degrise = self.degrise
+            phi, chi, v, p = self.DS.primitive_vars_ctl()
+            phi_ = phi.split()
+            chi_ = chi.split()
+            v_ = v.split()
+            p = p.dolfin_repr()
+            # Error computations
+            err = self.err
+            err["p"] = errornorm(esol["p"], p, norm_type="L2",
+                                 degree_rise=degrise)
+            for (i, var) in enumerate(["phi1", "phi2", "phi3"]):
+                err[var] = errornorm(esol[var], phi_[i], norm_type="L2",
+                                     degree_rise=degrise)
+            for (i, var) in enumerate(["v1", "v2"]):
+                err[var] = errornorm(esol[var], v_[i], norm_type="L2",
+                                     degree_rise=degrise)
+            # Logging and reporting
+            info("")
+            begin("Errors in L^2 norm:")
+            for (key, val) in six.iteritems(err):
+                desc = "||{:4s} - {:>4s}_h|| = %g".format(key, key)
+                logger.info(desc, (val,), ("err_"+key,), t)
+            end()
+            info("")
+
+    return TailoredHook(t_src=t_src, DS=DS, esol=esol,
+                        degrise=degrise, err=err)
+
 @pytest.mark.parametrize("scheme", ["Monolithic",]) #"SemiDecoupled", "FullyDecoupled"
 def test_scaling_mesh(scheme, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed time step and
     gradually refined mesh.
     """
-    set_log_level(WARNING)
+    #set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm
 
@@ -247,82 +284,36 @@ def test_scaling_mesh(scheme, postprocessor):
             #       boundary integrals.
 
             # Get access to solution functions
-            sol_ctl  = DS.solution_ctl()
-            sol_ptl0 = DS.solution_ptl(0)
-            phi, chi, v, p = DS.primitive_vars_ctl()
-            phi_ = phi.split()
-            chi_ = chi.split()
-            v_ = v.split()
-            p = p.dolfin_repr()
+            sol_ctl = DS.solution_ctl()
+            sol_ptl = DS.solution_ptl()
 
             # Prepare solver
             solver = SolverFactory.create(scheme, sol_ctl, forms, bcs)
 
-            # Prepare loggers and writers
+            # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            logfile = os.path.join(outdir,
-                                   "log-%s-%i-%g.dat" % (scheme, level, dt))
-            logger = MuflonLogger(comm, logfile)
-            #from muflon import XDMFWriter
-            #fields = list(phi_) + list(v_) + [p,]
-            #xdmf_writer = XDMFWriter(comm, outdir, fields, flush_output=True)
+            logfile = "log-%s-%i-%g.dat" % (scheme, level, dt)
+            xfields = None #list(phi_) + list(v_) + [p,]
+            hook = prepare_hook(t_src, DS, esol, degrise, {})
+            TS = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
+                                            solver, sol_ptl, hook,
+                                            outdir, logfile, xfields)
 
-        # Time stepping
-        # FIXME: implement TimeSteppingFactory
-        t, it = 0.0, 0
-        while t < t_end:
-            # Move to the current time level
-            t += dt                   # update time
-            it += 1                   # update iteration number
-            t_src.assign(Constant(t)) # update source terms
-            for key in six.iterkeys(esol):
-                esol[key].t = t # update exact solution (including bcs)
-
-            # Solve
-            info("t = %g, step = %g, dt = %g" % (t, it, dt))
-            with Timer("Solve") as t_solve:
-                solver.solve()
-
-            # Error computations
-            err = {}
-            err["p"] = errornorm(esol["p"], p, norm_type="L2",
-                                 degree_rise=degrise)
-            for (i, var) in enumerate(["phi1", "phi2", "phi3"]):
-                err[var] = errornorm(esol[var], phi_[i], norm_type="L2",
-                                     degree_rise=degrise)
-            for (i, var) in enumerate(["v1", "v2"]):
-                err[var] = errornorm(esol[var], v_[i], norm_type="L2",
-                                     degree_rise=degrise)
-
-            # Logging and reporting
-            info("")
-            begin("Errors in L^2 norm:")
-            for (key, val) in six.iteritems(err):
-                desc = "||{:4s} - {:>4s}_h|| = %g".format(key, key)
-                logger.info(desc, (val,), ("err_"+key,), t)
-            end()
-            info("")
-            #xdmf_writer.write(t)
-
-            # Update variables at previous time levels
-            for (i, w) in enumerate(sol_ctl):
-                sol_ptl0[i].assign(w)
+        # Time-stepping
+        result = TS.run(scheme)
 
         # Prepare results
-        del logger # flushes data to logfile
         ndofs = DS.num_dofs()
         name = "level_{}-dt_{}".format(level, dt)
-        print(scheme, name, ndofs["total"], t_solve.elapsed()[0])
-        result = {
-            "scheme": scheme,
-            "err": err,
-            "level": level,
-            "dt": dt,
-            "t_end": t_end,
-            #"ndofs": ndofs["total"],
-            "t_solve": t_solve.elapsed()[0]
-        }
+        it = result.pop("it")
+        print(scheme, name, ndofs["total"], result["t_solve"], it)
+        result.update(
+            #ndofs=ndofs["total"],
+            scheme=scheme,
+            err=hook.err,
+            level=level
+        )
 
         # Send to posprocessor
         rank = MPI.rank(comm)

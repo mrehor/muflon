@@ -32,6 +32,7 @@ from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.primitives import as_primitive, PrimitiveShell
 from muflon.functions.iconds import SimpleCppIC
 from muflon.models.forms import ModelFactory
-from muflon.solving.solvers import SolverFactory
 from muflon.models.potentials import doublewell, multiwell
 from muflon.models.varcoeffs import capillary_force, total_flux
+from muflon.solving.solvers import SolverFactory
+from muflon.solving.tstepping import TimeSteppingFactory, TSHook

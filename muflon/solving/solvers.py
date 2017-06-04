@@ -69,7 +69,7 @@ class Solver(object):
     """
     class Factory(object):
         def create(self, *args, **kwargs):
-            msg = "Cannot create solver from a generic class. "
+            msg = "Cannot create solver from a generic class."
             Solver._not_implemented_msg(self, msg)
 
     def __init__(self, sol_ctl, forms, bcs):
@@ -83,9 +83,19 @@ class Solver(object):
                     individual primitive variables
         :type bcs: dict
         """
+        # Store attributes
         self._sol_ctl = sol_ctl
         self._forms = forms
         self._bcs = bcs
+
+    def sol_ctl(self):
+        """
+        Provides access to solution functions at current time level.
+
+        :returns: solution functions at current time level
+        :rtype: tuple
+        """
+        return self._sol_ctl
 
     def _not_implemented_msg(self, msg=""):
         import inspect
@@ -120,6 +130,7 @@ class Monolithic(Solver):
         F = self._forms["linear"][0]
         J = derivative(F, w)
         bcs = self._bcs["v"] + self._bcs["p"]
+        # FIXME: Deal with possible bcs for ``phi`` and ``th``
         problem = NonlinearVariationalProblem(F, w, bcs, J)
         solver = NonlinearVariationalSolver(problem)
         solver.parameters['newton_solver']['absolute_tolerance'] = 1E-8
