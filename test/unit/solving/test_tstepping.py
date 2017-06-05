@@ -21,26 +21,17 @@ def test_Implicit():
     sol_ptl = [dolfin.Function(V),]
     field = dolfin.Function(V)
 
+    algo = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
+                                      solver, sol_ptl, 2)
+    prm = algo.parameters
+    #dolfin.info(prm, True)
     with pytest.raises(RuntimeError):
-        algo = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
-                                          solver, sol_ptl, xfolder="foo")
-    with pytest.raises(RuntimeError):
-        algo = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
-                                          solver, sol_ptl, xfolder="foo",
-                                          xfields=[])
+       prm["OTD"] = 1.5 # only int values are allowed
 
     algo = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
-                                      solver, sol_ptl)
-    with pytest.raises(RuntimeError):
-       writer = algo.xdmf_writer()
-
-    algo = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
-                                      solver, sol_ptl,
-                                      xfolder="foo", xfields=[field,])
+                                      solver, sol_ptl, 1, xfields=[field,])
     assert algo.mpi_comm() == comm
 
-    algo.set_save_modulo(10)
-    assert algo.save_modulo() == 10
-
     logger = algo.logger()
-    writer = algo.xdmf_writer()
+
+    # FIXME: this test needs improvements

@@ -22,7 +22,7 @@ This module provides various time-stepping algorithms.
 import os
 import six
 
-from dolfin import info, begin, end, Timer
+from dolfin import info, begin, end, Timer, Parameters
 
 from muflon.log.loggers import MuflonLogger
 from muflon.io.writers import XDMFWriter
@@ -93,9 +93,10 @@ class TimeStepping(object):
             TimeStepping._not_implemented_msg(self, msg)
 
     def __init__(self, comm, dt, t_end, solver, sol_ptl,
-                 hook=None, outdir=".", logfile=None,
-                 xfields=None, xflush=False, xfolder=None):
+                 OTD=1, hook=None, logfile=None, xfields=None, outdir="."):
         """
+        Initializes parameters for time-stepping algorithm and creates logger.
+
         :param comm: MPI communicator
         :type comm: :py:class:`dolfin.MPI_Comm`
         :param dt: time step
@@ -106,77 +107,88 @@ class TimeStepping(object):
         :type solver: :py:class:`Solver <muflon.solving.solvers.Solver>`
         :param sol_ptl: list of solutions at previous time levels
         :type sol_ptl: list
+        :param OTD: Order of Time Discretization
+        :type OTD: int
         :param hook: class with two special methods that are called at the
                      beginning/end of the time-stepping loop
         :type hook: :py:class:`TSHook`
-        :param outdir: output directory
-        :type outdir: str
         :param logfile: name of the file for logging
         :type logfile: str
         :param xfields: fields to be registered in
                         :py:class:`XDMFWriter <muflon.io.writers.XDMFWriter>`
                         (if ``None``, writer will not be created)
         :type xfields: list
-        :param xflush: controls the ``flush_output`` option of
-                       :py:class:`XDMFWriter <muflon.io.writers.XDMFWriter>`
-        :type xflush: bool
-        :param xfolder: name of the folder for storing XDMF data
-                        (must be ``None`` if ``xfields is None``)
-        :type xfolder: str
+        :param outdir: output directory
+        :type outdir: str
         """
         # Check input
-        assert isinstance(outdir, str)
-        assert isinstance(logfile, (str, type(None)))
-        assert isinstance(xfolder, (str, type(None)))
-        assert isinstance(xfields, (list, type(None)))
-        assert isinstance(xflush, bool)
+        assert isinstance(OTD, int)
         assert isinstance(hook, (TSHook, type(None)))
+        assert isinstance(logfile, (str, type(None)))
+        assert isinstance(xfields, (list, type(None)))
+
+        # Initialize parameters
+        self.parameters = TimeStepping._init_parameters(dt, t_end, OTD)
 
         # Store attributes
         self._comm = comm
-        self._dt = dt
-        self._t_end = t_end
         self._solver = solver
         self._sol_ptl = sol_ptl
         self._hook = hook
-
-        # By default saves data at each time step
-        self._save_modulo = 1
+        self._xfields = xfields
+        self._outdir = outdir
 
         # Create logger
         if isinstance(logfile, str): # prepend outdir
             logfile = os.path.join(outdir, logfile)
         self._logger = MuflonLogger(comm, logfile)
 
-        # Create writer (optional)
-        # FIXME: move xfolder, xflush to parameters, move init of xdmf_writer
-        #        to run method, del method returning xdmf_writer
-        if xfields:
-            xfolder = "XDMFdata" if xfolder is None else xfolder
-            xfolder = os.path.join(outdir, xfolder)
-            self._writer = XDMFWriter(comm, xfolder, xfields, xflush)
-        else:
-            if xfolder is not None:
-                msg = "You are trying to create XDMFWriter, but you have not" \
-                      " registered any fields."
-                raise RuntimeError(msg)
+    @staticmethod
+    def _init_parameters(dt, t_end, OTD):
+        """
+        .. _tab_tsprm:
+
+           ====================  =============  ===================================
+           TimeStepping          \              \
+           parameters
+           ------------------------------------------------------------------------
+           Option                Suboption      Description
+           ====================  =============  ===================================
+           --dt                                 time step
+           --t_end                              termination time of the simulation
+           --OTD                                Order of Time Discretization
+           --xdmf
+           \                     .folder        name of the folder for XDMF files
+           \                     .flush         flush output of XDMF files
+           \                     .modulo        modulo for saving results
+           ====================  =============  ===================================
+        """
+        prm = Parameters("time-stepping")
+        prm.add("dt", dt)
+        prm.add("t_end", t_end)
+        prm.add("OTD", OTD, 1, 2)
+
+        nested_prm = Parameters("xdmf")
+        nested_prm.add("folder", "XDMFdata")
+        nested_prm.add("flush", False)
+        nested_prm.add("modulo", 1)
+
+        prm.add(nested_prm)
+        return prm
 
     def mpi_comm(self):
+        """
+        :returns: MPI communicator
+        :rtype: :py:class:`dolfin.MPI_Comm`
+        """
         return self._comm
 
-    def save_modulo(self):
-        return self._save_modulo
-
-    def set_save_modulo(self, i):
+    def output_directory(self):
         """
-        Save data (through logfile and/or XDMF writer) only every i-th time
-        step.
-
-        :param i: determine which time steps will be saved, requires ``i > 0``
-        :type i: int
+        :returns: output directory
+        :rtype: str
         """
-        assert i > 0
-        self._save_modulo = i
+        return self._outdir
 
     def solver(self):
         """
@@ -201,6 +213,10 @@ class TimeStepping(object):
         :rtype: dict
         """
         if hasattr(self, "run_" + scheme):
+            if self._xfields: # create xdmf writer for given fields
+                xfolder = os.path.join(self._outdir,
+                                       self.parameters["xdmf"]["folder"])
+                self._writer = XDMFWriter(comm, xfolder, xfields, xflush)
             return getattr(self, "run_" + scheme)(*args, **kwargs)
         else:
             msg  = "Cannot run time-stepping for '%s' scheme." % scheme
@@ -216,23 +232,6 @@ class TimeStepping(object):
         :rtype: :py:class:`MuflonLogger <muflon.log.loggers.MuflonLogger>`
         """
         return self._logger
-
-    def xdmf_writer(self):
-        """
-        Returns MUFLON's XDMF writer that can be used for storing field
-        quantities for their later visualization (e.g. in ParaView).
-
-        :returns: XDMF writer
-        :rtype: :py:class:` <muflon.log.loggers.MuflonLogger>`
-        """
-        try:
-            return self._writer
-        except AttributeError:
-            msg = "XDMF writer was not created during initialization of '%s'"\
-                  % self.__str__()
-            msg += " (you need to provide the input argument 'xfields' to"\
-                   " create it)"
-            raise RuntimeError(msg)
 
     def _not_implemented_msg(self, msg=""):
         import inspect
@@ -258,13 +257,14 @@ class Implicit(TimeStepping):
         :returns: dictionary with results of the computation
         :rtype: dict
         """
+        prm = self.parameters
         logger = self._logger
-        dt = self._dt
-        t_end = self._t_end
+        dt = prm["dt"]
+        t_end = prm["t_end"]
         t, it = 0.0, 0
         while t < t_end:
             # Move to the current time level
-            t += self._dt             # update time
+            t += dt                   # update time
             it += 1                   # update iteration number
 
             # User defined instructions
@@ -277,7 +277,7 @@ class Implicit(TimeStepping):
                 self._solver.solve()
 
             # Save results
-            if it % self._save_modulo == 0:
+            if it % prm["xdmf"]["modulo"] == 0:
                 if hasattr(self, "_xdmf_writer"):
                     self._xdmf_writer.write(t)
 

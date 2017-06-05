@@ -297,8 +297,9 @@ def test_scaling_mesh(scheme, postprocessor):
             xfields = None #list(phi_) + list(v_) + [p,]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
             TS = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
-                                            solver, sol_ptl, hook,
-                                            outdir, logfile, xfields)
+                                            solver, sol_ptl, OTD=1, hook=hook,
+                                            logfile=logfile, xfields=xfields,
+                                            outdir=outdir)
 
         # Time-stepping
         result = TS.run(scheme)
