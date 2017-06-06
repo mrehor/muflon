@@ -173,7 +173,7 @@ def create_source_terms(t_src, mesh, model, msol):
     prm = model.parameters
     omega_2 = Constant(prm["omega_2"])
     eps = Constant(prm["eps"])
-    Mo = Constant(prm["M0"])
+    Mo = Constant(prm["M0"]) # FIXME: degenerate mobility
     f, df, a, b = doublewell("poly4")
     a, b = Constant(a), Constant(b)
     varphi = variable(phi)
@@ -184,8 +184,8 @@ def create_source_terms(t_src, mesh, model, msol):
     chi = (b/eps)*dot(iLA, dF) - 0.5*a*eps*div(grad(phi))
 
     # Source term for CH part
-    g_src = diff(phi, t) + dot(grad(phi), v) - div(Mo*grad(chi))
-                           # FIXME: use div in the 2nd term
+    g_src = diff(phi, t) + div(outer(phi, v)) - div(Mo*grad(chi))
+    #g_src = diff(phi, t) + dot(grad(phi), v) - div(Mo*grad(chi))
 
     # Source term for NS part
     rho_mat = model.collect_material_params("rho")

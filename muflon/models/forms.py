@@ -25,7 +25,7 @@ import numpy as np
 from dolfin import Parameters
 from dolfin import Constant, Function
 from dolfin import as_matrix, as_vector, conditional
-from dolfin import dot, inner, dx, ds, sym
+from dolfin import dot, inner, outer, dx, ds, sym
 from dolfin import derivative, div, grad
 
 from muflon.common.parameters import mpset
@@ -409,7 +409,8 @@ class Incompressible(Model):
         # System of CH eqns
         eqn_phi = (
               idt*inner(phi - phi0, test["chi"])
-            + inner(dot(grad(phi), v), test["chi"]) # FIXME: div(phi[i]*v)
+            + inner(div(outer(phi, v)), test["chi"])
+            #+ inner(dot(grad(phi), v), test["chi"])
             - inner(g_src, test["chi"])
             + Mo*inner(grad(chi), grad(test["chi"]))
         )*dx
