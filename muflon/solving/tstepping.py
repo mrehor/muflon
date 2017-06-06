@@ -22,7 +22,7 @@ This module provides various time-stepping algorithms.
 import os
 import six
 
-from dolfin import info, begin, end, Timer, Parameters
+from dolfin import info, begin, end, near, Timer, Parameters
 
 from muflon.log.loggers import MuflonLogger
 from muflon.io.writers import XDMFWriter
@@ -262,7 +262,7 @@ class Implicit(TimeStepping):
         dt = prm["dt"]
         t_end = prm["t_end"]
         t, it = 0.0, 0
-        while t < t_end:
+        while t < t_end and not near(t, t_end, 0.1*dt):
             # Move to the current time level
             t += dt                   # update time
             it += 1                   # update iteration number
@@ -273,7 +273,7 @@ class Implicit(TimeStepping):
 
             # Solve
             info("t = %g, step = %g, dt = %g" % (t, it, dt))
-            with Timer("Solve") as t_solve:
+            with Timer("Solve (per time step)") as tmr_solve:
                 self._solver.solve()
 
             # Save results
@@ -296,7 +296,7 @@ class Implicit(TimeStepping):
             "dt": dt,
             "it": it,
             "t_end": t_end,
-            "t_solve": t_solve.elapsed()[0]
+            "tmr_solve": tmr_solve.elapsed()[0]
         }
 
         return result

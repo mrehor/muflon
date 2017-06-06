@@ -16,7 +16,7 @@
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
 """
-Method of Manufactured Solutions - test case I.
+Method of Manufactured Solutions - test case Ia.
 """
 
 from __future__ import print_function
@@ -245,7 +245,7 @@ def test_scaling_mesh(scheme, postprocessor):
     Compute convergence rates for fixed element order, fixed time step and
     gradually refined mesh.
     """
-    #set_log_level(WARNING)
+    set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm
 
@@ -256,13 +256,13 @@ def test_scaling_mesh(scheme, postprocessor):
     msol = create_manufactured_solution()
     ic = create_initial_conditions(msol)
 
+    # Fixed parameters
+    dt = postprocessor.dt
+    t_end = postprocessor.t_end
+
     # Iterate over refinement level
     for level in range(1, 6):
-        # Fixed parameters
-        dt = 0.001
-        t_end = postprocessor.t_end
-
-        with Timer("Prepare") as t_prepare:
+        with Timer("Prepare") as tmr_prepare:
             # Prepare discretization
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh)
@@ -302,19 +302,26 @@ def test_scaling_mesh(scheme, postprocessor):
                                             outdir=outdir)
 
         # Time-stepping
-        result = TS.run(scheme)
+        with Timer("Time stepping") as tmr_tstepping:
+            result = TS.run(scheme)
 
         # Prepare results
         ndofs = DS.num_dofs()
         name = "level_{}-dt_{}".format(level, dt)
-        it = result.pop("it")
-        print(scheme, name, ndofs["total"], result["t_solve"], it)
         result.update(
-            #ndofs=ndofs["total"],
+            ndofs=ndofs["total"],
             scheme=scheme,
             err=hook.err,
-            level=level
+            level=level,
+            tmr_prepare=tmr_prepare.elapsed()[0],
+            tmr_tstepping=tmr_tstepping.elapsed()[0]
         )
+        print(scheme, name, result["ndofs"], result["tmr_prepare"],
+              result["tmr_solve"], result["it"], result["tmr_tstepping"])
+
+        # Pop results that we do not want to report at the moment
+        for item in ["ndofs", "tmr_prepare", "tmr_solve", "it"]:
+            result.pop(item)
 
         # Send to posprocessor
         rank = MPI.rank(comm)
@@ -322,6 +329,9 @@ def test_scaling_mesh(scheme, postprocessor):
 
     # Flush plots as we now have data for all level values
     postprocessor.flush_plots(rank, outdir)
+
+    # Store timings
+    #dump_timings_to_xml(os.path.join(outdir, "timings.xml"), TimingClear_clear)
 
     # Cleanup
     set_log_level(INFO)
@@ -331,22 +341,24 @@ def test_scaling_mesh(scheme, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor():
+    dt = 0.001
     t_end = 0.002 # FIXME: set t_end = 0.1
-    proc = Postprocessor(t_end)
-    proc.add_plot((("dt", 0.001), ("t_end", t_end)))
+    proc = Postprocessor(dt, t_end)
+    proc.add_plot((("dt", dt), ("t_end", t_end)))
     #pyplot.show(); exit() # uncomment to explore current layout of plots
     return proc
 
 class Postprocessor(object):
-    def __init__(self, t_end):
+    def __init__(self, dt, t_end):
         self.plots = {}
         self.results = []
+        self.dt = dt
         self.t_end = t_end
 
         # So far hardcoded values
         self.x_var = "level"
         self.y_var0 = "err"
-        self.y_var1 = "t_solve"
+        self.y_var1 = "tmr_tstepping" # "tmr_solve"
 
     def add_plot(self, fixed_variables=None):
         fixed_variables = fixed_variables or ()
@@ -426,6 +438,7 @@ class Postprocessor(object):
         ax2 = fig.add_subplot(gs[1, 0])
         ax1 = fig.add_subplot(gs[0, 0], sharex=ax2)
         ax1.xaxis.set_label_position("top")
+        ax1.xaxis.set_ticks_position("top")
         ax1.xaxis.set_tick_params(labeltop="on", labelbottom="off")
         pyplot.setp(ax2.get_xticklabels(), visible=False)
         # Set scales
