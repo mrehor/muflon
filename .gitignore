@@ -9,6 +9,8 @@
 *.h5
 *.dat
 *.pdf
+*.zip
+*.pickle
 
 # Installation
 /MUFLON.egg-info/

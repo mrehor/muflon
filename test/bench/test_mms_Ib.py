@@ -26,6 +26,7 @@ import os
 import gc
 import six
 import itertools
+import pickle
 
 from dolfin import *
 from matplotlib import pyplot, gridspec
@@ -63,6 +64,7 @@ def test_scaling_time(scheme, postprocessor):
     # Fixed parameters
     level = postprocessor.level
     t_end = postprocessor.t_end
+    basename = "level_{}_t_end_{}".format(level, t_end)
 
     # Prepare space discretization, exact solution and bcs
     mesh, boundary_markers = create_domain(level)
@@ -100,18 +102,9 @@ def test_scaling_time(scheme, postprocessor):
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            logfile = "log-%s-%i-%g.dat" % (scheme, level, dt)
+            logfile = "log_{}_dt_{}_{}.dat".format(basename, dt, scheme)
             xfields = None #list(phi_) + list(v_) + [p,]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
-            TS = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
-                                            solver, sol_ptl, OTD=1, hook=hook,
-                                            logfile=logfile, xfields=xfields,
-                                            outdir=outdir)
-
-            # Prepare time-stepping algorithm
-            solver = SolverFactory.create(scheme, sol_ctl, forms, bcs)
-            logfile = "log-%s-%i-%g.dat" % (scheme, level, dt)
-            #hook = prepare_hook(t_src, DS, esol, degrise, {})
             TS = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
                                             solver, sol_ptl, OTD=1, hook=hook,
                                             logfile=logfile, xfields=xfields,
@@ -122,26 +115,28 @@ def test_scaling_time(scheme, postprocessor):
             result = TS.run(scheme)
 
         # Prepare results
-        name = "level_{}-dt_{}".format(level, dt)
-        ndofs = DS.num_dofs()
+        name = logfile[4:-4]
         result.update(
-            ndofs=ndofs["total"],
+            ndofs=DS.num_dofs(),
             scheme=scheme,
             err=hook.err,
             level=level,
             tmr_prepare=tmr_prepare.elapsed()[0],
             tmr_tstepping=tmr_tstepping.elapsed()[0]
         )
-        print(scheme, name, result["ndofs"], result["tmr_prepare"],
+        print(name, result["ndofs"], result["tmr_prepare"],
               result["tmr_solve"], result["it"], result["tmr_tstepping"])
-
-        # Pop results that we do not want to report at the moment
-        for item in ["ndofs", "tmr_prepare", "tmr_solve", "it"]:
-            result.pop(item)
 
         # Send to posprocessor
         rank = MPI.rank(comm)
         postprocessor.add_result(rank, result)
+
+    # Save results into a binary file
+    datafile = os.path.join(outdir, "results_{}.pickle".format(basename))
+    postprocessor.flush_results(rank, datafile)
+
+    # Pop results that we do not want to report at the moment
+    postprocessor.pop_items(rank, ["ndofs", "tmr_prepare", "tmr_solve", "it"])
 
     # Flush plots as we now have data for all level values
     postprocessor.flush_plots(rank, outdir)
@@ -187,6 +182,28 @@ class Postprocessor(object):
         if rank > 0:
             return
         self.results.append(result)
+
+    def flush_results(self, rank, datafile):
+        if rank > 0:
+            return
+        with open(datafile, 'wb') as handle:
+            for result in self.results:
+                pickle.dump(result, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        # NOTE: To read the data back use something like
+        # results = []
+        # with open(datafile, 'rb') as handle:
+        #     while True:
+        #         try:
+        #             results.append(pickle.load(handle))
+        #         except EOFError:
+        #             break
+
+    def pop_items(self, rank, items):
+        if rank > 0:
+            return
+        for r in self.results:
+            for item in items:
+                r.pop(item)
 
     def flush_plots(self, rank, outdir=""):
         if rank > 0:
@@ -235,7 +252,7 @@ class Postprocessor(object):
                  label=r"$L^2$-$p$")
         ref1 = list(map(lambda x: 1e-2*x, xs)) # goes through [1e-1, 1e-3]
         #ref2 = list(map(lambda x: 1e-1*x**2, xs)) # goes through [1e-1, 1e-3]
-        ax1.plot(xs, ref1, '', linewidth=0.2, label="ref")
+        ax1.plot(xs, ref1, '', linewidth=0.5, label="ref")
         ax2.plot(xs, ys1, '*--', linewidth=0.2, label=label)
         ax1.legend(bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0,
                    fontsize='x-small', ncol=1)

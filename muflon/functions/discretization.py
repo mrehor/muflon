@@ -270,10 +270,9 @@ class Discretization(object):
                \"\"\"
                pass # need to be implemented
 
-        The last attribute represents a dictionary with the following keys:
+        The last attribute represents a dictionary with keys listed `here`__.
 
-        * ``'total'``, ``'CH'``, ``'NS'``
-        * ``'phi'``, ``'chi'``, ``'v'``, ``'p'`` and ``'th'``
+        __ list_dof_keys_
 
         Each item contains number of degrees of freedom. Symbolically written,
         we have the relation ``total = (N-1)*(phi + chi) + gdim*v + p + th``,
@@ -358,16 +357,26 @@ class Discretization(object):
         else:
             return self._subspace[var][i]
 
-    def num_dofs(self):
+    def num_dofs(self, key="total"):
         """
         Returns total number of degrees of freedom as well as number of degrees
         of freedom for individual components of primitive variables.
 
+        Possible values for argument ``key``:
+
+        .. _list_dof_keys:
+
+        * ``'total'``, ``'CH'``, ``'NS'``
+        * ``'phi'``, ``'chi'``, ``'v'``, ``'p'``, ``'th'``
+
+        :param var: one of the string values specified above
+                    (total number of DOFs is returned by default)
+        :type var: str
         :returns: number of degrees of freedom
-        :rtype: dict
+        :rtype: int
         """
         assert bool(self._ndofs) # check if dict is not empty
-        return self._ndofs
+        return self._ndofs[key]
 
     def solution_ctl(self):
         """

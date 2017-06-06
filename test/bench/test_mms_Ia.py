@@ -26,6 +26,7 @@ import os
 import gc
 import six
 import itertools
+import pickle
 
 from dolfin import *
 from matplotlib import pyplot, gridspec
@@ -259,6 +260,7 @@ def test_scaling_mesh(scheme, postprocessor):
     # Fixed parameters
     dt = postprocessor.dt
     t_end = postprocessor.t_end
+    basename = "dt_{}_t_end_{}".format(dt, t_end)
 
     # Iterate over refinement level
     for level in range(1, 6):
@@ -293,7 +295,7 @@ def test_scaling_mesh(scheme, postprocessor):
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            logfile = "log-%s-%i-%g.dat" % (scheme, level, dt)
+            logfile = "log_{}_level_{}_{}.dat".format(basename, level, scheme)
             xfields = None #list(phi_) + list(v_) + [p,]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
             TS = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
@@ -306,26 +308,28 @@ def test_scaling_mesh(scheme, postprocessor):
             result = TS.run(scheme)
 
         # Prepare results
-        ndofs = DS.num_dofs()
-        name = "level_{}-dt_{}".format(level, dt)
+        name = logfile[4:-4]
         result.update(
-            ndofs=ndofs["total"],
+            ndofs=DS.num_dofs(),
             scheme=scheme,
             err=hook.err,
             level=level,
             tmr_prepare=tmr_prepare.elapsed()[0],
             tmr_tstepping=tmr_tstepping.elapsed()[0]
         )
-        print(scheme, name, result["ndofs"], result["tmr_prepare"],
+        print(name, result["ndofs"], result["tmr_prepare"],
               result["tmr_solve"], result["it"], result["tmr_tstepping"])
-
-        # Pop results that we do not want to report at the moment
-        for item in ["ndofs", "tmr_prepare", "tmr_solve", "it"]:
-            result.pop(item)
 
         # Send to posprocessor
         rank = MPI.rank(comm)
         postprocessor.add_result(rank, result)
+
+    # Save results into a binary file
+    datafile = os.path.join(outdir, "results_{}.pickle".format(basename))
+    postprocessor.flush_results(rank, datafile)
+
+    # Pop results that we do not want to report at the moment
+    postprocessor.pop_items(rank, ["ndofs", "tmr_prepare", "tmr_solve", "it"])
 
     # Flush plots as we now have data for all level values
     postprocessor.flush_plots(rank, outdir)
@@ -371,6 +375,28 @@ class Postprocessor(object):
         if rank > 0:
             return
         self.results.append(result)
+
+    def flush_results(self, rank, datafile):
+        if rank > 0:
+            return
+        with open(datafile, 'wb') as handle:
+            for result in self.results:
+                pickle.dump(result, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        # NOTE: To read the data back use something like
+        # results = []
+        # with open(datafile, 'rb') as handle:
+        #     while True:
+        #         try:
+        #             results.append(pickle.load(handle))
+        #         except EOFError:
+        #             break
+
+    def pop_items(self, rank, items):
+        if rank > 0:
+            return
+        for r in self.results:
+            for item in items:
+                r.pop(item)
 
     def flush_plots(self, rank, outdir=""):
         if rank > 0:
