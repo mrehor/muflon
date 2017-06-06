@@ -26,7 +26,6 @@ import os
 import gc
 import six
 import itertools
-import pickle
 
 from dolfin import *
 from matplotlib import pyplot, gridspec
@@ -36,8 +35,10 @@ from muflon import DiscretizationFactory, SimpleCppIC
 from muflon import ModelFactory
 from muflon import SolverFactory
 from muflon import TimeSteppingFactory, TSHook
-from muflon.models.potentials import doublewell, multiwell
-from muflon.models.varcoeffs import capillary_force, total_flux
+from muflon import doublewell, multiwell
+from muflon import capillary_force, total_flux
+
+from muflon.utils.testing import GenericPostprocessorMMS
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
@@ -352,10 +353,11 @@ def postprocessor():
     #pyplot.show(); exit() # uncomment to explore current layout of plots
     return proc
 
-class Postprocessor(object):
+class Postprocessor(GenericPostprocessorMMS):
     def __init__(self, dt, t_end):
-        self.plots = {}
-        self.results = []
+        super(Postprocessor, self).__init__()
+
+        # Hack enabling change of fixed variables at one place
         self.dt = dt
         self.t_end = t_end
 
@@ -363,40 +365,6 @@ class Postprocessor(object):
         self.x_var = "level"
         self.y_var0 = "err"
         self.y_var1 = "tmr_tstepping" # "tmr_solve"
-
-    def add_plot(self, fixed_variables=None):
-        fixed_variables = fixed_variables or ()
-        assert isinstance(fixed_variables, tuple)
-        assert all(len(var)==2 and isinstance(var[0], str)
-                   for var in fixed_variables)
-        self.plots[fixed_variables] = self._create_figure()
-
-    def add_result(self, rank, result):
-        if rank > 0:
-            return
-        self.results.append(result)
-
-    def flush_results(self, rank, datafile):
-        if rank > 0:
-            return
-        with open(datafile, 'wb') as handle:
-            for result in self.results:
-                pickle.dump(result, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        # NOTE: To read the data back use something like
-        # results = []
-        # with open(datafile, 'rb') as handle:
-        #     while True:
-        #         try:
-        #             results.append(pickle.load(handle))
-        #         except EOFError:
-        #             break
-
-    def pop_items(self, rank, items):
-        if rank > 0:
-            return
-        for r in self.results:
-            for item in items:
-                r.pop(item)
 
     def flush_plots(self, rank, outdir=""):
         if rank > 0:

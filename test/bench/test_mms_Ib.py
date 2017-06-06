@@ -26,12 +26,13 @@ import os
 import gc
 import six
 import itertools
-import pickle
 
 from dolfin import *
 from matplotlib import pyplot, gridspec
 
 from muflon import mpset, ModelFactory, SolverFactory, TimeSteppingFactory
+
+from muflon.utils.testing import GenericPostprocessorMMS
 
 from test_mms_Ia import (
     create_manufactured_solution, create_initial_conditions,
@@ -159,10 +160,11 @@ def postprocessor():
     #pyplot.show(); exit() # uncomment to explore current layout of plots
     return proc
 
-class Postprocessor(object):
+class Postprocessor(GenericPostprocessorMMS):
     def __init__(self, t_end, level):
-        self.plots = {}
-        self.results = []
+        super(Postprocessor, self).__init__()
+
+        # Hack enabling change of fixed variables at one place
         self.t_end = t_end
         self.level = level
 
@@ -170,40 +172,6 @@ class Postprocessor(object):
         self.x_var = "dt"
         self.y_var0 = "err"
         self.y_var1 = "tmr_tstepping"
-
-    def add_plot(self, fixed_variables=None):
-        fixed_variables = fixed_variables or ()
-        assert isinstance(fixed_variables, tuple)
-        assert all(len(var)==2 and isinstance(var[0], str)
-                   for var in fixed_variables)
-        self.plots[fixed_variables] = self._create_figure()
-
-    def add_result(self, rank, result):
-        if rank > 0:
-            return
-        self.results.append(result)
-
-    def flush_results(self, rank, datafile):
-        if rank > 0:
-            return
-        with open(datafile, 'wb') as handle:
-            for result in self.results:
-                pickle.dump(result, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        # NOTE: To read the data back use something like
-        # results = []
-        # with open(datafile, 'rb') as handle:
-        #     while True:
-        #         try:
-        #             results.append(pickle.load(handle))
-        #         except EOFError:
-        #             break
-
-    def pop_items(self, rank, items):
-        if rank > 0:
-            return
-        for r in self.results:
-            for item in items:
-                r.pop(item)
 
     def flush_plots(self, rank, outdir=""):
         if rank > 0:
@@ -250,9 +218,9 @@ class Postprocessor(object):
                      label=r"$L^2$-$v_{}$".format(i+1))
         ax1.plot(xs, [d["p"] for d in ys0], '+--', linewidth=0.5,
                  label=r"$L^2$-$p$")
-        ref1 = list(map(lambda x: 1e-2*x, xs)) # goes through [1e-1, 1e-3]
-        #ref2 = list(map(lambda x: 1e-1*x**2, xs)) # goes through [1e-1, 1e-3]
-        ax1.plot(xs, ref1, '', linewidth=0.5, label="ref")
+        ref1 = list(map(lambda x: 1e+1*ys0[0]["phi1"]*x, xs))
+        #ref2 = list(map(lambda x: 1e+2*ys0[0]["phi1"]*x**2, xs))
+        ax1.plot(xs, ref1, '', linewidth=1.0, label="ref")
         ax2.plot(xs, ys1, '*--', linewidth=0.2, label=label)
         ax1.legend(bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0,
                    fontsize='x-small', ncol=1)
