@@ -68,4 +68,6 @@ def test_forms(scheme, N, dim, th):
         F = forms["linear"][0]
         for c in F.coefficients():
             if c.name() == "dt":
-                assert dt == c(0.0, 0.0)
+                a = dolfin.Constant(c) # for correct evaluation in parallel
+                assert dt == a(0) # Constant can be evaluated anywhere,
+                                  # independently of the mesh

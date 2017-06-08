@@ -71,9 +71,9 @@ def create_manufactured_solution():
     coeffs_NS = dict(A0=2.0, a0=pi, b0=pi, w0=1.0)
     ms = {}
     ms["v1"] = {"expr": "A0*sin(a0*x[0])*cos(b0*x[1])*sin(w0*t)",
-               "prms": coeffs_NS}
+                "prms": coeffs_NS}
     ms["v2"] = {"expr": "-(A0*a0/pi)*cos(a0*x[0])*sin(b0*x[1])*sin(w0*t)",
-               "prms": coeffs_NS}
+                "prms": coeffs_NS}
     ms["p"] = {"expr": "A0*sin(a0*x[0])*sin(b0*x[1])*cos(w0*t)",
                "prms": coeffs_NS}
     ms["phi1"] = {"expr": "(1.0 + A1*cos(a1*x[0])*cos(b1*x[1])*sin(w1*t))/6.0",
@@ -128,6 +128,9 @@ def create_bcs(DS, boundary_markers, esol):
     bcs = {}
     bcs["v"] = [bcs_v1, bcs_v2]
     bcs["p"] = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
+    # corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=-1.0)
+    # bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0),
+    #                         corner, method="pointwise"),]
 
     return bcs
 
@@ -135,6 +138,8 @@ def create_source_terms(t_src, mesh, model, msol):
     S, LA, iLA = model.build_stension_matrices()
 
     # Space and time variables
+    # NOTE: Time variable must be named 't' because of 't' used in the string
+    #       representations stored in 'msol[<var>]["expr"]'
     x = SpatialCoordinate(mesh)
     t = variable(t_src)
 
@@ -259,6 +264,7 @@ def test_scaling_mesh(scheme, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Fixed parameters
+    OTD = postprocessor.OTD
     dt = postprocessor.dt
     t_end = postprocessor.t_end
     basename = "dt_{}_t_end_{}".format(dt, t_end)
@@ -282,7 +288,7 @@ def test_scaling_mesh(scheme, postprocessor):
             #       are possible via ``t_src.assign(Constant(t))``, where ``t``
             #       denotes the actual time value.
             model.load_sources(f_src, g_src)
-            forms = model.create_forms(scheme)
+            forms = model.create_forms(scheme, OTD)
             # NOTE: Here is the possibility to modify forms, e.g. by adding
             #       boundary integrals.
 
@@ -296,13 +302,13 @@ def test_scaling_mesh(scheme, postprocessor):
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            logfile = "log_{}_level_{}_{}.dat".format(basename, level, scheme)
+            logfile = "log_{}_level_{}_OTD_{}_{}.dat".format(
+                          basename, level, OTD, scheme)
             xfields = None #list(phi_) + list(v_) + [p,]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
-            TS = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
-                                            solver, sol_ptl, OTD=1, hook=hook,
-                                            logfile=logfile, xfields=xfields,
-                                            outdir=outdir)
+            TS = TimeSteppingFactory.create(
+                   "Implicit", comm, dt, t_end, solver, sol_ptl, psteps=1,
+                   hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
 
         # Time-stepping
         with Timer("Time stepping") as tmr_tstepping:
@@ -313,6 +319,7 @@ def test_scaling_mesh(scheme, postprocessor):
         result.update(
             ndofs=DS.num_dofs(),
             scheme=scheme,
+            OTD=OTD,
             err=hook.err,
             level=level,
             tmr_prepare=tmr_prepare.elapsed()[0],
@@ -348,18 +355,20 @@ def test_scaling_mesh(scheme, postprocessor):
 def postprocessor():
     dt = 0.001
     t_end = 0.002 # FIXME: set t_end = 0.1
-    proc = Postprocessor(dt, t_end)
-    proc.add_plot((("dt", dt), ("t_end", t_end)))
+    OTD = 1
+    proc = Postprocessor(dt, t_end, OTD)
+    proc.add_plot((("dt", dt), ("t_end", t_end), ("OTD", OTD)))
     #pyplot.show(); exit() # uncomment to explore current layout of plots
     return proc
 
 class Postprocessor(GenericPostprocessorMMS):
-    def __init__(self, dt, t_end):
+    def __init__(self, dt, t_end, OTD):
         super(Postprocessor, self).__init__()
 
         # Hack enabling change of fixed variables at one place
         self.dt = dt
         self.t_end = t_end
+        self.OTD = OTD
 
         # So far hardcoded values
         self.x_var = "level"

@@ -93,7 +93,7 @@ class TimeStepping(object):
             TimeStepping._not_implemented_msg(self, msg)
 
     def __init__(self, comm, dt, t_end, solver, sol_ptl,
-                 OTD=1, hook=None, logfile=None, xfields=None, outdir="."):
+                 psteps=1, hook=None, logfile=None, xfields=None, outdir="."):
         """
         Initializes parameters for time-stepping algorithm and creates logger.
 
@@ -107,8 +107,9 @@ class TimeStepping(object):
         :type solver: :py:class:`Solver <muflon.solving.solvers.Solver>`
         :param sol_ptl: list of solutions at previous time levels
         :type sol_ptl: list
-        :param OTD: Order of Time Discretization
-        :type OTD: int
+        :param psteps: number of previous time steps needed in the
+                       time-stepping algorithm
+        :type psteps: int
         :param hook: class with two special methods that are called at the
                      beginning/end of the time-stepping loop
         :type hook: :py:class:`TSHook`
@@ -122,13 +123,13 @@ class TimeStepping(object):
         :type outdir: str
         """
         # Check input
-        assert isinstance(OTD, int)
+        assert isinstance(psteps, int)
         assert isinstance(hook, (TSHook, type(None)))
         assert isinstance(logfile, (str, type(None)))
         assert isinstance(xfields, (list, type(None)))
 
         # Initialize parameters
-        self.parameters = TimeStepping._init_parameters(dt, t_end, OTD)
+        self.parameters = TimeStepping._init_parameters(dt, t_end, psteps)
 
         # Store attributes
         self._comm = comm
@@ -144,7 +145,7 @@ class TimeStepping(object):
         self._logger = MuflonLogger(comm, logfile)
 
     @staticmethod
-    def _init_parameters(dt, t_end, OTD):
+    def _init_parameters(dt, t_end, psteps):
         """
         .. _tab_tsprm:
 
@@ -156,7 +157,7 @@ class TimeStepping(object):
            ====================  =============  ===================================
            --dt                                 time step
            --t_end                              termination time of the simulation
-           --OTD                                Order of Time Discretization
+           --psteps                             number of previous time steps
            --xdmf
            \                     .folder        name of the folder for XDMF files
            \                     .flush         flush output of XDMF files
@@ -166,7 +167,7 @@ class TimeStepping(object):
         prm = Parameters("time-stepping")
         prm.add("dt", dt)
         prm.add("t_end", t_end)
-        prm.add("OTD", OTD, 1, 2)
+        prm.add("psteps", psteps, 1, 2)
 
         nested_prm = Parameters("xdmf")
         nested_prm.add("folder", "XDMFdata")
@@ -288,6 +289,7 @@ class Implicit(TimeStepping):
                 self._hook.tail(t, it, logger)
 
             # Update variables at previous time levels
+            # FIXME: Take care of other levels for k-step schemes (k > 1)
             for (i, w) in enumerate(self._solver.sol_ctl()):
                 self._sol_ptl[0][i].assign(w)
 

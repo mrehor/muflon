@@ -26,7 +26,7 @@ def test_Implicit():
     prm = algo.parameters
     #dolfin.info(prm, True)
     with pytest.raises(RuntimeError):
-       prm["OTD"] = 1.5 # only int values are allowed
+       prm["psteps"] = 1.5 # only int values are allowed
 
     algo = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
                                       solver, sol_ptl, 1, xfields=[field,])

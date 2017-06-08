@@ -63,6 +63,7 @@ def test_scaling_time(scheme, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Fixed parameters
+    OTD = postprocessor.OTD
     level = postprocessor.level
     t_end = postprocessor.t_end
     basename = "level_{}_t_end_{}".format(level, t_end)
@@ -75,7 +76,7 @@ def test_scaling_time(scheme, postprocessor):
     bcs = create_bcs(DS, boundary_markers, esol)
 
     # Iterate over time step
-    for k in range(5): # FIXME: set to 7
+    for k in range(3): # FIXME: set to 7
         dt = 0.1*0.5**k
         with Timer("Prepare") as tmr_prepare:
             # Reset sol_ptl[0] back to initial conditions
@@ -85,13 +86,8 @@ def test_scaling_time(scheme, postprocessor):
             model = ModelFactory.create("Incompressible", dt, DS)
             t_src = Function(DS.reals())
             f_src, g_src = create_source_terms(t_src, mesh, model, msol)
-            # NOTE: Source terms are time-dependent. The updates to these terms
-            #       are possible via ``t_src.assign(Constant(t))``, where ``t``
-            #       denotes the actual time value.
             model.load_sources(f_src, g_src)
-            forms = model.create_forms(scheme)
-            # NOTE: Here is the possibility to modify forms, e.g. by adding
-            #       boundary integrals.
+            forms = model.create_forms(scheme, OTD)
 
             # Get access to solution functions
             sol_ctl = DS.solution_ctl()
@@ -103,13 +99,13 @@ def test_scaling_time(scheme, postprocessor):
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            logfile = "log_{}_dt_{}_{}.dat".format(basename, dt, scheme)
             xfields = None #list(phi_) + list(v_) + [p,]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
-            TS = TimeSteppingFactory.create("Implicit", comm, dt, t_end,
-                                            solver, sol_ptl, OTD=1, hook=hook,
-                                            logfile=logfile, xfields=xfields,
-                                            outdir=outdir)
+            logfile = "log_{}_dt_{}_OTD_{}_{}.dat".format(
+                          basename, dt, OTD, scheme)
+            TS = TimeSteppingFactory.create(
+                   "Implicit", comm, dt, t_end, solver, sol_ptl, psteps=1,
+                   hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
 
         # Time-stepping
         with Timer("Time stepping") as tmr_tstepping:
@@ -120,6 +116,7 @@ def test_scaling_time(scheme, postprocessor):
         result.update(
             ndofs=DS.num_dofs(),
             scheme=scheme,
+            OTD=OTD,
             err=hook.err,
             level=level,
             tmr_prepare=tmr_prepare.elapsed()[0],
@@ -154,19 +151,21 @@ def test_scaling_time(scheme, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor():
     t_end = 0.5 # FIXME: set t_end = 1.0
-    level = 3
-    proc = Postprocessor(t_end, level)
-    proc.add_plot((("level", level), ("t_end", t_end)))
+    level = 4
+    OTD = 1
+    proc = Postprocessor(t_end, level, OTD)
+    proc.add_plot((("level", level), ("t_end", t_end), ("OTD", OTD)))
     #pyplot.show(); exit() # uncomment to explore current layout of plots
     return proc
 
 class Postprocessor(GenericPostprocessorMMS):
-    def __init__(self, t_end, level):
+    def __init__(self, t_end, level, OTD):
         super(Postprocessor, self).__init__()
 
         # Hack enabling change of fixed variables at one place
         self.t_end = t_end
         self.level = level
+        self.OTD = OTD
 
         # So far hardcoded values
         self.x_var = "dt"
@@ -201,13 +200,13 @@ class Postprocessor(GenericPostprocessorMMS):
                 xs = datapoints["xs"]
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
-                self._plot(fig, xs, ys0, ys1, free_vars)
+                self._plot(fig, xs, ys0, ys1, free_vars, self.OTD)
             self._save_plot(fig, fixed_vars, outdir)
 
         self.results = []
 
     @staticmethod
-    def _plot(fig, xs, ys0, ys1, free_vars):
+    def _plot(fig, xs, ys0, ys1, free_vars, OTD):
         fig, (ax1, ax2) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for (i, var) in enumerate(["phi1", "phi2", "phi3"]):
@@ -218,9 +217,18 @@ class Postprocessor(GenericPostprocessorMMS):
                      label=r"$L^2$-$v_{}$".format(i+1))
         ax1.plot(xs, [d["p"] for d in ys0], '+--', linewidth=0.5,
                  label=r"$L^2$-$p$")
-        ref1 = list(map(lambda x: 1e+1*ys0[0]["phi1"]*x, xs))
-        #ref2 = list(map(lambda x: 1e+2*ys0[0]["phi1"]*x**2, xs))
-        ax1.plot(xs, ref1, '', linewidth=1.0, label="ref")
+
+        if OTD == 1:
+            ref = list(map(lambda x: 1e+1*ys0[0]["phi1"]*x, xs))
+        elif OTD == 2:
+            ref = list(map(lambda x: 1e+2*ys0[0]["phi1"]*x**2, xs))
+        ax1.plot(xs, ref, '', linewidth=1.0, label="ref-"+str(OTD))
+
+        # ref1 = list(map(lambda x: 1e+1*ys0[0]["phi1"]*x, xs))
+        # ref2 = list(map(lambda x: 1e+2*ys0[0]["phi1"]*x**2, xs))
+        # ax1.plot(xs, ref1, '', linewidth=1.0, label="ref-1")
+        # ax1.plot(xs, ref2, '', linewidth=1.0, label="ref-2")
+
         ax2.plot(xs, ys1, '*--', linewidth=0.2, label=label)
         ax1.legend(bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0,
                    fontsize='x-small', ncol=1)
