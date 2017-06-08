@@ -70,8 +70,9 @@ def test_forms(scheme, N, dim, th):
     dt = 42
     model.update_time_step_value(dt)
     assert dt == model.time_step_value()
-    if scheme == "Monolithic":
-        F = forms["linear"][0]
+    if scheme in ["Monolithic", "FullyDecoupled"]:
+        F = forms["linear"][0] \
+          if scheme == "Monolithic" else forms["bilinear"][0]
         for c in F.coefficients():
             if c.name() == "dt":
                 a = dolfin.Constant(c) # for correct evaluation in parallel
