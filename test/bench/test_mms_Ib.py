@@ -66,7 +66,7 @@ def test_scaling_time(scheme, postprocessor):
     OTD = postprocessor.OTD
     level = postprocessor.level
     t_end = postprocessor.t_end
-    basename = "level_{}_t_end_{}".format(level, t_end)
+    basename = "level_{}_t_end_{}_OTD_{}".format(level, t_end, OTD)
 
     # Prepare space discretization, exact solution and bcs
     mesh, boundary_markers = create_domain(level)
@@ -101,8 +101,7 @@ def test_scaling_time(scheme, postprocessor):
             outdir = os.path.join(scriptdir, __name__)
             xfields = None #list(phi_) + list(v_) + [p,]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
-            logfile = "log_{}_dt_{}_OTD_{}_{}.dat".format(
-                          basename, dt, OTD, scheme)
+            logfile = "log_{}_dt_{}_{}.dat".format(basename, dt, scheme)
             TS = TimeSteppingFactory.create(
                    "Implicit", comm, dt, t_end, solver, sol_ptl, psteps=1,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)

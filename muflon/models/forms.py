@@ -303,7 +303,9 @@ class Model(object):
           % (caller, self.__str__())
         raise NotImplementedError(" ".join((msg, _msg)))
 
-# --- Incompressible CHNSF model ----------------------------------------------
+# -----------------------------------------------------------------------------
+# Incompressible CHNSF model
+# -----------------------------------------------------------------------------
 
 class Incompressible(Model):
     """
@@ -326,6 +328,8 @@ class Incompressible(Model):
 
         # Add specific model parameters
         self.parameters.add("omega_2", 1.0)
+
+# --- Monolithic forms for Incompressible model -------------------------------
 
     def forms_Monolithic(self, OTD=1):
         """
@@ -504,14 +508,161 @@ class Incompressible(Model):
 
         return dict(linear=(system_ch + system_ns,), bilinear=None)
 
+# --- SemiDecoupled forms for Incompressible model ----------------------------
+
     def forms_SemiDecoupled(self, OTD=1):
         """
         .. todo:: missing implementation
         """
         return None
 
-    def forms_FullyDecoupled(self, OTD=1):
+# --- FullyDecoupled forms for Incompressible model  --------------------------
+
+    def forms_FullyDecoupled(self, OTD=1, s_factor=1.0):
         """
-        .. todo:: missing implementation
+        Create linear forms for incompressible model using
+        :py:class:`FullyDecoupled \
+                   <muflon.functions.discretization.FullyDecoupled>`
+        discretization scheme. (Forms are linear in arguments, but generally
+        **nonlinear** in coefficients.)
+
+        Forms are wrapped in a tuple and returned in a dictionary under
+        ``'linear'`` item.
+
+        :param OTD: Order of Time Discretization
+        :type OTD: int
+        :param s_factor: factor used to control numerical parameter ``s >= 1``
+        :type s_factor: float
+        :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
+                  the first one being set to ``None``
+        :rtype: dict
         """
-        return None
+        # Check input and initialize factors
+        if OTD == 1:
+            gamma0 = 1.0
+            star0, star1 = 1.0, 0.0
+            hat0, hat1 = 1.0, 0.0
+        elif OTD == 2:
+            gamma0 = 1.5
+            star0, star1 = 2.0, -1.0
+            hat0, hat1 = 2.0, -0.5
+        else:
+            msg = "Temporal integration of order %g for '%s'" \
+                  " scheme is not implemented." % (OTD, "FullyDecoupled")
+            raise NotImplementedError(msg)
+
+        # Wrap factors using 'Constant' class
+        gamma0 = Constant(gamma0)
+        star0, star1 = Constant(star0), Constant(star1)
+        hat0, hat1 = Constant(hat0), Constant(hat1)
+
+        # Get parameters
+        prm = self.parameters
+
+        # Arguments of the system
+        test = self._test
+        trial = self._trial
+
+        # Coefficients of the system
+        # FIXME: add th
+        phi, chi, v, p = self._pv_ctl
+        phi0, chi0, v0, p0 = self._pv_ptl[0]
+        del chi0, p0 # not needed
+        # FIXME: A small hack ensuring that the following variables can be used
+        #        to define "_star" and "_hat" quantities even if OTD == 1
+        phi1, chi1, v1, p1 = self._pv_ptl[OTD-1]
+        del chi1, p1 # not needed
+
+        # Build approximated coefficients
+        phi_star = star0*phi0 + star1*phi1
+        phi_hat = hat0*phi0 + hat1*phi1
+        v_star = star0*v0 + star1*v1
+        v_hat = hat0*v0 + hat1*v1
+
+        # Source terms
+        f_src = self._f_src
+        g_src = self._g_src
+
+        # Discretization parameters
+        idt = 1.0/self._dt
+
+        # Model parameters
+        eps = Constant(prm["eps"])
+        omega_2 = Constant(prm["omega_2"])
+
+        # Matrices built from surface tensions
+        S, LA, iLA = self.build_stension_matrices()
+
+        # Choose double-well potential
+        f, df, a, b = doublewell("poly4")
+        a, b = Constant(a), Constant(b)
+
+        # Prepare non-linear potential term @ CTL
+        _phi = variable(phi)
+        F = multiwell(_phi, f, S)
+        dF = diff(F, _phi)
+        # Alternative approach with explicit definition of dF
+        #from muflon.functions.potentials import multiwell_derivative
+        #dF = multiwell_derivative(phi, f, S)
+
+        # Prepare non-linear potential term starred time level
+        _phi_star = variable(phi_star)
+        F_star = multiwell(_phi_star, f, S)
+        dF_star = diff(F_star, _phi_star)
+
+        # --- Forms for Advance-Phase procedure ---
+
+        # 1. Vectors Q and R
+        Mo = Constant(prm["M0"])
+        s_bar = sqrt(2.0*a*eps*gamma0*idt/Mo)
+        s_fac = Constant(s_factor)
+        #s = s_fac*s_bar*(eps**2.0)
+        alpha = 0.5*s_bar*(sqrt(s_fac**2.0 - 1.0) - s_fac)
+        Q = (g_src + idt*phi_hat - dot(grad(phi_star), v_star))/Mo
+        R = (b/eps)*dot(iLA, dF_star) - s_fac*s_bar*phi_star
+
+        # 2. Equations for chi (<-- psi)
+        eqn_chi = []
+        for i in range(len(test["chi"])):
+            eqn_chi.append((
+                  inner(grad(trial["chi"][i]), grad(test["chi"][i]))
+                + 2.0/(a*eps)*(
+                      Q[i]*test["chi"][i]
+                    - inner(grad(R[i]), grad(test["chi"][i]))
+                    + (alpha + s_fac*s_bar)*trial["chi"][i]*test["chi"][i]
+            ))*dx)
+
+        # 3. Equations for phi
+        eqn_phi = []
+        for i in range(len(test["phi"])):
+            eqn_phi.append((
+                  inner(grad(trial["phi"][i]), grad(test["phi"][i]))
+                + chi[i]*test["phi"][i]
+                - 2.0/(a*eps)*alpha*trial["phi"][i]*test["phi"][i]
+            )*dx)
+
+        # 4. Definition of CHI from the thesis (usin smart Laplace of phi)
+        CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*chi + alpha*phi
+        #Laplace_phi = chi - 2.0/(a*eps)*alpha*phi
+        #CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*Laplace_phi
+
+        # 5. Total flux and capillary force
+        rho_mat = self.collect_material_params("rho")
+        nu_mat = self.collect_material_params("nu")
+        J = total_flux(Mo, rho_mat, CHI)
+        f_cap = capillary_force(phi, CHI, LA)
+
+        # 6. Density and viscosity
+        rho = self.homogenized_quantity(rho_mat, phi)
+        nu = self.homogenized_quantity(nu_mat, phi)
+
+        # --- Forms for projection method ---
+
+        # Equation for pressure step
+        eqn_p = None
+
+        # Equations for v
+        eqn_v = []
+
+        forms = eqn_chi + eqn_phi #+ eqn_p + eqn_v
+        return dict(linear=None, bilinear=tuple(forms))

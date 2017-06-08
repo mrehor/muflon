@@ -267,7 +267,7 @@ def test_scaling_mesh(scheme, postprocessor):
     OTD = postprocessor.OTD
     dt = postprocessor.dt
     t_end = postprocessor.t_end
-    basename = "dt_{}_t_end_{}".format(dt, t_end)
+    basename = "dt_{}_t_end_{}_OTD_{}".format(dt, t_end, OTD)
 
     # Iterate over refinement level
     for level in range(1, 6):
@@ -302,8 +302,7 @@ def test_scaling_mesh(scheme, postprocessor):
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            logfile = "log_{}_level_{}_OTD_{}_{}.dat".format(
-                          basename, level, OTD, scheme)
+            logfile = "log_{}_level_{}_{}.dat".format(basename, level, scheme)
             xfields = None #list(phi_) + list(v_) + [p,]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
             TS = TimeSteppingFactory.create(

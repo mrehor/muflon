@@ -33,7 +33,7 @@ def prepare_model(scheme, N, dim, th):
 
 # FIXME: does not work with the temperature yet
 @pytest.mark.parametrize("th", [False,]) # True
-@pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled"]) # "FullyDecoupled"
+@pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
 @pytest.mark.parametrize("N", [2, 3])
 @pytest.mark.parametrize("dim", [2,])
 def test_forms(scheme, N, dim, th):
@@ -59,6 +59,12 @@ def test_forms(scheme, N, dim, th):
         assert forms["bilinear"] is None
         F = forms["linear"][0]
         r = dolfin.assemble(F)
+    elif scheme == "FullyDecoupled":
+        assert forms["linear"] is None
+        bforms = forms["bilinear"]
+        for F in bforms:
+            a, L = dolfin.lhs(F), dolfin.rhs(F)
+            A, b = dolfin.assemble_system(a, L)
 
     # Test variable time step
     dt = 42
