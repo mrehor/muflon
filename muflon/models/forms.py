@@ -24,9 +24,9 @@ import numpy as np
 
 from dolfin import Parameters
 from dolfin import Constant, Function
-from dolfin import as_matrix, as_vector, conditional
+from dolfin import as_matrix, as_vector, conditional, variable
 from dolfin import dot, inner, outer, dx, ds, sym
-from dolfin import derivative, div, grad
+from dolfin import derivative, diff, div, grad, sqrt
 
 from muflon.common.parameters import mpset
 from muflon.models.potentials import doublewell, multiwell
@@ -117,7 +117,6 @@ class Model(object):
         self._g_src = as_vector(len(test[0])*[Constant(0.0),])
 
         # Store time step
-        self._dt_float = dt                # float representation of dt
         self._dt = Function(DS.reals())    # function that wraps dt
         self._dt.rename("dt", "time_step") # rename for easy identification
         self._dt.assign(Constant(dt))      # assign the correct value
@@ -129,7 +128,9 @@ class Model(object):
         :returns: value of the time step
         :rtype: float
         """
-        return self._dt_float
+        # Use general Constant that can be evaluated independently of the mesh
+        dt = Constant(self._dt)
+        return dt(0)
 
     def update_time_step_value(self, dt):
         """
@@ -138,7 +139,6 @@ class Model(object):
         :param dt: new value of the time step
         :type dt: float
         """
-        self._dt_float = dt
         self._dt.assign(Constant(dt))
 
     def test_fcns(self):
@@ -170,7 +170,7 @@ class Model(object):
         :param f_src: external source term in the balance of linear momentum
         :type f_src: :py:class:`dolfin.Expression` or anything reasonable
         :param g_src: artificial source term in the CH part of the system,
-                      for numerical testing only
+                      for **numerical testing only**
         :type g_src: :py:class:`dolfin.Expression` or anything reasonable
         """
         assert len(f_src) == len(self._test["v"])
@@ -344,13 +344,20 @@ class Incompressible(Model):
         :rtype: dict
         """
         # Check input and initialize factors
-        assert OTD in [1, 2]
         if OTD == 1: # backward Euler (implicit)
             factor_ctl = Constant(1.0)
             factor_ptl = Constant(0.0)
         elif OTD == 2: # Crank-Nicolson
             factor_ctl = Constant(0.5)
             factor_ptl = Constant(0.5)
+            # FIXME: resolve this issue or ban OTD = 2
+            from dolfin import warning
+            warning("Implementation of the 2nd order scheme is currently"
+                    " broken and does not work properly.")
+        else:
+            msg = "Temporal integration of order %g for '%s'" \
+                  " scheme is not implemented." % (OTD, "Monolithic")
+            raise NotImplementedError(msg)
 
         # Get parameters
         prm = self.parameters
@@ -384,6 +391,7 @@ class Incompressible(Model):
         a, b = Constant(a), Constant(b)
 
         # Prepare non-linear potential term @ CTL
+        # FIXME: Get rid of unnecessary comments and alternatives
         # if len(phi) == 1:
         #     s = Constant(prm["sigma"]["12"])
         #     # iLA = Constant(0.5/s) # see (3.46) in the thesis
@@ -391,8 +399,12 @@ class Incompressible(Model):
         #     F = s*f(phi[0])
         #     int_dF = Constant(0.5)*df(phi[0])*test["phi"][0]*dx
         # else:
-        F = multiwell(phi, f, S)
-        int_dF = derivative(F*dx, phi, tuple(dot(iLA.T, test["phi"])))
+        _phi = variable(phi)
+        F = multiwell(_phi, f, S)
+        dF = diff(F, _phi)
+        #int_dF = inner(dot(iLA, dF), test["phi"])*dx
+        #F = multiwell(phi, f, S)
+        #int_dF = derivative(F*dx, phi, tuple(dot(iLA.T, test["phi"])))
         # UFL ISSUE:
         #   The above tuple is needed as long as `ListTensor` type is not
         #   explicitly treated in `ufl/formoperators.py:211`,
@@ -400,9 +412,13 @@ class Incompressible(Model):
         # FIXME: check if this is a bug and report it
 
         # Prepare non-linear potential term @ PTL
-        # FIXME: maybe useless
-        F0 = multiwell(phi0, f, S)
-        int_dF0 = derivative(F0*dx, phi0, tuple(dot(iLA.T, test["phi"])))
+        # FIXME: may be useless
+        _phi0 = variable(phi0)
+        F0 = multiwell(_phi0, f, S)
+        dF0 = diff(F0, _phi0)
+        #int_dF0 = inner(dot(iLA, dF0), test["phi"])*dx
+        #F0 = multiwell(phi0, f, S)
+        #int_dF0 = derivative(F0*dx, phi0, tuple(dot(iLA.T, test["phi"])))
 
         # Alternative approach is to define the above derivative explicitly
         #from muflon.models.potentials import multiwell_derivative
@@ -430,15 +446,16 @@ class Incompressible(Model):
         G_phi_ptl = G_phi(phi0, chi, v0) # not chi0, correct?
         eqn_phi = dphidt + factor_ctl*G_phi_ctl + factor_ptl*G_phi_ptl
 
-        def G_chi(phi, chi, int_dF):
+        def G_chi(phi, chi, dF):
             G = (
                   inner(chi, test["phi"])
                 - 0.5*a*eps*inner(grad(phi), grad(test["phi"]))
+                - (b/eps)*inner(dot(iLA, dF), test["phi"])
             )*dx
-            G -= (b/eps)*int_dF
+            #G -= (b/eps)*int_dF
             return G
-        G_chi_ctl = G_chi(phi, chi, int_dF)
-        G_chi_ptl = G_chi(phi0, chi, int_dF0) # not chi0, correct?
+        G_chi_ctl = G_chi(phi, chi, dF)
+        G_chi_ptl = G_chi(phi0, chi, dF0) # not chi0, correct?
         eqn_chi = factor_ctl*G_chi_ctl + factor_ptl*G_chi_ptl
         # FIXME: consider smarter discretization of \pd{F}{\phi} by mimicking
         #        \frac{F^{(n+1)} - F^{(n)}}{phi^{(n+1) - phi^{(n)}}},
