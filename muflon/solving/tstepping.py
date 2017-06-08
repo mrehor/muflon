@@ -216,7 +216,9 @@ class TimeStepping(object):
             if self._xfields: # create xdmf writer for given fields
                 xfolder = os.path.join(self._outdir,
                                        self.parameters["xdmf"]["folder"])
-                self._writer = XDMFWriter(comm, xfolder, xfields, xflush)
+                xflush = self.parameters["xdmf"]["flush"]
+                self._xdmf_writer = XDMFWriter(self._comm, xfolder,
+                                               self._xfields, xflush)
             return getattr(self, "run_" + scheme)(*args, **kwargs)
         else:
             msg  = "Cannot run time-stepping for '%s' scheme." % scheme

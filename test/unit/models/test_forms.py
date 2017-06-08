@@ -67,5 +67,5 @@ def test_forms(scheme, N, dim, th):
     if scheme == "Monolithic":
         F = forms["linear"][0]
         for c in F.coefficients():
-            if c.name == "dt":
+            if c.name() == "dt":
                 assert dt == c(0.0, 0.0)
