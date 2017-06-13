@@ -83,7 +83,7 @@ def test_scaling_time(scheme, postprocessor):
             DS.load_ic_from_simple_cpp(ic)
 
             # Prepare model
-            model = ModelFactory.create("Incompressible", dt, DS)
+            model = ModelFactory.create("Incompressible", dt, DS, bcs)
             t_src = Function(DS.reals())
             f_src, g_src = create_source_terms(t_src, mesh, model, msol)
             model.load_sources(f_src, g_src)
@@ -95,6 +95,7 @@ def test_scaling_time(scheme, postprocessor):
 
             # Prepare solver
             solver = SolverFactory.create(scheme, sol_ctl, forms, bcs)
+            # FIXME: bcs were moved to model
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()

@@ -23,10 +23,10 @@ variants of Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) type models.
 import numpy as np
 
 from dolfin import Parameters
-from dolfin import Constant, Function
+from dolfin import Constant, Function, Measure
 from dolfin import as_matrix, as_vector, conditional, variable
 from dolfin import dot, inner, outer, dx, ds, sym
-from dolfin import derivative, diff, div, grad, sqrt
+from dolfin import derivative, diff, div, grad, curl, sqrt
 
 from muflon.common.parameters import mpset
 from muflon.models.potentials import doublewell, multiwell
@@ -81,15 +81,28 @@ class Model(object):
             msg = "Cannot create model from a generic class. "
             Model._not_implemented_msg(self, msg)
 
-    def __init__(self, dt, DS):
+    def __init__(self, dt, DS, bcs={}):
         """
         :param dt: time step
         :type dt: float
         :param DS: discretization scheme
         :type DS: :py:class:`muflon.functions.discretization.Discretization`
+        :param bcs: dictionary with Dirichlet boundary conditions for
+                    individual primitive variables
+        :type bcs: dict
         """
         # Initialize parameters
         self.parameters = Parameters(mpset["model"])
+        nested_prm = Parameters("full")
+        nested_prm.add("factor_s", 1.0) # to control num. parameter 's'
+        nested_prm.add("factor_rho0", 1.0e-3) # to control num. param 'rho0'
+        nested_prm.add("factor_nu0", 1.0) # to control num. param 'nu0'
+        self.parameters.add(nested_prm)
+
+        # Store discretization scheme
+        self._DS = DS
+        # FIXME: Access to trial and test fcns must be provided via
+        #        DS.test_fcns(), DS.trial_fcns() returning dicts
 
         # Create test and trial functions
         test = DS.create_test_fcns()
@@ -112,6 +125,9 @@ class Model(object):
         for i in range(DS.number_of_ptl()):
             self._pv_ptl.append(DS.primitive_vars_ptl(i, indexed=True))
 
+        # Store boundary conditions
+        self._bcs = bcs
+
         # Initialize source terms
         self._f_src = as_vector(len(test[2])*[Constant(0.0),])
         self._g_src = as_vector(len(test[0])*[Constant(0.0),])
@@ -120,6 +136,16 @@ class Model(object):
         self._dt = Function(DS.reals())    # function that wraps dt
         self._dt.rename("dt", "time_step") # rename for easy identification
         self._dt.assign(Constant(dt))      # assign the correct value
+
+    def bcs(self):
+        """
+        Returns dictionary with Dirichlet boundary conditions for primitive
+        variables.
+
+        :returns: boundary conditions
+        :rtype: dict
+        """
+        return self._bcs
 
     def time_step_value(self):
         """
@@ -181,6 +207,9 @@ class Model(object):
             self._g_src = g_src
 
     def create_forms(self, scheme, *args, **kwargs):
+        # FIXME: change design so that DS keeps name of the scheme
+        #        thus 'create_forms' can automatically decide which forms will
+        #        be created
         """
         Create forms for a given scheme.
 
@@ -270,7 +299,8 @@ class Model(object):
         assert N == len(self._test["phi"]) + 1
         return q
 
-    def homogenized_quantity(self, q, phi, cut=True):
+    @staticmethod
+    def homogenized_quantity(q, phi, cut=True):
         """
         From given material parameters (density, viscosity, conductivity)
         builds homogenized quantity and returns the result.
@@ -518,7 +548,7 @@ class Incompressible(Model):
 
 # --- FullyDecoupled forms for Incompressible model  --------------------------
 
-    def forms_FullyDecoupled(self, OTD=1, s_factor=1.0):
+    def forms_FullyDecoupled(self, OTD=1):
         """
         Create linear forms for incompressible model using
         :py:class:`FullyDecoupled \
@@ -531,8 +561,6 @@ class Incompressible(Model):
 
         :param OTD: Order of Time Discretization
         :type OTD: int
-        :param s_factor: factor used to control numerical parameter ``s >= 1``
-        :type s_factor: float
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
                   the first one being set to ``None``
         :rtype: dict
@@ -560,24 +588,26 @@ class Incompressible(Model):
         prm = self.parameters
 
         # Arguments of the system
-        test = self._test
-        trial = self._trial
+        DS = self._DS
+        test = self._test   # FIXME: test = DS.test_fcns()
+        trial = self._trial # FIXME: test = DS.trial_fcns()
 
         # Coefficients of the system
         # FIXME: add th
         phi, chi, v, p = self._pv_ctl
         phi0, chi0, v0, p0 = self._pv_ptl[0]
-        del chi0, p0 # not needed
+        del chi0 # not needed
         # FIXME: A small hack ensuring that the following variables can be used
         #        to define "_star" and "_hat" quantities even if OTD == 1
         phi1, chi1, v1, p1 = self._pv_ptl[OTD-1]
-        del chi1, p1 # not needed
+        del chi1 # not needed
 
         # Build approximated coefficients
         phi_star = star0*phi0 + star1*phi1
         phi_hat = hat0*phi0 + hat1*phi1
         v_star = star0*v0 + star1*v1
         v_hat = hat0*v0 + hat1*v1
+        p_star = star0*p0 + star1*p1
 
         # Source terms
         f_src = self._f_src
@@ -615,7 +645,7 @@ class Incompressible(Model):
         # 1. Vectors Q and R
         Mo = Constant(prm["M0"])
         s_bar = sqrt(2.0*a*eps*gamma0*idt/Mo)
-        s_fac = Constant(s_factor)
+        s_fac = Constant(prm["full"]["factor_s"])
         #s = s_fac*s_bar*(eps**2.0)
         alpha = 0.5*s_bar*(sqrt(s_fac**2.0 - 1.0) - s_fac)
         Q = (g_src + idt*phi_hat - dot(grad(phi_star), v_star))/Mo
@@ -656,13 +686,74 @@ class Incompressible(Model):
         rho = self.homogenized_quantity(rho_mat, phi)
         nu = self.homogenized_quantity(nu_mat, phi)
 
-        # --- Forms for projection method ---
+        # --- Forms for projection method (velocity correction-type) ---
+        rho0 = min(rho_mat)
+        rho0 = Constant(prm["full"]["factor_rho0"]*rho0)
+        nu0 = max([nu_mat[i]/rho_mat[i] for i in range(len(rho_mat))])
+        nu0 = Constant(prm["full"]["factor_nu0"]*nu0)
+        irho, irho0 = 1.0/rho, 1.0/rho0
+        inu, inu0 = 1.0/nu, 1.0/nu0
 
-        # Equation for pressure step
-        eqn_p = None
+        # Provide own definition of cross product in 2D between the vectors u
+        # and w, where the 2nd one was obtained as curl of another vector
+        def crosscurl(u, w):
+            if len(u) == 2:
+                c = w*as_vector([u[1], -u[0]])
+            else:
+                c = cross(u, w)
+            return c
+
+        # Equation for pressure step (volume integral)
+        w0, w_star = curl(v0), curl(v_star) # FIXME: Does it work in 2D?
+        Dv0, Dv_star = sym(grad(v0)), sym(grad(v_star))
+        G = (
+              irho*f_src
+            - dot(grad(v_star), v_star + omega_2*irho*J)
+            + idt*v_hat
+            + (irho0 - irho)*grad(p_star)
+            + Constant(2.0)*irho*dot(Dv_star, grad(nu))
+            + irho*f_cap # FIXME: check the sign once again
+            + crosscurl(grad(irho*nu), w_star)
+        )
+        eqn_p = (inner(grad(trial["p"]) - rho0*G, grad(test["p"])))*dx
+
+        # Equation for pressure step (boundary integrals)
+        n = DS.facet_normal()
+
+        # FIXME: check origin of the following terms
+        eqn_p += irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
+
+        bcs_velocity = self._bcs.get("v", [])
+        # FIXME: Works only if full vector v is specified on the boundary.
+        #        What about partial slip and other conditions?
+        for bc_v in bcs_velocity:
+            assert isinstance(bc_v, tuple)
+            assert len(bc_v) == len(v)
+            v_dbc = []
+            for i, bc in enumerate(bc_v):
+                v_dbc.append(bc.function_arg)
+                markers, label = bc.domain_args
+                if i == 0: # check that we have only one set of markers/labels
+                    markers_ref = markers
+                    label_ref = label
+                assert id(markers) == id(markers_ref)
+                assert label == label_ref
+            v_dbc = as_vector(v_dbc)
+            ds_dbc = Measure("ds", subdomain_data=markers)
+            eqn_p += + idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
+
+        eqn_p = [eqn_p,]
 
         # Equations for v
+        # FIXME: Works only for v specified on the whole boundary
         eqn_v = []
+        for i in range(len(test["v"])):
+            eqn_v.append((
+                  inner(grad(trial["v"][i]), grad(test["v"][i]))
+                + inu0*gamma0*idt*(trial["v"][i]*test["v"][i])
+                - inu0*(G[i] - irho0*p.dx(i))*test["v"][i]
+                - (inu0*irho*nu - 1.0)*crosscurl(grad(test["v"][i]), w_star)[i]
+            )*dx)
 
-        forms = eqn_chi + eqn_phi #+ eqn_p + eqn_v
+        forms = eqn_chi + eqn_phi + eqn_p + eqn_v
         return dict(linear=None, bilinear=tuple(forms))

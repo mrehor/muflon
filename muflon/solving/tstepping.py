@@ -199,6 +199,9 @@ class TimeStepping(object):
         return self._solver
 
     def run(self, scheme, *args, **kwargs):
+        # FIXME: The algorithms for different schemes could be identical,
+        #        assuming that self._solver_solve() takes care of solving
+        #        a single time step properly.
         """
         Run time-stepping algorithm for a given scheme.
 
@@ -246,6 +249,7 @@ class TimeStepping(object):
 # --- Implicit time-stepping algorithms ---------------------------------------
 
 class Implicit(TimeStepping):
+    # FIXME: Rename to ConstantTimeStep
     """
     This class implements implicit time-stepping algorithms.
     """

@@ -51,6 +51,10 @@ def test_discretization_schemes(scheme, N, dim, th):
     DS.parameters["N"] = N
     DS.setup()
 
+    # Get facet normal
+    n = DS.facet_normal()
+    assert len(n) == dim
+
     # --- Check function spaces -----------------------------------------------
     with pytest.raises(ValueError):
         V_v = DS.subspace("v")

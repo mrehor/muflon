@@ -129,7 +129,10 @@ class Monolithic(Solver):
         w = self._sol_ctl[0]
         F = self._forms["linear"][0]
         J = derivative(F, w)
-        bcs = self._bcs["v"] + self._bcs["p"]
+        bcs = []
+        for bc in self._bcs["v"]:
+            bcs += list(bc)
+        bcs += self._bcs["p"]
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
         problem = NonlinearVariationalProblem(F, w, bcs, J)
         solver = NonlinearVariationalSolver(problem)

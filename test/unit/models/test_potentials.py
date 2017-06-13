@@ -6,7 +6,7 @@ from dolfin import (as_backend_type, as_vector, assemble, Constant, dx, info,
 from muflon.models.potentials import doublewell, multiwell
 from muflon.models.potentials import multiwell_derivative
 
-from unit.models.test_forms import prepare_model
+from unit.models.test_forms import prepare_model_and_bcs
 
 @pytest.mark.parametrize("th", [False,]) # True
 @pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled"]) # "FullyDecoupled"
@@ -14,7 +14,7 @@ from unit.models.test_forms import prepare_model
 @pytest.mark.parametrize("N", [2, 3])
 @pytest.mark.parametrize("dim", [2,])
 def test_potentials(scheme, N, dim, th):
-    model, DS = prepare_model(scheme, N, dim, th)
+    model, DS, bcs = prepare_model_and_bcs(scheme, N, dim, th)
     prm = model.parameters["sigma"]
     prm.add("12", 2.0)
     if N == 3:

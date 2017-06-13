@@ -48,7 +48,7 @@ Typical usage:
 """
 
 from ufl.tensors import ListTensor
-from dolfin import as_vector, split
+from dolfin import as_vector, split, FacetNormal
 from dolfin import Parameters, VectorElement, MixedElement, FunctionSpace
 from dolfin import Function, TrialFunction, TestFunction, Expression
 
@@ -300,6 +300,15 @@ class Discretization(object):
         """
         return self._mesh
 
+    def facet_normal(self):
+        """
+        Returns symbolic outward unit normal to the boundary facets.
+
+        :returns: unit normal vector
+        :rtype: :py:class:`ufl.geometry.FacetNormal`
+        """
+        return FacetNormal(self._mesh)
+
     def reals(self):
         """
         Returns space of real numbers :math:`\\bf{R}`, that is space for
@@ -483,6 +492,8 @@ class Discretization(object):
         return len(self._solution_ptl)
 
     def create_test_fcns(self):
+        # FIXME: change to '_create_test_fcns()', add 'test_functions()' and
+        #        store them in a dictionary
         """
         Create test functions corresponding to primitive variables.
 
@@ -496,6 +507,8 @@ class Discretization(object):
         return self._fit_primitives(te_fcns)
 
     def create_trial_fcns(self):
+        # FIXME: change to '_create_trial_fcns()', add 'trial_functions()' and
+        #        store them in a dictionary
         """
         Create trial functions corresponding to primitive variables.
 

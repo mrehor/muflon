@@ -126,7 +126,7 @@ def create_bcs(DS, boundary_markers, esol):
     bcs_v1 = DirichletBC(DS.subspace("v", 0), esol["v1"], boundary_markers, 0)
     bcs_v2 = DirichletBC(DS.subspace("v", 1), esol["v2"], boundary_markers, 0)
     bcs = {}
-    bcs["v"] = [bcs_v1, bcs_v2]
+    bcs["v"] = [(bcs_v1, bcs_v2),]
     bcs["p"] = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
     # corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=-1.0)
     # bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0),
@@ -281,7 +281,7 @@ def test_scaling_mesh(scheme, postprocessor):
             bcs = create_bcs(DS, boundary_markers, esol)
 
             # Prepare model
-            model = ModelFactory.create("Incompressible", dt, DS)
+            model = ModelFactory.create("Incompressible", dt, DS, bcs)
             t_src = Function(DS.reals())
             f_src, g_src = create_source_terms(t_src, mesh, model, msol)
             # NOTE: Source terms are time-dependent. The updates to these terms
@@ -298,6 +298,7 @@ def test_scaling_mesh(scheme, postprocessor):
 
             # Prepare solver
             solver = SolverFactory.create(scheme, sol_ctl, forms, bcs)
+            # FIXME: bcs were moved to model
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
