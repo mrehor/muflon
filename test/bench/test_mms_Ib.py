@@ -87,7 +87,7 @@ def test_scaling_time(scheme, postprocessor):
             t_src = Function(DS.reals())
             f_src, g_src = create_source_terms(t_src, mesh, model, msol)
             model.load_sources(f_src, g_src)
-            forms = model.create_forms(scheme, OTD)
+            forms = model.create_forms(OTD)
 
             # Get access to solution functions
             sol_ctl = DS.solution_ctl()

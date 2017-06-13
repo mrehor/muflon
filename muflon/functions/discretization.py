@@ -246,6 +246,20 @@ class Discretization(object):
         self._test_fcns = {}
         self._trial_fcns = {}
 
+    def name(self):
+        # FIXME: Isn't it too hacky?
+        """
+        Extracts the name of the discretization scheme from the string
+        representation of the class.
+
+        :returns: name of the discretization scheme
+        :rtype: str
+        """
+        name = self.__str__().split('.')
+        idx = name[-1].index(' ')
+        name = name[-1][:idx]
+        return name
+
     def setup(self):
         """
         An abstract method.

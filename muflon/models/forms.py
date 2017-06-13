@@ -177,25 +177,15 @@ class Model(object):
             assert len(g_src) == len(self._test["phi"])
             self._g_src = g_src
 
-    def create_forms(self, scheme, *args, **kwargs):
-        # FIXME: change design so that DS keeps name of the scheme
-        #        thus 'create_forms' can automatically decide which forms will
-        #        be created
+    def create_forms(self, *args, **kwargs):
         """
-        Create forms for a given scheme.
+        Create forms for a given discretization scheme.
 
-        This is a common interface for calling methods
-        ``<model>.forms_<scheme>()``, where ``<model>``
-        represents a subclass of :py:class:`Model`.
-
-        .. todo:: add currently implemented schemes
-
-        :param scheme: which scheme will be used
-        :type scheme: str
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``
                   containing :py:class:`ufl.form.Form` objects
         :rtype: dict
         """
+        scheme = self._DS.name()
         try:
             return getattr(self, "forms_" + scheme)(*args, **kwargs)
         except AttributeError:

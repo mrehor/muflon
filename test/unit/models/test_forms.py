@@ -69,7 +69,7 @@ def test_forms(scheme, N, dim, th):
     assert id(bcs_ret) == id(bcs)
 
     # Create forms
-    forms = model.create_forms(scheme)
+    forms = model.create_forms()
 
     # Check assembly of returned forms
     if scheme == "Monolithic":

@@ -288,7 +288,7 @@ def test_scaling_mesh(scheme, postprocessor):
             #       are possible via ``t_src.assign(Constant(t))``, where ``t``
             #       denotes the actual time value.
             model.load_sources(f_src, g_src)
-            forms = model.create_forms(scheme, OTD)
+            forms = model.create_forms(OTD)
             # NOTE: Here is the possibility to modify forms, e.g. by adding
             #       boundary integrals.
 

@@ -51,6 +51,11 @@ def test_discretization_schemes(scheme, N, dim, th):
     DS.parameters["N"] = N
     DS.setup()
 
+    # Extract the name of the class
+    name = DS.name()
+    assert name == scheme
+    del name
+
     # Check variable names
     names = DS.variable_names()
     if th:
