@@ -99,23 +99,12 @@ class Model(object):
         nested_prm.add("factor_nu0", 1.0) # to control num. param 'nu0'
         self.parameters.add(nested_prm)
 
-        # Store discretization scheme
-        self._DS = DS
-        # FIXME: Access to trial and test fcns must be provided via
-        #        DS.test_fcns(), DS.trial_fcns() returning dicts
+        # Strore discretization scheme
+        self._DS = DS # FIXME: Is it needed?
 
-        # Create test and trial functions
-        test = DS.create_test_fcns()
-        self._test = dict(phi=test[0], chi=test[1],
-                          v=test[2], p=test[3])
-        trial = DS.create_trial_fcns()
-        self._trial = dict(phi=trial[0], chi=trial[1],
-                           v=trial[2], p=trial[3])
-        try: # add test and trial fcn for temperature if available
-            self._test.update(th=test[4])
-            self._trial.update(th=trial[4])
-        except IndexError:
-            pass
+        # Store test and trial functions for convenience
+        self._test = DS.test_functions()
+        self._trial = DS.trial_functions()
 
         # Store coefficients representing primitive variables
         # FIXME: Which split is correct? Indexed or non-indexed?
@@ -129,8 +118,8 @@ class Model(object):
         self._bcs = bcs
 
         # Initialize source terms
-        self._f_src = as_vector(len(test[2])*[Constant(0.0),])
-        self._g_src = as_vector(len(test[0])*[Constant(0.0),])
+        self._f_src = as_vector(len(self._pv_ctl[2])*[Constant(0.0),])
+        self._g_src = as_vector(len(self._pv_ctl[0])*[Constant(0.0),])
 
         # Store time step
         self._dt = Function(DS.reals())    # function that wraps dt
@@ -166,24 +155,6 @@ class Model(object):
         :type dt: float
         """
         self._dt.assign(Constant(dt))
-
-    def test_fcns(self):
-        """
-        Returns dictionary with created test functions.
-
-        :returns: test functions
-        :rtype: dict
-        """
-        return self._test
-
-    def trial_fcns(self):
-        """
-        Returns dictionary with created trial functions.
-
-        :returns: trial functions
-        :rtype: dict
-        """
-        return self._trial
 
     def load_sources(self, f_src, g_src=None):
         """
@@ -588,9 +559,8 @@ class Incompressible(Model):
         prm = self.parameters
 
         # Arguments of the system
-        DS = self._DS
-        test = self._test   # FIXME: test = DS.test_fcns()
-        trial = self._trial # FIXME: test = DS.trial_fcns()
+        test = self._test
+        trial = self._trial
 
         # Coefficients of the system
         # FIXME: add th
@@ -718,7 +688,7 @@ class Incompressible(Model):
         eqn_p = (inner(grad(trial["p"]) - rho0*G, grad(test["p"])))*dx
 
         # Equation for pressure step (boundary integrals)
-        n = DS.facet_normal()
+        n = self._DS.facet_normal()
 
         # FIXME: check origin of the following terms
         eqn_p += irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds

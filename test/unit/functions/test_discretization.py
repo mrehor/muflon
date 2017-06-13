@@ -41,7 +41,7 @@ def test_discretization_schemes(scheme, N, dim, th):
 
     # --- Check that DS raises without calling the setup method ---------------
     for meth in ["solution_ctl", "primitive_vars_ctl", "function_spaces",
-                 "create_trial_fcns", "create_test_fcns"]:
+                 "trial_functions", "test_functions"]:
         with pytest.raises(AssertionError):
             foo = eval("DS." + meth + "()")
     with pytest.raises(AssertionError):
@@ -50,6 +50,14 @@ def test_discretization_schemes(scheme, N, dim, th):
     # Do the necessary setup
     DS.parameters["N"] = N
     DS.setup()
+
+    # Check variable names
+    names = DS.variable_names()
+    if th:
+        assert len(names) == 5
+    else:
+        assert len(names) == 4
+    del names
 
     # Get facet normal
     n = DS.facet_normal()
@@ -174,11 +182,11 @@ def test_discretization_schemes(scheme, N, dim, th):
 
     del pv0, v0, ic
 
-    # --- Create trial and test functions -------------------------------------
+    # --- Get trial and test functions -------------------------------------
     pv = DS.primitive_vars_ctl()
-    tr_fcns = DS.create_trial_fcns()
+    tr_fcns = DS.trial_functions()
     assert len(tr_fcns) == len(pv)
-    te_fcns = DS.create_test_fcns()
+    te_fcns = DS.test_functions()
     assert len(te_fcns) == len(pv)
     pv_ufl = DS.primitive_vars_ctl(indexed=True)
     assert len(pv_ufl) == len(pv)

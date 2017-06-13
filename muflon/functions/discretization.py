@@ -243,6 +243,8 @@ class Discretization(object):
             self._FE[var] = eval("FE_"+var)
         self._subspace = {}
         self._ndofs = {}
+        self._test_fcns = {}
+        self._trial_fcns = {}
 
     def setup(self):
         """
@@ -292,6 +294,23 @@ class Discretization(object):
         * :py:meth:`FullyDecoupled.setup`
         """
         self._not_implemented_msg()
+
+    def variable_names(self):
+        """
+        Returns tuple with default strings used to name primitive variables.
+
+        These names are used as keys in dictionaries for test/trial functions,
+        initial conditions, boundary conditions etc.
+
+        :returns: tuple with default variable names
+        :rtype: tuple
+        """
+        # Check if the temperature is considered
+        FE_th = self._FE.get("th")
+        if FE_th is None:
+            return self._varnames[:-1]
+        else:
+            return _varnames
 
     def mesh(self):
         """
@@ -417,6 +436,7 @@ class Discretization(object):
             return self._solution_ptl[level]
 
     def primitive_vars_ctl(self, deepcopy=False, indexed=False):
+        # FIXME: consider returning pvars in a dict
         """
         Provides access to primitive variables ``phi, chi, v, p, th``
         (or allowable subset) at the current time level.
@@ -448,6 +468,7 @@ class Discretization(object):
             return pv
 
     def primitive_vars_ptl(self, level=0, deepcopy=False, indexed=False):
+        # FIXME: consider returning pvars in a dict
         """
         Provides access to primitive variables ``phi, chi, v, p, th``
         (or allowable subset) at previous time levels.
@@ -491,11 +512,38 @@ class Discretization(object):
         assert hasattr(self, "_solution_ptl")
         return len(self._solution_ptl)
 
-    def create_test_fcns(self):
-        # FIXME: change to '_create_test_fcns()', add 'test_functions()' and
-        #        store them in a dictionary
+    def test_functions(self):
         """
-        Create test functions corresponding to primitive variables.
+        Returns dictionary with test functions corresponding to primitive
+        variables.
+
+        :returns: dictionary with (indexed) :py:class:`ufl.Argument` objects
+        :rtype: dict
+        """
+        if not bool(self._test_fcns): # dictionary is empty
+            te_fcns = self._create_test_fcns()
+            for i, f in enumerate(te_fcns):
+                self._test_fcns[self._varnames[i]] = f
+        return self._test_fcns
+
+    def trial_functions(self):
+        """
+        Returns dictionary with trial functions corresponding to primitive
+        variables.
+
+        :returns: dictionary with (indexed) :py:class:`ufl.Argument` objects
+        :rtype: dict
+        """
+        if not bool(self._trial_fcns): # dictionary is empty
+            tr_fcns = self._create_trial_fcns()
+            for i, f in enumerate(tr_fcns):
+                self._trial_fcns[self._varnames[i]] = f
+        return self._trial_fcns
+
+    def _create_test_fcns(self):
+        """
+        Sets attribute '_test_fcns' which keeps test functions that are created
+        only once.
 
         :returns: vector of (indexed) :py:class:`ufl.Argument` objects
         :rtype: tuple
@@ -504,13 +552,12 @@ class Discretization(object):
         spaces = self.function_spaces()
         te_fcns = [TestFunction(V) for V in spaces]
 
-        return self._fit_primitives(te_fcns)
+        return self._fit_primitives(te_fcns, indexed=True)
 
-    def create_trial_fcns(self):
-        # FIXME: change to '_create_trial_fcns()', add 'trial_functions()' and
-        #        store them in a dictionary
+    def _create_trial_fcns(self):
         """
-        Create trial functions corresponding to primitive variables.
+        Sets attribute '_trial_fcns' which keeps trial functions that are
+        created only once.
 
         :returns: vector of (indexed) :py:class:`ufl.Argument` objects
         :rtype: tuple
@@ -519,7 +566,7 @@ class Discretization(object):
         spaces = self.function_spaces()
         tr_fcns = [TrialFunction(V) for V in spaces]
 
-        return self._fit_primitives(tr_fcns)
+        return self._fit_primitives(tr_fcns, indexed=True)
 
     def load_ic_from_simple_cpp(self, ic):
         """

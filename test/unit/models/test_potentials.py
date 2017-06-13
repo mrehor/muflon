@@ -24,7 +24,7 @@ def test_potentials(scheme, N, dim, th):
 
     # Prepare arguments for obtaining multi-well potential
     phi = DS.primitive_vars_ctl(indexed=True)[0]
-    phi_te = DS.create_test_fcns()[0]
+    phi_te = DS.test_functions()["phi"]
     f, df, a, b = doublewell()
     del a, b # not needed
     S, A, iA = model.build_stension_matrices()
@@ -40,7 +40,7 @@ def test_potentials(scheme, N, dim, th):
     mesh = DS.function_spaces()[0].mesh()
     assert near(assemble(Constant(1.0)*dx(domain=mesh)), 1.0)
     # Assemble "inner(\vec{1}, phi_)*dx" (for later check of the derivative)
-    phi_ = DS.create_test_fcns()[0]
+    phi_ = DS.test_functions()["phi"]
     b1 = assemble(inner(as_vector(len(phi_)*[Constant(1.0),]), phi_)*dx)
     if N == 2:
         # Check that F(0.2) == 0.0512 [== F*dx]
