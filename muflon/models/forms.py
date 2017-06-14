@@ -136,6 +136,17 @@ class Model(object):
         """
         return self._bcs
 
+    def discretization_scheme(self):
+        """
+        Provides access to discretization scheme that is used to initialize the
+        UFL forms.
+
+        :returns: object representing a discretization scheme
+        :rtype: :py:class:`Discretization \
+                <muflon.functions.discretization.Discretization>`
+        """
+        return self._DS
+
     def time_step_value(self):
         """
         Returns value of the time step that is currently set in the UFL forms.

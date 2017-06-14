@@ -52,7 +52,7 @@ class TimeSteppingFactory(object):
 
         Currently implemented algorithms:
 
-        * :py:class:`Implicit`
+        * :py:class:`ConstantTimeStep`
 
         :param algorithm: name of a specific algorithm
         :type algorithm: str
@@ -246,16 +246,15 @@ class TimeStepping(object):
           % (caller, self.__str__())
         raise NotImplementedError(" ".join((msg, _msg)))
 
-# --- Implicit time-stepping algorithms ---------------------------------------
+# --- Algorithms with constant time step --------------------------------------
 
-class Implicit(TimeStepping):
-    # FIXME: Rename to ConstantTimeStep
+class ConstantTimeStep(TimeStepping):
     """
     This class implements implicit time-stepping algorithms.
     """
     class Factory(object):
         def create(self, *args, **kwargs):
-            return Implicit(*args, **kwargs)
+            return ConstantTimeStep(*args, **kwargs)
 
     def run_Monolithic(self):
         """

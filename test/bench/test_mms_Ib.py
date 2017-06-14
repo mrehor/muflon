@@ -104,8 +104,9 @@ def test_scaling_time(scheme, postprocessor):
             hook = prepare_hook(t_src, DS, esol, degrise, {})
             logfile = "log_{}_dt_{}_{}.dat".format(basename, dt, scheme)
             TS = TimeSteppingFactory.create(
-                   "Implicit", comm, dt, t_end, solver, sol_ptl, psteps=1,
-                   hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
+                   "ConstantTimeStep", comm, dt, t_end, solver, sol_ptl,
+                   psteps=1, hook=hook, logfile=logfile, xfields=xfields,
+                   outdir=outdir)
 
         # Time-stepping
         with Timer("Time stepping") as tmr_tstepping:
