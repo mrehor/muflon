@@ -45,13 +45,13 @@ parameters["form_compiler"]["optimize"] = True
 parameters["plotting_backend"] = "matplotlib"
 
 
-@pytest.mark.parametrize("scheme", ["Monolithic",]) #"SemiDecoupled", "FullyDecoupled"
+@pytest.mark.parametrize("scheme", ["FullyDecoupled",]) #"SemiDecoupled", "Monolithic"
 def test_scaling_time(scheme, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
     gradually time step.
     """
-    set_log_level(WARNING)
+    #set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm
 
@@ -110,7 +110,8 @@ def test_scaling_time(scheme, postprocessor):
 
         # Time-stepping
         with Timer("Time stepping") as tmr_tstepping:
-            result = TS.run(scheme)
+            # FIXME: run method is the same for all schemes
+            result = TS.run("Monolithic")
 
         # Prepare results
         name = logfile[4:-4]

@@ -95,7 +95,7 @@ class Model(object):
         self.parameters = Parameters(mpset["model"])
         nested_prm = Parameters("full")
         nested_prm.add("factor_s", 1.0) # to control num. parameter 's'
-        nested_prm.add("factor_rho0", 1.0e-3) # to control num. param 'rho0'
+        nested_prm.add("factor_rho0", 1.0) # to control num. param 'rho0'
         nested_prm.add("factor_nu0", 1.0) # to control num. param 'nu0'
         self.parameters.add(nested_prm)
 
@@ -726,5 +726,5 @@ class Incompressible(Model):
                 - (inu0*irho*nu - 1.0)*crosscurl(grad(test["v"][i]), w_star)[i]
             )*dx)
 
-        forms = eqn_chi + eqn_phi + eqn_p + eqn_v
+        forms = eqn_phi + eqn_chi + eqn_v + eqn_p
         return dict(linear=None, bilinear=tuple(forms))

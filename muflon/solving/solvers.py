@@ -20,8 +20,9 @@ This module provides tools for creating solvers based on various discretization
 schemes.
 """
 
+from dolfin import derivative, lhs, rhs, assemble, begin, end
 from dolfin import NonlinearVariationalProblem, NonlinearVariationalSolver
-from dolfin import derivative
+from dolfin import LUSolver
 
 # --- Generic interface for creating demanded systems of PDEs -----------------
 
@@ -149,3 +150,113 @@ class Monolithic(Solver):
         Perform one solution step (in time).
         """
         self._solver.solve()
+
+# --- FullyDecoupled linear solver --------------------------------------------
+
+class FullyDecoupled(Solver):
+    """
+    This class implements linear solver for fully decoupled discretization
+    scheme.
+    """
+    class Factory(object):
+        def create(self, *args, **kwargs):
+            return FullyDecoupled(*args, **kwargs)
+
+    def __init__(self, *args, **kwargs):
+        """
+        Create linear solver for :py:class:`FullyDecoupled \
+        <muflon.functions.discretization.FullyDecoupled>`
+        discretization scheme.
+
+        See :py:class:`Solver <muflon.solving.solvers.Solver>` for the list of
+        valid initialization arguments.
+        """
+        super(FullyDecoupled, self).__init__(*args, **kwargs)
+
+        w = self._sol_ctl
+        F = self._forms["bilinear"]
+
+        # Get n = N-1
+        # FIXME: easier with access to model/DS
+        gdim = w[0].function_space().mesh().geometry().dim()
+        n = len(w) - gdim - 1
+        if n % 2 == 0:
+            n = n/2
+        else:
+            n = (n-1)/2
+        n = int(n)
+
+        # Pre-assemble constant matrices
+        # +
+        # Group right hand sides and solution functions to fit primitives
+        _A = dict(phi=[], chi=[], v=[])
+        _rhs = dict(phi=[], chi=[], v=[])
+        _sol = dict(phi=[], chi=[], v=[])
+        for i in range(n):
+            _A["phi"].append(assemble(lhs(F[i])))
+            G = lhs(F[n+i])
+            _A["chi"].append(assemble(G))
+            _rhs["phi"].append(rhs(F[i]))
+            _rhs["chi"].append(rhs(F[n+i]))
+            _sol["phi"].append(w[i])
+            _sol["chi"].append(w[n+i])
+        for i in range(gdim): # TODO: We know that A_v2 = A_v1
+            _A["v"].append(assemble(lhs(F[2*n+i])))
+            _rhs["v"].append(rhs(F[2*n+i]))
+            _sol["v"].append(w[2*n+i])
+            for bc in self._bcs["v"]:
+                bc[i].apply(_A["v"][-1])
+            #(bc[i].apply(_A["v"][-1]) for bc in self._bcs["v"])
+        _A["p"] = assemble(lhs(F[2*n+gdim]))
+        for bc in self._bcs["p"]:
+            bc.apply(_A["p"])
+        _rhs["p"] = rhs(F[2*n+gdim])
+        _sol["p"] = w[2*n+gdim]
+        # FIXME: Deal with possible bcs for ``phi`` and ``th``
+
+        # Store matrices + grouped right hand sides and solution functions
+        self._A = _A
+        self._rhs = _rhs
+        self._sol = _sol
+
+        # Create solvers
+        self._solver = {
+            "phi": LUSolver("mumps"),
+            "chi": LUSolver("mumps"),
+            "v": LUSolver("mumps"),
+            "p": LUSolver("mumps")
+        }
+
+    def solve(self):
+        # FIXME: Make the code parallel (pay attention to simultaneous solves
+        #        of decoupled systems, i.e. for components of chi, phi, v)
+        """
+        Perform one solution step (in time).
+        """
+        solver = self._solver
+
+        begin("Advance-phase")
+        for i, A in enumerate(self._A["chi"]):
+            b = assemble(self._rhs["chi"][i])
+            solver["chi"].solve(A, self._sol["chi"][i].vector(), b)
+        for i, A in enumerate(self._A["phi"]):
+            b = assemble(self._rhs["phi"][i])
+            solver["phi"].solve(A, self._sol["phi"][i].vector(), b)
+        end()
+
+        begin("Pressure step")
+        b = assemble(self._rhs["p"])
+        for bc in self._bcs["p"]:
+            bc.apply(b)
+        solver["p"].solve(self._A["p"], self._sol["p"].vector(), b)
+        end()
+
+        begin("Velocity step")
+        for i, A in enumerate(self._A["v"]):
+            b = assemble(self._rhs["v"][i])
+            # FIXME: How to apply bcs in a symmetric fashion?
+            for bc in self._bcs["v"]:
+                bc[i].apply(b)
+            #(bc[i].apply(b) for bc in self._bcs["v"])
+            solver["v"].solve(A, self._sol["v"][i].vector(), b)
+        end()

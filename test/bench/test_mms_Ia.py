@@ -88,25 +88,32 @@ def create_exact_solution(ms, FE, degrise=3):
     es = {}
     es["phi1"] = Expression(ms["phi1"]["expr"], #element=FE["phi"],
                             degree=FE["phi"].degree()+degrise,
+                            cell=FE["phi"].cell(),
                             t=0.0, **ms["phi1"]["prms"])
     es["phi2"] = Expression(ms["phi2"]["expr"], #element=FE["phi"],
                             degree=FE["phi"].degree()+degrise,
+                            cell=FE["phi"].cell(),
                             t=0.0, **ms["phi2"]["prms"])
     es["phi3"] = Expression(ms["phi3"]["expr"], #element=FE["phi"],
                             degree=FE["phi"].degree()+degrise,
+                            cell=FE["phi"].cell(),
                             t=0.0, **ms["phi3"]["prms"])
     es["v1"] = Expression(ms["v1"]["expr"], #element=FE["v"],
                           degree=FE["v"].degree()+degrise,
+                          cell=FE["v"].cell(),
                           t=0.0, **ms["v1"]["prms"])
     es["v2"] = Expression(ms["v2"]["expr"], #element=FE["v"],
                           degree=FE["v"].degree()+degrise,
+                          cell=FE["v"].cell(),
                           t=0.0, **ms["v2"]["prms"])
     es["v"] = Expression((ms["v1"]["expr"], ms["v2"]["expr"]),
                           #element=VectorElement(FE["v"], dim=2),
                           degree=FE["v"].degree()+degrise,
+                          cell=FE["v"].cell(),
                           t=0.0, **ms["v2"]["prms"])
     es["p"] = Expression(ms["p"]["expr"], #element=FE["p"],
                          degree=FE["p"].degree()+degrise,
+                         cell=FE["p"].cell(),
                          t=0.0, **ms["p"]["prms"])
 
     return es
@@ -246,13 +253,13 @@ def prepare_hook(t_src, DS, esol, degrise, err):
     return TailoredHook(t_src=t_src, DS=DS, esol=esol,
                         degrise=degrise, err=err)
 
-@pytest.mark.parametrize("scheme", ["Monolithic",]) #"SemiDecoupled", "FullyDecoupled"
+@pytest.mark.parametrize("scheme", ["FullyDecoupled",]) #"SemiDecoupled", "Monolithic"
 def test_scaling_mesh(scheme, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed time step and
     gradually refined mesh.
     """
-    set_log_level(WARNING)
+    #set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm
 
@@ -313,7 +320,8 @@ def test_scaling_mesh(scheme, postprocessor):
 
         # Time-stepping
         with Timer("Time stepping") as tmr_tstepping:
-            result = TS.run(scheme)
+            # FIXME: run method is the same for all schemes
+            result = TS.run("Monolithic")
 
         # Prepare results
         name = logfile[4:-4]
