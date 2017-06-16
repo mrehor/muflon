@@ -313,10 +313,13 @@ def test_scaling_mesh(scheme, postprocessor):
             logfile = "log_{}_level_{}_{}.dat".format(basename, level, scheme)
             xfields = None #list(phi_) + list(v_) + [p,]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
+            #info("BREAK POINT %ia" % level)
             TS = TimeSteppingFactory.create(
                    "ConstantTimeStep", comm, dt, t_end, solver, sol_ptl,
                    psteps=1, hook=hook, logfile=logfile, xfields=xfields,
                    outdir=outdir)
+            #info("BREAK POINT %ib" % level) <-- not reached for level == 2
+            #                                    when running in parallel
 
         # Time-stepping
         with Timer("Time stepping") as tmr_tstepping:
