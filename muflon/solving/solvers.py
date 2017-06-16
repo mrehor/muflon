@@ -174,7 +174,7 @@ class FullyDecoupled(Solver):
         super(FullyDecoupled, self).__init__(*args, **kwargs)
 
         w = self._sol_ctl
-        F = self._forms["bilinear"]
+        eqn = self._forms["bilinear"]
 
         # Get n = N-1
         # FIXME: easier with access to model/DS
@@ -193,24 +193,23 @@ class FullyDecoupled(Solver):
         _rhs = dict(phi=[], chi=[], v=[])
         _sol = dict(phi=[], chi=[], v=[])
         for i in range(n):
-            _A["phi"].append(assemble(lhs(F[i])))
-            G = lhs(F[n+i])
-            _A["chi"].append(assemble(G))
-            _rhs["phi"].append(rhs(F[i]))
-            _rhs["chi"].append(rhs(F[n+i]))
+            _A["phi"].append(assemble(eqn["lhs"][i]))
+            _A["chi"].append(assemble(eqn["lhs"][n+i]))
+            _rhs["phi"].append(eqn["rhs"][i])
+            _rhs["chi"].append(eqn["rhs"][n+i])
             _sol["phi"].append(w[i])
             _sol["chi"].append(w[n+i])
         for i in range(gdim): # TODO: We know that A_v2 = A_v1
-            _A["v"].append(assemble(lhs(F[2*n+i])))
-            _rhs["v"].append(rhs(F[2*n+i]))
+            _A["v"].append(assemble(eqn["lhs"][2*n+i]))
+            _rhs["v"].append(eqn["rhs"][2*n+i])
             _sol["v"].append(w[2*n+i])
             for bc in self._bcs["v"]:
                 bc[i].apply(_A["v"][-1])
             #(bc[i].apply(_A["v"][-1]) for bc in self._bcs["v"])
-        _A["p"] = assemble(lhs(F[2*n+gdim]))
+        _A["p"] = assemble(eqn["lhs"][2*n+gdim])
         for bc in self._bcs["p"]:
             bc.apply(_A["p"])
-        _rhs["p"] = rhs(F[2*n+gdim])
+        _rhs["p"] = eqn["rhs"][2*n+gdim]
         _sol["p"] = w[2*n+gdim]
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
 

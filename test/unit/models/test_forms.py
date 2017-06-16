@@ -1,5 +1,6 @@
 import pytest
 import dolfin
+import six
 
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.iconds import SimpleCppIC
@@ -79,8 +80,7 @@ def test_forms(scheme, N, dim, th):
     elif scheme == "FullyDecoupled":
         assert forms["linear"] is None
         bforms = forms["bilinear"]
-        for F in bforms:
-            a, L = dolfin.lhs(F), dolfin.rhs(F)
+        for a, L in zip(bforms["lhs"], bforms["rhs"]):
             A, b = dolfin.assemble_system(a, L)
 
     # Test variable time step
@@ -89,9 +89,12 @@ def test_forms(scheme, N, dim, th):
     assert dt == model.time_step_value()
     if scheme in ["Monolithic", "FullyDecoupled"]:
         F = forms["linear"][0] \
-          if scheme == "Monolithic" else forms["bilinear"][0]
+          if scheme == "Monolithic" else forms["bilinear"]["lhs"][0]
+        flag = False
         for c in F.coefficients():
             if c.name() == "dt":
+                flag = True
                 a = dolfin.Constant(c) # for correct evaluation in parallel
                 assert dt == a(0) # Constant can be evaluated anywhere,
                                   # independently of the mesh
+        assert flag

@@ -623,23 +623,44 @@ class Incompressible(Model):
         R = (b/eps)*dot(iLA, dF_star) - s_fac*s_bar*phi_star
 
         # 2. Equations for chi (<-- psi)
-        eqn_chi = []
+        # eqn_chi = []
+        # for i in range(len(test["chi"])):
+        #     eqn_chi.append((
+        #           inner(grad(trial["chi"][i]), grad(test["chi"][i]))
+        #         + 2.0/(a*eps)*(
+        #               Q[i]*test["chi"][i]
+        #             - inner(grad(R[i]), grad(test["chi"][i]))
+        #             + (alpha + s_fac*s_bar)*trial["chi"][i]*test["chi"][i]
+        #     ))*dx)
+        lhs_chi, rhs_chi = [], []
         for i in range(len(test["chi"])):
-            eqn_chi.append((
+            lhs_chi.append((
                   inner(grad(trial["chi"][i]), grad(test["chi"][i]))
                 + 2.0/(a*eps)*(
+                    + (alpha + s_fac*s_bar)*trial["chi"][i]*test["chi"][i]
+            ))*dx)
+            rhs_chi.append((
+                - 2.0/(a*eps)*(
                       Q[i]*test["chi"][i]
                     - inner(grad(R[i]), grad(test["chi"][i]))
-                    + (alpha + s_fac*s_bar)*trial["chi"][i]*test["chi"][i]
             ))*dx)
 
         # 3. Equations for phi
-        eqn_phi = []
+        # eqn_phi = []
+        # for i in range(len(test["phi"])):
+        #     eqn_phi.append((
+        #           inner(grad(trial["phi"][i]), grad(test["phi"][i]))
+        #         + chi[i]*test["phi"][i]
+        #         - 2.0/(a*eps)*alpha*trial["phi"][i]*test["phi"][i]
+        #     )*dx)
+        lhs_phi, rhs_phi = [], []
         for i in range(len(test["phi"])):
-            eqn_phi.append((
+            lhs_phi.append((
                   inner(grad(trial["phi"][i]), grad(test["phi"][i]))
-                + chi[i]*test["phi"][i]
                 - 2.0/(a*eps)*alpha*trial["phi"][i]*test["phi"][i]
+            )*dx)
+            rhs_phi.append((
+                - chi[i]*test["phi"][i]
             )*dx)
 
         # 4. Definition of CHI from the thesis (usin smart Laplace of phi)
@@ -686,13 +707,16 @@ class Incompressible(Model):
             + irho*f_cap # FIXME: check the sign once again
             + crosscurl(grad(irho*nu), w_star)
         )
-        eqn_p = (inner(grad(trial["p"]) - rho0*G, grad(test["p"])))*dx
+        #eqn_p = inner(grad(trial["p"]) - rho0*G, grad(test["p"]))*dx
+        lhs_p = inner(grad(trial["p"]), grad(test["p"]))*dx
+        rhs_p = inner(rho0*G, grad(test["p"]))*dx
 
         # Equation for pressure step (boundary integrals)
         n = self._DS.facet_normal()
 
         # FIXME: check origin of the following terms
-        eqn_p += irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
+        #eqn_p += irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
+        rhs_p += irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
 
         bcs_velocity = self._bcs.get("v", [])
         # FIXME: Works only if full vector v is specified on the boundary.
@@ -711,20 +735,37 @@ class Incompressible(Model):
                 assert label == label_ref
             v_dbc = as_vector(v_dbc)
             ds_dbc = Measure("ds", subdomain_data=markers)
-            eqn_p += + idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
+            #eqn_p += idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
+            rhs_p += idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
 
-        eqn_p = [eqn_p,]
+        #eqn_p = [eqn_p,]
+        lhs_p, rhs_p = [lhs_p,], [rhs_p,]
 
         # Equations for v
         # FIXME: Works only for v specified on the whole boundary
-        eqn_v = []
+        # eqn_v = []
+        # for i in range(len(test["v"])):
+        #     eqn_v.append((
+        #           inner(grad(trial["v"][i]), grad(test["v"][i]))
+        #         + inu0*gamma0*idt*(trial["v"][i]*test["v"][i])
+        #         - inu0*(G[i] - irho0*p.dx(i))*test["v"][i]
+        #         - (inu0*irho*nu - 1.0)*crosscurl(grad(test["v"][i]), w_star)[i]
+        #     )*dx)
+        lhs_v, rhs_v = [], []
         for i in range(len(test["v"])):
-            eqn_v.append((
+            lhs_v.append((
                   inner(grad(trial["v"][i]), grad(test["v"][i]))
                 + inu0*gamma0*idt*(trial["v"][i]*test["v"][i])
-                - inu0*(G[i] - irho0*p.dx(i))*test["v"][i]
-                - (inu0*irho*nu - 1.0)*crosscurl(grad(test["v"][i]), w_star)[i]
+            )*dx)
+            rhs_v.append((
+                + inu0*(G[i] - irho0*p.dx(i))*test["v"][i]
+                + (inu0*irho*nu - 1.0)*crosscurl(grad(test["v"][i]), w_star)[i]
             )*dx)
 
-        forms = eqn_phi + eqn_chi + eqn_v + eqn_p
-        return dict(linear=None, bilinear=tuple(forms))
+        # forms = eqn_phi + eqn_chi + eqn_v + eqn_p
+        # return dict(linear=None, bilinear=tuple(forms))
+        forms = {
+            "lhs" : lhs_phi + lhs_chi + lhs_v + lhs_p,
+            "rhs" : rhs_phi + rhs_chi + rhs_v + rhs_p
+        }
+        return dict(linear=None, bilinear=forms)
