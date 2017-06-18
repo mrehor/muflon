@@ -713,7 +713,7 @@ class Incompressible(Model):
 
         # FIXME: check origin of the following terms
         #eqn_p += irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
-        rhs_p += irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
+        rhs_p -= irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
 
         bcs_velocity = self._bcs.get("v", [])
         # FIXME: Works only if full vector v is specified on the boundary.
@@ -733,7 +733,7 @@ class Incompressible(Model):
             v_dbc = as_vector(v_dbc)
             ds_dbc = Measure("ds", subdomain_data=markers)
             #eqn_p += idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
-            rhs_p += idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
+            rhs_p -= idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
 
         #eqn_p = [eqn_p,]
         lhs_p, rhs_p = [lhs_p,], [rhs_p,]
