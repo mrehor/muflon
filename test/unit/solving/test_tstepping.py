@@ -22,14 +22,12 @@ def test_Implicit():
     field = dolfin.Function(V)
 
     algo = TimeSteppingFactory.create("ConstantTimeStep", comm, dt, t_end,
-                                      solver, sol_ptl, 2)
+                                      solver, sol_ptl)
     prm = algo.parameters
     #dolfin.info(prm, True)
-    with pytest.raises(RuntimeError):
-       prm["psteps"] = 1.5 # only int values are allowed
 
     algo = TimeSteppingFactory.create("ConstantTimeStep", comm, dt, t_end,
-                                      solver, sol_ptl, 1, xfields=[field,])
+                                      solver, sol_ptl, xfields=[field,])
     assert algo.mpi_comm() == comm
 
     logger = algo.logger()

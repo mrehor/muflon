@@ -282,6 +282,7 @@ def test_scaling_mesh(scheme, postprocessor):
             # Prepare discretization
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh)
+            DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
             esol = create_exact_solution(msol, DS.finite_elements(), degrise)
@@ -295,7 +296,22 @@ def test_scaling_mesh(scheme, postprocessor):
             #       are possible via ``t_src.assign(Constant(t))``, where ``t``
             #       denotes the actual time value.
             model.load_sources(f_src, g_src)
-            forms = model.create_forms(OTD)
+            forms = []
+            if OTD == 1 or OTD == 2:
+                # Use first order schemes for initialization of first time step
+                model.parameters["mono"]["theta"] = 1.0
+                model.parameters["full"]["OTD"] = 1
+                forms.append(model.create_forms())
+                if OTD == 2:
+                    # Use second order schemes
+                    model.parameters["mono"]["theta"] = 0.5
+                    model.parameters["full"]["OTD"] = 2
+                    forms.append(model.create_forms())
+            else:
+                msg = "Schemes with order of temporal discretization >2 are" \
+                      " not implemented"
+                raise NotImplementedError(msg)
+
             # NOTE: Here is the possibility to modify forms, e.g. by adding
             #       boundary integrals.
 
@@ -303,9 +319,11 @@ def test_scaling_mesh(scheme, postprocessor):
             sol_ctl = DS.solution_ctl()
             sol_ptl = DS.solution_ptl()
 
-            # Prepare solver
-            solver = SolverFactory.create(scheme, sol_ctl, forms, bcs)
-            # FIXME: bcs were moved to model
+            # Prepare solvers
+            solvers = []
+            for f in forms:
+                solvers.append(SolverFactory.create(scheme, sol_ctl, f, bcs))
+                # FIXME: bcs were moved to model
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
@@ -315,8 +333,8 @@ def test_scaling_mesh(scheme, postprocessor):
             hook = prepare_hook(t_src, DS, esol, degrise, {})
             #info("BREAK POINT %ia" % level)
             TS = TimeSteppingFactory.create(
-                   "ConstantTimeStep", comm, dt, t_end, solver, sol_ptl,
-                   psteps=1, hook=hook, logfile=logfile, xfields=xfields,
+                   "ConstantTimeStep", comm, dt, t_end, solvers, sol_ptl,
+                   hook=hook, logfile=logfile, xfields=xfields,
                    outdir=outdir)
             #info("BREAK POINT %ib" % level) <-- not reached for level == 2
             #                                    when running in parallel
@@ -324,7 +342,7 @@ def test_scaling_mesh(scheme, postprocessor):
         # Time-stepping
         with Timer("Time stepping") as tmr_tstepping:
             # FIXME: run method is the same for all schemes
-            result = TS.run("Monolithic")
+            result = TS.run("MultiStepScheme")
 
         # Prepare results
         name = logfile[4:-4]
@@ -367,7 +385,7 @@ def test_scaling_mesh(scheme, postprocessor):
 def postprocessor():
     dt = 0.001
     t_end = 0.002 # FIXME: set t_end = 0.1
-    OTD = 1
+    OTD = 2
     proc = Postprocessor(dt, t_end, OTD)
     proc.add_plot((("dt", dt), ("t_end", t_end), ("OTD", OTD)))
     #pyplot.show(); exit() # uncomment to explore current layout of plots

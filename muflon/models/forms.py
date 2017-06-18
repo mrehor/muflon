@@ -93,7 +93,13 @@ class Model(object):
         """
         # Initialize parameters
         self.parameters = Parameters(mpset["model"])
+
+        nested_prm = Parameters("mono")
+        nested_prm.add("theta", 1.0) # parameter in theta scheme
+        self.parameters.add(nested_prm)
+
         nested_prm = Parameters("full")
+        nested_prm.add("OTD", 1) # Order of Time Discretization
         nested_prm.add("factor_s", 1.0) # to control num. parameter 's'
         nested_prm.add("factor_rho0", 1.0) # to control num. param 'rho0'
         nested_prm.add("factor_nu0", 1.0) # to control num. param 'nu0'
@@ -333,7 +339,7 @@ class Incompressible(Model):
 
 # --- Monolithic forms for Incompressible model -------------------------------
 
-    def forms_Monolithic(self, OTD=1):
+    def forms_Monolithic(self):
         """
         Create linear forms for incompressible model using
         :py:class:`Monolithic <muflon.functions.discretization.Monolithic>`
@@ -343,30 +349,20 @@ class Incompressible(Model):
         Forms are wrapped in a tuple and returned in a dictionary under
         ``'linear'`` item.
 
-        :param OTD: Order of Time Discretization
-        :type OTD: int
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
                   the second one being set to ``None``
         :rtype: dict
         """
-        # Check input and initialize factors
-        if OTD == 1: # backward Euler (implicit)
-            factor_ctl = Constant(1.0)
-            factor_ptl = Constant(0.0)
-        elif OTD == 2: # Crank-Nicolson
-            factor_ctl = Constant(0.5)
-            factor_ptl = Constant(0.5)
-            # FIXME: resolve this issue or ban OTD = 2
-            from dolfin import warning
-            warning("Implementation of the 2nd order scheme is currently"
-                    " broken and does not work properly.")
-        else:
-            msg = "Temporal integration of order %g for '%s'" \
-                  " scheme is not implemented." % (OTD, "Monolithic")
-            raise NotImplementedError(msg)
-
         # Get parameters
         prm = self.parameters
+
+        # Initialize factors
+        theta = prm["mono"]["theta"]
+        factor_ctl = Constant(theta)
+        factor_ptl = Constant(1.0 - theta)
+        if theta == 0.5:
+            warning("Implementation of the 2nd order scheme is currently"
+                    " broken and does not work properly.")
 
         # Arguments of the system
         test = self._test
@@ -520,7 +516,7 @@ class Incompressible(Model):
 
 # --- FullyDecoupled forms for Incompressible model  --------------------------
 
-    def forms_FullyDecoupled(self, OTD=1):
+    def forms_FullyDecoupled(self):
         """
         Create linear forms for incompressible model using
         :py:class:`FullyDecoupled \
@@ -531,13 +527,15 @@ class Incompressible(Model):
         Forms are wrapped in a tuple and returned in a dictionary under
         ``'linear'`` item.
 
-        :param OTD: Order of Time Discretization
-        :type OTD: int
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
                   the first one being set to ``None``
         :rtype: dict
         """
-        # Check input and initialize factors
+        # Get parameters
+        prm = self.parameters
+
+        # Initialize factors
+        OTD = prm["full"]["OTD"]
         if OTD == 1:
             gamma0 = 1.0
             star0, star1 = 1.0, 0.0
@@ -555,9 +553,6 @@ class Incompressible(Model):
         gamma0 = Constant(gamma0)
         star0, star1 = Constant(star0), Constant(star1)
         hat0, hat1 = Constant(hat0), Constant(hat1)
-
-        # Get parameters
-        prm = self.parameters
 
         # Arguments of the system
         test = self._test
@@ -602,14 +597,16 @@ class Incompressible(Model):
         _phi = variable(phi)
         F = multiwell(_phi, f, S)
         dF = diff(F, _phi)
-        # Alternative approach with explicit definition of dF
-        #from muflon.functions.potentials import multiwell_derivative
-        #dF = multiwell_derivative(phi, f, S)
 
         # Prepare non-linear potential term starred time level
         _phi_star = variable(phi_star)
         F_star = multiwell(_phi_star, f, S)
         dF_star = diff(F_star, _phi_star)
+
+        # Alternative approach with explicit definition of dF
+        #from muflon.models.potentials import multiwell_derivative
+        #dF = multiwell_derivative(phi, f, S)
+        #dF_star = multiwell_derivative(phi_star, f, S)
 
         # --- Forms for Advance-Phase procedure ---
 
@@ -663,7 +660,7 @@ class Incompressible(Model):
                 - chi[i]*test["phi"][i]
             )*dx)
 
-        # 4. Definition of CHI from the thesis (usin smart Laplace of phi)
+        # 4. Definition of CHI from the thesis (using smart Laplace of phi)
         CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*chi + alpha*phi
         #Laplace_phi = chi - 2.0/(a*eps)*alpha*phi
         #CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*Laplace_phi
