@@ -700,7 +700,7 @@ class Monolithic(Discretization):
         w_ctl[0].rename("ctl", "solution-mono-ctl")
 
         # Create solution variables at ptl
-        w_ptl = self.parameters["PTL"]*[(Function(W),),] # list of tuples
+        w_ptl = [(Function(W),) for i in range(self.parameters["PTL"])]
         for (i, f) in enumerate(w_ptl):
             f[0].rename("ptl%i" % i, "solution-mono-ptl%i" % i)
 
@@ -816,7 +816,8 @@ class SemiDecoupled(Discretization):
         w_ctl[1].rename("ctl_ns", "solution-semi-ns-ctl")
 
         # Create solution variables at ptl
-        w_ptl = self.parameters["PTL"]*[(Function(W_ch), Function(W_ns)),]
+        w_ptl = [(Function(W_ch), Function(W_ns)) \
+                     for i in range(self.parameters["PTL"])]
         for i, f in enumerate(w_ptl):
             f[0].rename("ptl%i_ch" % i, "solution-semi-ch-ptl%i" % i)
             f[1].rename("ptl%i_ns" % i, "solution-semi-ns-ptl%i" % i)
@@ -943,8 +944,8 @@ class FullyDecoupled(Discretization):
             f.rename("ctl_{}".format(i), "solution-full-{}-ctl".format(i))
 
         # Create solution variables at ptl
-        w_ptl = self.parameters["PTL"] \
-                  * [tuple(map(lambda FS: Function(FS), spaces)),]
+        w_ptl = [tuple(map(lambda FS: Function(FS), spaces)) \
+                     for i in range(self.parameters["PTL"])]
         for i, f in enumerate(w_ptl):
             for j in range(len(f)):
                 f[j].rename("ptl{}_{}".format(i, j),
