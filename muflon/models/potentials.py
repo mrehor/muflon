@@ -82,7 +82,7 @@ def multiwell(phi, f, S):
     """
     # Extend phi by adding the last component expressed from V.A.C.
     N = len(phi) + 1
-    phi_N = 1.0 - inner(phi, as_vector(len(phi)*[Constant(1.0),]))
+    phi_N = 1.0 - inner(phi, as_vector(len(phi)*[1.0,]))
     phis = list(phi) + [phi_N,]
     assert len(phis) == N
 
@@ -131,7 +131,7 @@ def multiwell_derivative(phi, df, S):
     """
     # Extend phi by adding the last component expressed from V.A.C.
     N = len(phi) + 1
-    phi_N = 1.0 - inner(phi, as_vector(len(phi)*[Constant(1.0),]))
+    phi_N = 1.0 - inner(phi, as_vector(len(phi)*[1.0,]))
     phis = list(phi) + [phi_N,]
     assert len(phis) == N
 
