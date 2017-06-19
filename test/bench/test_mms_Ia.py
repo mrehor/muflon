@@ -297,7 +297,7 @@ def test_scaling_mesh(scheme, postprocessor):
             #       denotes the actual time value.
             model.load_sources(f_src, g_src)
             forms = []
-            if OTD == 1 or OTD == 2:
+            if OTD in [1, 2]:
                 # Use first order schemes for initialization of first time step
                 model.parameters["mono"]["theta"] = 1.0
                 model.parameters["full"]["OTD"] = 1
@@ -322,8 +322,7 @@ def test_scaling_mesh(scheme, postprocessor):
             # Prepare solvers
             solvers = []
             for f in forms:
-                solvers.append(SolverFactory.create(scheme, sol_ctl, f, bcs))
-                # FIXME: bcs were moved to model
+                solvers.append(SolverFactory.create(model, f))
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()

@@ -24,6 +24,8 @@ from dolfin import derivative, lhs, rhs, assemble, begin, end
 from dolfin import NonlinearVariationalProblem, NonlinearVariationalSolver
 from dolfin import LUSolver
 
+from muflon.models.forms import Model
+
 # --- Generic interface for creating demanded systems of PDEs -----------------
 
 class SolverFactory(object):
@@ -43,23 +45,26 @@ class SolverFactory(object):
         SolverFactory.factories[solver] = eval(solver + ".Factory()")
 
     @staticmethod
-    def create(solver, *args, **kwargs):
+    def create(model, *args, **kwargs):
         """
-        Create an instance of ``solver`` and initialize it with given
-        arguments.
+        Create an instance of a solver based on the ``model`` and initialize it
+        with given arguments.
 
         Currently implemented solvers:
 
         * :py:class:`Monolithic`
+        * :py:class:`FullyDecoupled`
 
-        :param solver: name of a specific solver
-        :type solver: str
+        :param model: model of the CHNSF type
+        :type model: :py:class:`Model <muflon.models.forms.Model>`
         :returns: instance of a specific solver
         :rtype: (subclass of) :py:class:`Solver`
         """
+        assert isinstance(model, Model)
+        solver = model.discretization_scheme().name()
         if not solver in SolverFactory.factories:
             SolverFactory._register(solver)
-        return SolverFactory.factories[solver].create(*args, **kwargs)
+        return SolverFactory.factories[solver].create(model, *args, **kwargs)
 
 # --- Generic class for creating solvers ---------------------------------------
 
@@ -73,21 +78,21 @@ class Solver(object):
             msg = "Cannot create solver from a generic class."
             Solver._not_implemented_msg(self, msg)
 
-    def __init__(self, sol_ctl, forms, bcs):
+    def __init__(self, model, forms=None):
         """
-        :param sol_ctl: vector of solution functions at current time level
-        :type dt: tuple
+        :param model: model of the CHNSF type
+        :type model: :py:class:`Model <muflon.models.forms.Model>`
         :param forms: dictonary with items ``'linear'`` and ``'bilinear'``
                       containing :py:class:`ufl.form.Form` objects
         :type forms: dict
-        :param bcs: dictionary with Dirichlet boundary conditions for
-                    individual primitive variables
-        :type bcs: dict
         """
+        # Get bare version of forms if not given
+        if forms is None:
+            forms = model.create_forms()
+
         # Store attributes
-        self._sol_ctl = sol_ctl
+        self._model = model
         self._forms = forms
-        self._bcs = bcs
 
     def sol_ctl(self):
         """
@@ -96,7 +101,7 @@ class Solver(object):
         :returns: solution functions at current time level
         :rtype: tuple
         """
-        return self._sol_ctl
+        return self._model.discretization_scheme().solution_ctl()
 
     def _not_implemented_msg(self, msg=""):
         import inspect
@@ -125,15 +130,17 @@ class Monolithic(Solver):
         See :py:class:`Solver <muflon.solving.solvers.Solver>` for the list of
         valid initialization arguments.
         """
+        # Get attributes '_model' and '_forms'
         super(Monolithic, self).__init__(*args, **kwargs)
 
-        w = self._sol_ctl[0]
+        w = self._model.discretization_scheme().solution_ctl()[0]
         F = self._forms["linear"][0]
         J = derivative(F, w)
         bcs = []
-        for bc in self._bcs["v"]:
+        _bcs = self._model.bcs()
+        for bc in _bcs.get("v", []):
             bcs += list(bc)
-        bcs += self._bcs["p"]
+        bcs += [bc for bc in _bcs.get("p", [])]
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
         problem = NonlinearVariationalProblem(F, w, bcs, J)
         solver = NonlinearVariationalSolver(problem)
@@ -171,13 +178,14 @@ class FullyDecoupled(Solver):
         See :py:class:`Solver <muflon.solving.solvers.Solver>` for the list of
         valid initialization arguments.
         """
+        # Get attributes '_model' and '_forms'
         super(FullyDecoupled, self).__init__(*args, **kwargs)
 
-        w = self._sol_ctl
+        w = self._model.discretization_scheme().solution_ctl()
         eqn = self._forms["bilinear"]
 
-        # Get n = N-1
-        # FIXME: easier with access to model/DS
+        # Get gdim and n = N-1
+        # FIXME: maybe use DS.primitive_vars_ctl()
         gdim = w[0].function_space().mesh().geometry().dim()
         n = len(w) - gdim - 1
         if n % 2 == 0:
@@ -192,6 +200,7 @@ class FullyDecoupled(Solver):
         _A = dict(phi=[], chi=[], v=[])
         _rhs = dict(phi=[], chi=[], v=[])
         _sol = dict(phi=[], chi=[], v=[])
+        _bcs = self._model.bcs()
         for i in range(n):
             _A["phi"].append(assemble(eqn["lhs"][i]))
             _A["chi"].append(assemble(eqn["lhs"][n+i]))
@@ -203,11 +212,11 @@ class FullyDecoupled(Solver):
             _A["v"].append(assemble(eqn["lhs"][2*n+i]))
             _rhs["v"].append(eqn["rhs"][2*n+i])
             _sol["v"].append(w[2*n+i])
-            for bc in self._bcs["v"]:
+            for bc in _bcs.get("v", []):
                 bc[i].apply(_A["v"][-1])
             #(bc[i].apply(_A["v"][-1]) for bc in self._bcs["v"])
         _A["p"] = assemble(eqn["lhs"][2*n+gdim])
-        for bc in self._bcs["p"]:
+        for bc in _bcs.get("p", []):
             bc.apply(_A["p"])
         _rhs["p"] = eqn["rhs"][2*n+gdim]
         _sol["p"] = w[2*n+gdim]
@@ -217,6 +226,7 @@ class FullyDecoupled(Solver):
         self._A = _A
         self._rhs = _rhs
         self._sol = _sol
+        self._bcs = _bcs
 
         # Create solvers
         self._solver = {
@@ -245,7 +255,7 @@ class FullyDecoupled(Solver):
 
         begin("Pressure step")
         b = assemble(self._rhs["p"])
-        for bc in self._bcs["p"]:
+        for bc in self._bcs.get("p", []):
             bc.apply(b)
         solver["p"].solve(self._A["p"], self._sol["p"].vector(), b)
         end()
@@ -254,8 +264,8 @@ class FullyDecoupled(Solver):
         for i, A in enumerate(self._A["v"]):
             b = assemble(self._rhs["v"][i])
             # FIXME: How to apply bcs in a symmetric fashion?
-            for bc in self._bcs["v"]:
+            for bc in self._bcs.get("v", []):
                 bc[i].apply(b)
-            #(bc[i].apply(b) for bc in self._bcs["v"])
+            #(bc[i].apply(b) for bc in self._bcs.get("v", []))
             solver["v"].solve(A, self._sol["v"][i].vector(), b)
         end()

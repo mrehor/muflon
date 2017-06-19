@@ -3,27 +3,26 @@ import pytest
 import dolfin
 
 from muflon.functions.discretization import DiscretizationFactory
+from muflon.models.forms import ModelFactory
 from muflon.solving.solvers import SolverFactory
 
 from unit.functions.test_discretization import get_arguments
+from unit.models.test_forms import prepare_model_and_bcs
 
-def test_Solver():
-    with pytest.raises(NotImplementedError):
-        SolverFactory.create("Solver")
+# def test_Solver():
+#     with pytest.raises(NotImplementedError):
+#         SolverFactory.create("Solver")
 
-def test_Monolithic():
-    scheme = "Monolithic"
+@pytest.mark.parametrize("scheme", ["Monolithic", "FullyDecoupled"]) #, "SemiDecoupled"
+def test_solvers(scheme):
+    N = 2
+    dim = 2
+    model, DS, bcs = prepare_model_and_bcs(scheme, N, dim, False)
+    prm = model.parameters["sigma"]
+    prm.add("12", 4.0)
+    for key in ["rho", "nu"]:
+        prm = model.parameters[key]
+        prm.add("1", 42)
+        prm.add("2", 4.0)
 
-    args = get_arguments()
-    mesh = args[0]
-    DS = DiscretizationFactory.create(scheme, *args)
-    DS.setup()
-    R = DS.reals()
-    r = dolfin.Function(R)
-
-    sol_ctl = DS.solution_ctl()
-    test_fcn = dolfin.TestFunction(sol_ctl[0].function_space())
-    forms = {"linear": [dolfin.inner(sol_ctl[0], test_fcn)*dolfin.dx,],
-             "bilinear": None}
-    bcs = {"v": [], "p": []}
-    solver = SolverFactory.create(scheme, sol_ctl, forms, bcs)
+    solver = SolverFactory.create(model)

@@ -106,7 +106,7 @@ class Model(object):
         self.parameters.add(nested_prm)
 
         # Strore discretization scheme
-        self._DS = DS # FIXME: Is it needed?
+        self._DS = DS
 
         # Store test and trial functions for convenience
         self._test = DS.test_functions()

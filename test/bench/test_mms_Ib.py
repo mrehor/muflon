@@ -70,6 +70,7 @@ def test_scaling_time(scheme, postprocessor):
 
     # Prepare space discretization, exact solution and bcs
     mesh, boundary_markers = create_domain(level)
+    DS = create_discretization(scheme, mesh)
     DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
     DS.setup()
     esol = create_exact_solution(msol, DS.finite_elements(), degrise)
@@ -88,7 +89,7 @@ def test_scaling_time(scheme, postprocessor):
             f_src, g_src = create_source_terms(t_src, mesh, model, msol)
             model.load_sources(f_src, g_src)
             forms = []
-            if OTD == 1 or OTD == 2:
+            if OTD in [1, 2]:
                 # Use first order schemes for initialization of first time step
                 model.parameters["mono"]["theta"] = 1.0
                 model.parameters["full"]["OTD"] = 1
@@ -110,7 +111,7 @@ def test_scaling_time(scheme, postprocessor):
             # Prepare solver
             solvers = []
             for f in forms:
-                solvers.append(SolverFactory.create(scheme, sol_ctl, f, bcs))
+                solvers.append(SolverFactory.create(model, f))
                 # FIXME: bcs were moved to model
 
             # Prepare time-stepping algorithm
