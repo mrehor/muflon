@@ -39,6 +39,14 @@ Demos can be run by navigating to a particular demo directory and typing
 
 Full documentation is available at <http://msekce.karlin.mff.cuni.cz/~rehor/muflon>.
 
+.. note::
+   For parallel runs with ``python3`` it may be necessary to export
+   variable ``PYTHONHASHSEED=0`` to prevent unexpected deadlocks.
+
+   .. code-block:: console
+
+     $ PYTHONHASHSEED=0 mpirun -n $NP python3 demo_foo-bar.py [-h]
+
 .. TODO: Remove the following include directives later
 .. include:: ../../test/README.rst
 .. include:: ../README.rst
