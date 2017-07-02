@@ -250,8 +250,6 @@ class FullyDecoupled(Solver):
         self._flags["setup"] = True
 
     def solve(self):
-        # FIXME: Make the code parallel (pay attention to simultaneous solves
-        #        of decoupled systems, i.e. for components of chi, phi, v)
         """
         Perform one solution step (in time).
         """
