@@ -27,7 +27,7 @@ def prepare_solver(scheme):
 @pytest.mark.parametrize("scheme", ["Monolithic", "FullyDecoupled"]) #, "SemiDecoupled"
 def test_solvers(scheme):
     solver = prepare_solver(scheme)
-    model = solver._data["model"]
+    model = solver.data["model"]
 
     # Check that generic class cannot be used to create solver
     with pytest.raises(NotImplementedError):

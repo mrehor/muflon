@@ -99,9 +99,9 @@ class Solver(object):
             forms = model.create_forms()
 
         # Store attributes
-        self._data = OrderedDict()
-        self._data["model"] = model
-        self._data["forms"] = forms
+        self.data = OrderedDict()
+        self.data["model"] = model
+        self.data["forms"] = forms
 
     def sol_ctl(self):
         """
@@ -110,7 +110,7 @@ class Solver(object):
         :returns: solution functions at current time level
         :rtype: tuple
         """
-        return self._data["model"].discretization_scheme().solution_ctl()
+        return self.data["model"].discretization_scheme().solution_ctl()
 
     def _not_implemented_msg(self, msg=""):
         import inspect
@@ -142,13 +142,13 @@ class Monolithic(Solver):
         super(Monolithic, self).__init__(*args, **kwargs)
 
         # Adjust forms
-        w = self._data["model"].discretization_scheme().solution_ctl()[0]
-        F = self._data["forms"]["linear"][0]
+        w = self.data["model"].discretization_scheme().solution_ctl()[0]
+        F = self.data["forms"]["linear"][0]
         J = derivative(F, w)
 
         # Adjust bcs
         bcs = []
-        _bcs = self._data["model"].bcs()
+        _bcs = self.data["model"].bcs()
         for bc in _bcs.get("v", []):
             bcs += list(bc)
         bcs += [bc for bc in _bcs.get("p", [])]
@@ -162,13 +162,13 @@ class Monolithic(Solver):
         solver.parameters['newton_solver']['maximum_iterations'] = 25
         solver.parameters['newton_solver']['linear_solver'] = "mumps"
         #solver.parameters['newton_solver']['relaxation_parameter'] = 1.0
-        self._data["solver"] = solver
+        self.data["solver"] = solver
 
     def solve(self):
         """
         Perform one solution step (in time).
         """
-        self._data["solver"].solve()
+        self.data["solver"].solve()
 
 # --- FullyDecoupled linear solver --------------------------------------------
 
@@ -198,7 +198,7 @@ class FullyDecoupled(Solver):
         solver["chi"] = LUSolver("mumps")
         solver["v"]   = LUSolver("mumps")
         solver["p"]   = LUSolver("mumps")
-        self._data["solver"] = solver
+        self.data["solver"] = solver
 
         # Initialize flags
         self._flags = OrderedDict()
@@ -209,9 +209,9 @@ class FullyDecoupled(Solver):
         Pre-assemble time independent matrices, group right hand sides and
         solution functions.
         """
-        DS = self._data["model"].discretization_scheme()
+        DS = self.data["model"].discretization_scheme()
         w = DS.solution_ctl()
-        eqn = self._data["forms"]["bilinear"]
+        eqn = self.data["forms"]["bilinear"]
         phi, chi, v, p = DS.primitive_vars_ctl()
         n = len(phi) # n = N - 1
         gdim = len(v)
@@ -220,7 +220,7 @@ class FullyDecoupled(Solver):
         _A   = OrderedDict(phi=[], chi=[], v=[])
         _rhs = OrderedDict(phi=[], chi=[], v=[])
         _sol = OrderedDict(phi=[], chi=[], v=[])
-        _bcs = OrderedDict(sorted(six.iteritems(self._data["model"].bcs())))
+        _bcs = OrderedDict(sorted(six.iteritems(self.data["model"].bcs())))
         for i in range(n):
             _A["phi"].append(assemble(eqn["lhs"][i]))
             _A["chi"].append(assemble(eqn["lhs"][n+i]))
@@ -242,10 +242,10 @@ class FullyDecoupled(Solver):
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
 
         # Store matrices + grouped right hand sides and solution functions
-        self._data["A"]   = _A
-        self._data["rhs"] = _rhs
-        self._data["sol"] = _sol
-        self._data["bcs"] = _bcs
+        self.data["A"]   = _A
+        self.data["rhs"] = _rhs
+        self.data["sol"] = _sol
+        self.data["bcs"] = _bcs
 
         self._flags["setup"] = True
 
@@ -257,31 +257,31 @@ class FullyDecoupled(Solver):
         if not self._flags["setup"]:
             self._assemble_constant_matrices()
 
-        solver = self._data["solver"]
+        solver = self.data["solver"]
         begin("Advance-phase")
-        for i, A in enumerate(self._data["A"]["chi"]):
-            b = assemble(self._data["rhs"]["chi"][i])
-            solver["chi"].solve(A, self._data["sol"]["chi"][i].vector(), b)
-        for i, A in enumerate(self._data["A"]["phi"]):
-            b = assemble(self._data["rhs"]["phi"][i])
-            solver["phi"].solve(A, self._data["sol"]["phi"][i].vector(), b)
+        for i, A in enumerate(self.data["A"]["chi"]):
+            b = assemble(self.data["rhs"]["chi"][i])
+            solver["chi"].solve(A, self.data["sol"]["chi"][i].vector(), b)
+        for i, A in enumerate(self.data["A"]["phi"]):
+            b = assemble(self.data["rhs"]["phi"][i])
+            solver["phi"].solve(A, self.data["sol"]["phi"][i].vector(), b)
         end()
 
         begin("Pressure step")
-        b = assemble(self._data["rhs"]["p"])
-        for bc in self._data["bcs"].get("p", []):
+        b = assemble(self.data["rhs"]["p"])
+        for bc in self.data["bcs"].get("p", []):
             bc.apply(b)
         solver["p"].solve(
-            self._data["A"]["p"], self._data["sol"]["p"].vector(), b)
+            self.data["A"]["p"], self.data["sol"]["p"].vector(), b)
         end()
 
         begin("Velocity step")
-        for i, A in enumerate(self._data["A"]["v"]):
-            b = assemble(self._data["rhs"]["v"][i])
+        for i, A in enumerate(self.data["A"]["v"]):
+            b = assemble(self.data["rhs"]["v"][i])
             # FIXME: How to apply bcs in a symmetric fashion?
-            for bc in self._data["bcs"].get("v", []):
+            for bc in self.data["bcs"].get("v", []):
                 bc[i].apply(b)
-            solver["v"].solve(A, self._data["sol"]["v"][i].vector(), b)
+            solver["v"].solve(A, self.data["sol"]["v"][i].vector(), b)
         end()
 
     def refresh(self):

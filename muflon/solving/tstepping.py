@@ -260,7 +260,7 @@ class ConstantTimeStep(TimeStepping):
         prm = self.parameters
         logger = self._logger
         solver = self._solver
-        model = solver._data["model"]
+        model = solver.data["model"]
         sol_ptl = model.discretization_scheme().solution_ptl()
 
         t = t_beg

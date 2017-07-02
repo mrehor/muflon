@@ -14,7 +14,7 @@ def test_TimeStepping():
 def test_ConstantTimeStep(scheme):
     # Prepare solver
     solver = prepare_solver(scheme)
-    model = solver._data["model"]
+    model = solver.data["model"]
     DS = model.discretization_scheme()
 
     mesh = DS.mesh()
