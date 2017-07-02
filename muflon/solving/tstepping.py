@@ -27,6 +27,7 @@ from dolfin import info, begin, end, near, Timer, Parameters
 
 from muflon.log.loggers import MuflonLogger
 from muflon.io.writers import XDMFWriter
+from muflon.solving.solvers import Solver
 
 # --- Generic interface for creating demanded systems of PDEs -----------------
 
@@ -93,22 +94,15 @@ class TimeStepping(object):
             msg = "Cannot create solver from a generic class."
             TimeStepping._not_implemented_msg(self, msg)
 
-    def __init__(self, comm, dt, t_end, solver, sol_ptl,
+    def __init__(self, comm, solver,
                  hook=None, logfile=None, xfields=None, outdir="."):
         """
         Initializes parameters for time-stepping algorithm and creates logger.
 
         :param comm: MPI communicator
         :type comm: :py:class:`dolfin.MPI_Comm`
-        :param dt: time step
-        :type dt: float
-        :param t_end: termination time of the algorithm
-        :type t_end: float
-        :param solver: solver for a single time step (can be a list for
-                       multistep schemes)
+        :param solver: solver for a single time step
         :type solver: :py:class:`Solver <muflon.solving.solvers.Solver>`
-        :param sol_ptl: list of solutions at previous time levels
-        :type sol_ptl: list
         :param hook: class with two special methods that are called at the
                      beginning/end of the time-stepping loop
         :type hook: :py:class:`TSHook`
@@ -122,17 +116,17 @@ class TimeStepping(object):
         :type outdir: str
         """
         # Check input
+        assert isinstance(solver, Solver)
         assert isinstance(hook, (TSHook, type(None)))
         assert isinstance(logfile, (str, type(None)))
         assert isinstance(xfields, (list, type(None)))
 
         # Initialize parameters
-        self.parameters = TimeStepping._init_parameters(dt, t_end)
+        self.parameters = TimeStepping._init_parameters()
 
         # Store attributes
         self._comm = comm
         self._solver = solver
-        self._sol_ptl = sol_ptl
         self._hook = hook
         self._xfields = xfields
         self._outdir = outdir
@@ -143,7 +137,7 @@ class TimeStepping(object):
         self._logger = MuflonLogger(comm, logfile)
 
     @staticmethod
-    def _init_parameters(dt, t_end):
+    def _init_parameters():
         """
         .. _tab_tsprm:
 
@@ -153,8 +147,6 @@ class TimeStepping(object):
            ------------------------------------------------------------------------
            Option                Suboption      Description
            ====================  =============  ===================================
-           --dt                                 time step
-           --t_end                              termination time of the simulation
            --xdmf
            \                     .folder        name of the folder for XDMF files
            \                     .flush         flush output of XDMF files
@@ -162,8 +154,6 @@ class TimeStepping(object):
            ====================  =============  ===================================
         """
         prm = Parameters("time-stepping")
-        prm.add("dt", dt)
-        prm.add("t_end", t_end)
 
         nested_prm = Parameters("xdmf")
         nested_prm.add("folder", "XDMFdata")
@@ -189,42 +179,53 @@ class TimeStepping(object):
 
     def solver(self):
         """
-        :returns: solver that is used for a single time step within algorithm
+        Returns solver used for solving systems corresponding to a single time
+        step.
+
+        :returns: solver for a single time step
         :rtype: :py:class:`Solver <muflon.solving.solvers.Solver>`
         """
         return self._solver
 
-    def run(self, scheme, *args, **kwargs):
-        # FIXME: The algorithms for different schemes could be identical,
-        #        assuming that self._solver_solve() takes care of solving
-        #        a single time step properly.
+    def run(self, t_beg, t_end, dt, OTD=1, it=0):
         """
         Run time-stepping algorithm for a given scheme.
 
         This is a common interface for calling methods
-        ``<algorithm>.run_<scheme>()``, where ``<algorithm>``
+        ``<algorithm>._tstepping_loop()``, where ``<algorithm>``
         represents a subclass of :py:class:`TimeStepping`.
 
-        .. todo:: add currently implemented schemes
+        Currently implemented algorithms:
 
-        :param scheme: which scheme will be used
-        :type scheme: str
+        * :py:class:`ConstantTimeStep`
+
+        :param t_beg: beginning time of the algorithm
+        :type t_beg: float
+        :param t_end: termination time of the algorithm
+        :type t_end: float
+        :param dt: time step
+        :type dt: float
+        :param OTD: order of time discretization
+        :type OTD: int
+        :param it: initial iteration number
+        :type it: int
         :returns: dictionary with results of the computation
         :rtype: dict
         """
-        if hasattr(self, "run_" + scheme):
-            if self._xfields: # create xdmf writer for given fields
-                xfolder = os.path.join(self._outdir,
-                                       self.parameters["xdmf"]["folder"])
-                xflush = self.parameters["xdmf"]["flush"]
-                self._xdmf_writer = XDMFWriter(self._comm, xfolder,
-                                               self._xfields, xflush)
-            return getattr(self, "run_" + scheme)(*args, **kwargs)
-        else:
-            msg  = "Cannot run time-stepping for '%s' scheme." % scheme
-            msg += " Reason: Method '%s' of class '%s' is not implemented"\
-                   % ("run_" + scheme, self.__str__())
-            raise NotImplementedError(msg)
+        if self._xfields: # create xdmf writer for given fields
+            xfolder = os.path.join(self._outdir,
+                                   self.parameters["xdmf"]["folder"])
+            xflush = self.parameters["xdmf"]["flush"]
+            self._xdmf_writer = XDMFWriter(self._comm, xfolder,
+                                           self._xfields, xflush)
+        return self._tstepping_loop(t_beg, t_end, dt, OTD, it)
+
+    def _tstepping_loop(self, *args, **kwargs):
+        """
+        An abstract method.
+        """
+        msg  = "Cannot run time-stepping algorithm."
+        self._not_implemented_msg()
 
     def logger(self):
         """
@@ -246,27 +247,26 @@ class TimeStepping(object):
 
 class ConstantTimeStep(TimeStepping):
     """
-    This class implements implicit time-stepping algorithms.
+    This class implements time-stepping algorithms with constant time step.
     """
     class Factory(object):
         def create(self, *args, **kwargs):
             return ConstantTimeStep(*args, **kwargs)
 
-    def run_OneStepScheme(self):
+    def _tstepping_loop(self, t_beg, t_end, dt, OTD=1, it=0):
         """
-        Perform time-stepping with only one previous time level.
-
-        :returns: dictionary with results of the computation
-        :rtype: dict
+        Run time-stepping algorithm.
         """
         prm = self.parameters
         logger = self._logger
         solver = self._solver
-        if isinstance(solver, collections.Iterable):
-            solver = solver[0]
-        dt = prm["dt"]
-        t_end = prm["t_end"]
-        t, it = 0.0, 0
+        model = solver._data["model"]
+        sol_ptl = model.discretization_scheme().solution_ptl()
+
+        t = t_beg
+        if OTD == 2:
+            model.update_TD_factors(OTD)
+        model.update_time_step_value(dt)
         while t < t_end and not near(t, t_end, 0.1*dt):
             # Move to the current time level
             t += dt                   # update time
@@ -290,72 +290,20 @@ class ConstantTimeStep(TimeStepping):
             if self._hook is not None:
                 self._hook.tail(t, it, logger)
 
-            # Update variables at previous time level
-            for (i, w) in enumerate(solver.sol_ctl()):
-                self._sol_ptl[0][i].assign(w) # t^(n-0) <-- t^(n+1)
-
-        # Flush output from logger
-        self._logger.dump_to_file()
-
-        result = {
-            "dt": dt,
-            "it": it,
-            "t_end": t_end,
-            "tmr_solve": tmr_solve.elapsed()[0]
-        }
-
-        return result
-
-    def run_MultiStepScheme(self):
-        """
-        Perform time-stepping with several previous time levels.
-
-        :returns: dictionary with results of the computation
-        :rtype: dict
-        """
-        prm = self.parameters
-        logger = self._logger
-        solver = self._solver
-        L = len(self._sol_ptl) # number of previous time levels needed
-        assert len(solver) == L
-        dt = prm["dt"]
-        t_end = prm["t_end"]
-        t, it = 0.0, 0
-        initID = 0 # indicator for initialization process for multistep scheme
-        while t < t_end and not near(t, t_end, 0.1*dt):
-            # Move to the current time level
-            t += dt                   # update time
-            it += 1                   # update iteration number
-
-            # User defined instructions
-            if self._hook is not None:
-                self._hook.head(t, it, logger)
-
-            # Solve
-            info("t = %g, step = %g, dt = %g" % (t, it, dt))
-            with Timer("Solve (per time step)") as tmr_solve:
-                solver[initID].solve()
-            if it < L: # if it == L then the initialization process is finished
-                initID += 1
-
-            # Save results
-            if it % prm["xdmf"]["modulo"] == 0:
-                if hasattr(self, "_xdmf_writer"):
-                    self._xdmf_writer.write(t)
-
-            # User defined instructions
-            if self._hook is not None:
-                self._hook.tail(t, it, logger)
-
             # Update variables at previous time levels
+            L = len(sol_ptl)
             for k in reversed(range(1, L)): # k goes from L-1 to 1
-                for (i, w) in enumerate(self._sol_ptl[k-1]):
-                    self._sol_ptl[k][i].assign(w) # t^(n-k) <-- t^(n-k+1)
-            for (i, w) in enumerate(self._solver[initID].sol_ctl()):
-                self._sol_ptl[0][i].assign(w) # t^(n-0) <-- t^(n+1)
+                for (i, w) in enumerate(sol_ptl[k-1]):
+                    sol_ptl[k][i].assign(w) # t^(n-k) <-- t^(n-k+1)
+            for (i, w) in enumerate(solver.sol_ctl()):
+                sol_ptl[0][i].assign(w) # t^(n-0) <-- t^(n+1)
 
         # Flush output from logger
         self._logger.dump_to_file()
+
+        # Refresh solver for further use
+        if hasattr(solver, "refresh"):
+            solver.refresh()
 
         result = {
             "dt": dt,

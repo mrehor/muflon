@@ -84,51 +84,36 @@ def test_scaling_time(scheme, postprocessor):
             DS.load_ic_from_simple_cpp(ic)
 
             # Prepare model
-            model = ModelFactory.create("Incompressible", dt, DS, bcs)
-            t_src = Function(DS.reals())
+            model = ModelFactory.create("Incompressible", DS, bcs)
+            t_src = Function(DS.reals()); t_src.rename("t_src", "t_source")
             f_src, g_src = create_source_terms(t_src, mesh, model, msol)
             model.load_sources(f_src, g_src)
-            forms = []
-            if OTD in [1, 2]:
-                # Use first order schemes for initialization of first time step
-                model.parameters["mono"]["theta"] = 1.0
-                model.parameters["full"]["OTD"] = 1
-                forms.append(model.create_forms())
-                if OTD == 2:
-                    # Use second order schemes
-                    model.parameters["mono"]["theta"] = 0.5
-                    model.parameters["full"]["OTD"] = 2
-                    forms.append(model.create_forms())
-            else:
-                msg = "Schemes with order of temporal discretization >2 are" \
-                      " not implemented"
-                raise NotImplementedError(msg)
-
-            # Get access to solution functions
-            sol_ctl = DS.solution_ctl()
-            sol_ptl = DS.solution_ptl()
+            forms = model.create_forms()
 
             # Prepare solver
-            solvers = []
-            for f in forms:
-                solvers.append(SolverFactory.create(model, f))
-                # FIXME: bcs were moved to model
+            solver = SolverFactory.create(model, forms)
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
             outdir = os.path.join(scriptdir, __name__)
-            xfields = None #list(phi_) + list(v_) + [p,]
+            # phi, chi, v, p = DS.primitive_vars_ctl()
+            # phi_, chi_, v_ = phi.split(), chi.split(), v.split()
+            xfields = None #list(phi_) + list(v_) + [p.dolfin_repr(),]
             hook = prepare_hook(t_src, DS, esol, degrise, {})
             logfile = "log_{}_dt_{}_{}.dat".format(basename, dt, scheme)
-            TS = TimeSteppingFactory.create(
-                   "ConstantTimeStep", comm, dt, t_end, solvers, sol_ptl,
-                   hook=hook, logfile=logfile, xfields=xfields,
-                   outdir=outdir)
+            TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
+                   hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
 
         # Time-stepping
+        t_beg = 0.0
         with Timer("Time stepping") as tmr_tstepping:
-            # FIXME: run method is the same for all schemes
-            result = TS.run("MultiStepScheme")
+            if OTD == 2:
+                dt0 = dt if scheme == "FullyDecoupled" else 1.0e-4*dt
+                result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                if dt - dt0 > 0.0:
+                    result = TS.run(dt0, dt, dt - dt0, OTD=2)
+                t_beg = dt
+            result = TS.run(t_beg, t_end, dt, OTD)
 
         # Prepare results
         name = logfile[4:-4]

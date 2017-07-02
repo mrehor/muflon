@@ -40,8 +40,7 @@ def prepare_model_and_bcs(scheme, N, dim, th):
     bcs = {}
     bcs["v"] = [(bcs_v1, bcs_v2),]
     # Create model
-    dt = 1.0
-    model = ModelFactory.create("Incompressible", dt, DS, bcs)
+    model = ModelFactory.create("Incompressible", DS, bcs)
 
     return model, DS, bcs
 
@@ -70,7 +69,30 @@ def test_forms(scheme, N, dim, th):
     assert id(bcs_ret) == id(bcs)
 
     # Create forms
+    with pytest.raises(RuntimeError):
+        model.update_TD_factors(1)
     forms = model.create_forms()
+
+    # Update order of time discretization
+    if scheme == "SemiDecoupled":
+        with pytest.raises(NotImplementedError):
+            model.update_TD_factors(2)
+    elif scheme == "Monolithic":
+        model.update_TD_factors(2)
+        flag = False
+        for c in forms["linear"][0].coefficients():
+            if c.name() == "theta":
+                flag = True
+                assert float(c) == 0.5
+        assert flag
+    else:
+        model.update_TD_factors(2)
+        flag = False
+        for c in forms["bilinear"]["lhs"][0].coefficients():
+            if c.name() == "gamma0":
+                flag = True
+                assert float(c) == 1.5
+        assert flag
 
     # Check assembly of returned forms
     if scheme == "Monolithic":

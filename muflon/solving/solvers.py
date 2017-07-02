@@ -64,10 +64,12 @@ class SolverFactory(object):
         :rtype: (subclass of) :py:class:`Solver`
         """
         assert isinstance(model, Model)
-        solver = model.discretization_scheme().name()
-        if not solver in SolverFactory.factories:
-            SolverFactory._register(solver)
-        return SolverFactory.factories[solver].create(model, *args, **kwargs)
+        name = kwargs.get("name", None)
+        if name is None:
+            name = model.discretization_scheme().name()
+        if not name in SolverFactory.factories:
+            SolverFactory._register(name)
+        return SolverFactory.factories[name].create(model, *args, **kwargs)
 
 # --- Generic class for creating solvers ---------------------------------------
 
@@ -81,13 +83,16 @@ class Solver(object):
             msg = "Cannot create solver from a generic class."
             Solver._not_implemented_msg(self, msg)
 
-    def __init__(self, model, forms=None):
+    def __init__(self, model, forms=None, name=None):
         """
         :param model: model of the CHNSF type
         :type model: :py:class:`Model <muflon.models.forms.Model>`
         :param forms: dictonary with items ``'linear'`` and ``'bilinear'``
                       containing :py:class:`ufl.form.Form` objects
         :type forms: dict
+        :param name: name of the solver (if ``None`` then it is extracted
+                     from ``model``)
+        :type name: str
         """
         # Get bare version of forms if not given
         if forms is None:
@@ -187,7 +192,23 @@ class FullyDecoupled(Solver):
         """
         super(FullyDecoupled, self).__init__(*args, **kwargs)
 
-        # Adjust forms
+        # Create solvers
+        solver = OrderedDict()
+        solver["phi"] = LUSolver("mumps")
+        solver["chi"] = LUSolver("mumps")
+        solver["v"]   = LUSolver("mumps")
+        solver["p"]   = LUSolver("mumps")
+        self._data["solver"] = solver
+
+        # Initialize flags
+        self._flags = OrderedDict()
+        self._flags["setup"] = False
+
+    def _assemble_constant_matrices(self):
+        """
+        Pre-assemble time independent matrices, group right hand sides and
+        solution functions.
+        """
         DS = self._data["model"].discretization_scheme()
         w = DS.solution_ctl()
         eqn = self._data["forms"]["bilinear"]
@@ -196,7 +217,6 @@ class FullyDecoupled(Solver):
         gdim = len(v)
         del phi, chi, v, p
 
-        # Pre-assemble constant matrices, group rhs and solution fcns
         _A   = OrderedDict(phi=[], chi=[], v=[])
         _rhs = OrderedDict(phi=[], chi=[], v=[])
         _sol = OrderedDict(phi=[], chi=[], v=[])
@@ -227,13 +247,7 @@ class FullyDecoupled(Solver):
         self._data["sol"] = _sol
         self._data["bcs"] = _bcs
 
-        # Create solvers
-        solver = OrderedDict()
-        solver["phi"] = LUSolver("mumps")
-        solver["chi"] = LUSolver("mumps")
-        solver["v"]   = LUSolver("mumps")
-        solver["p"]   = LUSolver("mumps")
-        self._data["solver"] = solver
+        self._flags["setup"] = True
 
     def solve(self):
         # FIXME: Make the code parallel (pay attention to simultaneous solves
@@ -241,8 +255,11 @@ class FullyDecoupled(Solver):
         """
         Perform one solution step (in time).
         """
-        solver = self._data["solver"]
+        # Check that const. matrices have been setup
+        if not self._flags["setup"]:
+            self._assemble_constant_matrices()
 
+        solver = self._data["solver"]
         begin("Advance-phase")
         for i, A in enumerate(self._data["A"]["chi"]):
             b = assemble(self._data["rhs"]["chi"][i])
@@ -268,3 +285,9 @@ class FullyDecoupled(Solver):
                 bc[i].apply(b)
             solver["v"].solve(A, self._data["sol"]["v"][i].vector(), b)
         end()
+
+    def refresh(self):
+        """
+        Put solver into its initial state.
+        """
+        self._flags["setup"] = False
