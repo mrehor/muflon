@@ -1,4 +1,4 @@
-"""Run all demos."""
+# -*- coding: utf-8 -*-
 
 # Copyright (C) 2008-2014 Ilmar Wilbers, 2016 Jan Blechta, 2017 Martin Řehoř
 #
@@ -22,6 +22,8 @@
 # Modified by Johan Hake, 2009.
 # Modified by Benjamin Kehlet 2012
 # Modified by Martin Sandve Alnaes, 2014
+
+"""Run all demos."""
 
 from __future__ import print_function
 import sys, os, re, platform

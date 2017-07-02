@@ -1,4 +1,6 @@
-# Copyright (C) 2017 Martin Rehor
+# -*- coding: utf-8 -*-
+
+# Copyright (C) 2017 Martin Řehoř
 #
 # This file is part of MUFLON.
 #
