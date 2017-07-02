@@ -253,7 +253,7 @@ def prepare_hook(t_src, DS, esol, degrise, err):
     return TailoredHook(t_src=t_src, DS=DS, esol=esol,
                         degrise=degrise, err=err)
 
-@pytest.mark.parametrize("scheme", ["FullyDecoupled",]) #"SemiDecoupled", "Monolithic"
+@pytest.mark.parametrize("scheme", ["Monolithic", "FullyDecoupled"]) #"SemiDecoupled"
 def test_scaling_mesh(scheme, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed time step and
@@ -336,7 +336,8 @@ def test_scaling_mesh(scheme, postprocessor):
             scheme=scheme,
             OTD=OTD,
             err=hook.err,
-            level=level,
+            #level=level,
+            hmin=mesh.hmin(),
             tmr_prepare=tmr_prepare.elapsed()[0],
             tmr_tstepping=tmr_tstepping.elapsed()[0]
         )
@@ -348,7 +349,7 @@ def test_scaling_mesh(scheme, postprocessor):
         postprocessor.add_result(rank, result)
 
     # Save results into a binary file
-    datafile = os.path.join(outdir, "results_{}.pickle".format(basename))
+    datafile = os.path.join(outdir, "results_{}_{}.pickle".format(basename, scheme))
     postprocessor.flush_results(rank, datafile)
 
     # Pop results that we do not want to report at the moment
@@ -386,7 +387,7 @@ class Postprocessor(GenericPostprocessorMMS):
         self.OTD = OTD
 
         # So far hardcoded values
-        self.x_var = "level"
+        self.x_var = "hmin" #"level"
         self.y_var0 = "err"
         self.y_var1 = "tmr_tstepping" # "tmr_solve"
 
@@ -398,7 +399,9 @@ class Postprocessor(GenericPostprocessorMMS):
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
+            styles = {"Monolithic": 'x--', "SemiDecoupled": '.--', "FullyDecoupled": '+--'}
             for result in self.results:
+                style = styles[result["scheme"]]
                 if not all(result[name] == value for name, value in fixed_vars):
                     continue
                 free_vars = tuple((var, val) for var, val in six.iteritems(result)
@@ -418,55 +421,62 @@ class Postprocessor(GenericPostprocessorMMS):
                 xs = datapoints["xs"]
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
-                self._plot(fig, xs, ys0, ys1, free_vars)
+                self._plot(fig, xs, ys0, ys1, free_vars, style)
             self._save_plot(fig, fixed_vars, outdir)
 
         self.results = []
 
     @staticmethod
-    def _plot(fig, xs, ys0, ys1, free_vars):
-        fig, (ax1, ax2) = fig
+    def _plot(fig, xs, ys0, ys1, free_vars, style):
+        (fig1, fig2), (ax1, ax2) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for (i, var) in enumerate(["phi1", "phi2", "phi3"]):
-            ax1.plot(xs, [d[var] for d in ys0], '+--', linewidth=0.2,
+            ax1.plot(xs, [d[var] for d in ys0], style, linewidth=0.2,
                      label=r"$L^2$-$\phi_{}$".format(i+1))
         for (i, var) in enumerate(["v1", "v2"]):
-            ax1.plot(xs, [d[var] for d in ys0], '+--', linewidth=0.2,
+            ax1.plot(xs, [d[var] for d in ys0], style, linewidth=0.2,
                      label=r"$L^2$-$v_{}$".format(i+1))
-        ax1.plot(xs, [d["p"] for d in ys0], '+--', linewidth=0.2,
+        ax1.plot(xs, [d["p"] for d in ys0], style, linewidth=0.2,
                  label=r"$L^2$-$p$")
         ax2.plot(xs, ys1, '*--', linewidth=0.2, label=label)
         ax1.legend(bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0,
                    fontsize='x-small', ncol=1)
-        ax2.legend(bbox_to_anchor=(0, -0.05), loc=2, borderaxespad=0,
+        ax2.legend(bbox_to_anchor=(0, 1.1), loc=2, borderaxespad=0,
                    fontsize='x-small', ncol=3)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):
-        fig, (ax1, ax2) = fig
+        subfigs, (ax1, ax2) = fig
         filename = "_".join(map(str, itertools.chain(*fixed_vars)))
-        fig.savefig(os.path.join(outdir, "fig_" + filename + ".pdf"))
+        import matplotlib.backends.backend_pdf
+        pdf = matplotlib.backends.backend_pdf.PdfPages(
+                  os.path.join(outdir, "fig_" + filename + ".pdf"))
+        for fig in subfigs:
+            pdf.savefig(fig)
+        pdf.close()
 
     @staticmethod
     def _create_figure():
-        fig = pyplot.figure()
-        gs = gridspec.GridSpec(3, 2, width_ratios=[1, 0.01],
-                               height_ratios=[10, 10, 1], hspace=0.1)
+        fig1, fig2 = pyplot.figure(), pyplot.figure()
+        gs = gridspec.GridSpec(2, 2, width_ratios=[1, 0.01],
+                               height_ratios=[10, 1], hspace=0.1)
         # Set subplots
-        ax2 = fig.add_subplot(gs[1, 0])
-        ax1 = fig.add_subplot(gs[0, 0], sharex=ax2)
-        ax1.xaxis.set_label_position("top")
-        ax1.xaxis.set_ticks_position("top")
-        ax1.xaxis.set_tick_params(labeltop="on", labelbottom="off")
-        pyplot.setp(ax2.get_xticklabels(), visible=False)
+        ax1 = fig1.add_subplot(gs[0, 0])
+        ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
+        #ax1.xaxis.set_label_position("top")
+        #ax1.xaxis.set_ticks_position("top")
+        #ax1.xaxis.set_tick_params(labeltop="on", labelbottom="off")
+        #pyplot.setp(ax2.get_xticklabels(), visible=False)
         # Set scales
+        ax1.set_xscale("log")
         ax1.set_yscale("log")
         ax2.set_yscale("log")
         # Set labels
-        ax1.set_xlabel("Level of mesh refinement $L$; $n_x = 2^{(L+1)}$")
+        ax1.set_xlabel("$h_{\min}$")
+        ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("$L^2$ errors")
         ax2.set_ylabel("CPU time")
         ax1.set_ylim(0, None, auto=True)
         ax2.set_ylim(0, None, auto=True)
 
-        return fig, (ax1, ax2)
+        return (fig1, fig2), (ax1, ax2)
