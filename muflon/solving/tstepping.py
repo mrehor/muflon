@@ -32,6 +32,9 @@ from muflon.log.loggers import MuflonLogger
 from muflon.io.writers import XDMFWriter
 from muflon.solving.solvers import Solver
 
+# FIXME: remove the following workaround
+from muflon.common.timer import Timer
+
 # --- Generic interface for creating demanded systems of PDEs -----------------
 
 class TimeSteppingFactory(object):

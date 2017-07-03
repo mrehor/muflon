@@ -36,6 +36,9 @@ from muflon import mpset, ModelFactory, SolverFactory, TimeSteppingFactory
 
 from muflon.utils.testing import GenericPostprocessorMMS
 
+# FIXME: remove the following workaround
+from muflon.common.timer import Timer
+
 from test_mms_Ia import (
     create_manufactured_solution, create_initial_conditions,
     create_domain, create_discretization, create_exact_solution, create_bcs,

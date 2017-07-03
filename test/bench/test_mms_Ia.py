@@ -42,6 +42,9 @@ from muflon import capillary_force, total_flux
 
 from muflon.utils.testing import GenericPostprocessorMMS
 
+# FIXME: remove the following workaround
+from muflon.common.timer import Timer
+
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 parameters["plotting_backend"] = "matplotlib"
