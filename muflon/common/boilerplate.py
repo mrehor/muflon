@@ -23,6 +23,7 @@ This module contains boilerplate code.
 
 import os
 import sys
+import inspect
 
 from dolfin import error
 
@@ -48,3 +49,9 @@ def prepare_output_directory(path):
         if not os.path.isdir(path):
             raise
     return path
+
+def not_implemented_msg(klass, msg=""):
+    caller = inspect.stack()[1][3]
+    _msg = "You need to implement a method '%s' of class '%s'." \
+      % (caller, klass.__str__())
+    raise NotImplementedError(" ".join((msg, _msg)))

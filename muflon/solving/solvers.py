@@ -29,6 +29,7 @@ from dolfin import derivative, lhs, rhs, assemble, begin, end
 from dolfin import NonlinearVariationalProblem, NonlinearVariationalSolver
 from dolfin import LUSolver
 
+from muflon.common.boilerplate import not_implemented_msg
 from muflon.models.forms import Model
 
 # --- Generic interface for creating demanded systems of PDEs -----------------
@@ -83,7 +84,7 @@ class Solver(object):
     class Factory(object):
         def create(self, *args, **kwargs):
             msg = "Cannot create solver from a generic class."
-            Solver._not_implemented_msg(self, msg)
+            not_implemented_msg(self, msg)
 
     def __init__(self, model, forms=None, name=None):
         """
@@ -113,13 +114,6 @@ class Solver(object):
         :rtype: tuple
         """
         return self.data["model"].discretization_scheme().solution_ctl()
-
-    def _not_implemented_msg(self, msg=""):
-        import inspect
-        caller = inspect.stack()[1][3]
-        _msg = "You need to implement a method '%s' of class '%s'." \
-          % (caller, self.__str__())
-        raise NotImplementedError(" ".join((msg, _msg)))
 
 # --- Monolithic nonlinear solver ---------------------------------------------
 

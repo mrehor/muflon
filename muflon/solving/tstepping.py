@@ -27,6 +27,7 @@ import collections
 
 from dolfin import info, begin, end, near, Timer, Parameters
 
+from muflon.common.boilerplate import not_implemented_msg
 from muflon.log.loggers import MuflonLogger
 from muflon.io.writers import XDMFWriter
 from muflon.solving.solvers import Solver
@@ -94,7 +95,7 @@ class TimeStepping(object):
     class Factory(object):
         def create(self, *args, **kwargs):
             msg = "Cannot create solver from a generic class."
-            TimeStepping._not_implemented_msg(self, msg)
+            not_implemented_msg(self, msg)
 
     def __init__(self, comm, solver,
                  hook=None, logfile=None, xfields=None, outdir="."):
@@ -227,7 +228,7 @@ class TimeStepping(object):
         An abstract method.
         """
         msg  = "Cannot run time-stepping algorithm."
-        self._not_implemented_msg()
+        not_implemented_msg(self)
 
     def logger(self):
         """
@@ -237,13 +238,6 @@ class TimeStepping(object):
         :rtype: :py:class:`MuflonLogger <muflon.log.loggers.MuflonLogger>`
         """
         return self._logger
-
-    def _not_implemented_msg(self, msg=""):
-        import inspect
-        caller = inspect.stack()[1][3]
-        _msg = "You need to implement a method '%s' of class '%s'." \
-          % (caller, self.__str__())
-        raise NotImplementedError(" ".join((msg, _msg)))
 
 # --- Algorithms with constant time step --------------------------------------
 

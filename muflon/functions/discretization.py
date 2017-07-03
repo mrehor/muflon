@@ -54,6 +54,7 @@ from dolfin import as_vector, split, FacetNormal
 from dolfin import Parameters, VectorElement, MixedElement, FunctionSpace
 from dolfin import Function, TrialFunction, TestFunction, Expression
 
+from muflon.common.boilerplate import not_implemented_msg
 from muflon.common.parameters import mpset
 from muflon.functions.primitives import PrimitiveShell
 from muflon.functions.iconds import SimpleCppIC
@@ -210,7 +211,7 @@ class Discretization(object):
     class Factory(object):
         def create(self, *args, **kwargs):
             msg = "Cannot create discretization scheme from a generic class. "
-            Discretization._not_implemented_msg(self, msg)
+            not_implemented_msg(self, msg)
 
     def __init__(self, mesh,
                  FE_phi, FE_chi, FE_v, FE_p, FE_th=None):
@@ -309,7 +310,7 @@ class Discretization(object):
         * :py:meth:`SemiDecoupled.setup`
         * :py:meth:`FullyDecoupled.setup`
         """
-        self._not_implemented_msg()
+        not_implemented_msg(self)
 
     def variable_names(self):
         """
@@ -595,7 +596,7 @@ class Discretization(object):
                    for the purpose of loading them at this point
         :type ic: :py:class:`muflon.functions.iconds.SimpleCppIC`
         """
-        self._not_implemented_msg()
+        not_implemented_msg(self)
 
     def load_ic_from_file(self, filenames):
         """
@@ -604,14 +605,7 @@ class Discretization(object):
         :param filenames: list of HDF5 files
         :type filenames: list
         """
-        self._not_implemented_msg()
-
-    def _not_implemented_msg(self, msg=""):
-        import inspect
-        caller = inspect.stack()[1][3]
-        _msg = "You need to implement a method '%s' of class '%s'." \
-          % (caller, self.__str__())
-        raise NotImplementedError(msg + _msg)
+        not_implemented_msg(self)
 
     @classmethod
     def _inherit_docstring(cls, meth):
