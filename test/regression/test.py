@@ -112,8 +112,7 @@ def run_python_demo(prefix, demo, rootdir, timing, failed):
 def main():
     # Check that we can find pylit.py for converting foo.py.rst to
     # foo.py
-    pylit_parser = os.path.join(os.environ['FENICS_SRC_DIR'],
-                                "dolfin/utils/pylit/pylit.py")
+    pylit_parser = os.path.join(os.environ['PYLIT_DIR'], "pylit.py")
     if os.path.isfile(pylit_parser):
         pass
     else:
