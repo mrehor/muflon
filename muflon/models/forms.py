@@ -26,7 +26,7 @@ import numpy as np
 
 from dolfin import Parameters
 from dolfin import Constant, Function, Measure
-from dolfin import as_matrix, as_vector, conditional, gt, variable
+from dolfin import as_matrix, as_vector, conditional, lt, gt, variable
 from dolfin import dot, inner, outer, dx, ds, sym
 from dolfin import derivative, diff, div, grad, curl, sqrt
 
@@ -319,8 +319,9 @@ class Model(object):
         q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
         homogq = inner(q_diff, phi) + Constant(q[-1])
         if cut:
-            homogq = conditional(homogq < q_min, Constant(q_min),
-                         conditional(homogq > q_max, Constant(q_max), homogq))
+            A = conditional(lt(homogq, q_min), 1.0, 0.0)
+            B = conditional(gt(homogq, q_max), 1.0, 0.0)
+            return A*Constant(q_min) + B*Constant(q_max) + (1.0 - A - B)*homogq
         return homogq
 
     def _not_implemented_msg(self, msg=""):
