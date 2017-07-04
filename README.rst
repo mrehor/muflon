@@ -49,6 +49,7 @@ Full documentation is available at <http://msekce.karlin.mff.cuni.cz/~rehor/mufl
 
 .. TODO: Remove the following include directives later
 .. include:: ../../test/README.rst
+.. include:: ../../test/bench/README.rst
 .. include:: ../README.rst
 
 

@@ -1,7 +1,7 @@
-RUNNING BENCHMARKS ON CLUSTER
-=============================
+Running benchmarks on cluster
+-----------------------------
 
-To run benchmark on **r0d0** use
+To run a benchmark on **r0d0** use
 
 .. code-block:: console
 
