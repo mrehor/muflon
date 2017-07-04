@@ -49,7 +49,7 @@ parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 parameters["plotting_backend"] = "matplotlib"
 
-@pytest.mark.parametrize("scheme", ["Monolithic", "FullyDecoupled"]) #"SemiDecoupled",
+@pytest.mark.parametrize("scheme", ["FullyDecoupled", "Monolithic"]) #"SemiDecoupled",
 def test_scaling_time(scheme, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
@@ -128,6 +128,8 @@ def test_scaling_time(scheme, postprocessor):
         result.update(
             ndofs=DS.num_dofs(),
             scheme=scheme,
+            dt=dt,
+            t_end=t_end,
             OTD=OTD,
             err=hook.err,
             level=level,
@@ -140,17 +142,17 @@ def test_scaling_time(scheme, postprocessor):
 
         # Send to posprocessor
         rank = MPI.rank(comm)
-        postprocessor.add_result(result)
+        postprocessor.add_result(rank, result)
 
     # Save results into a binary file
     filename = "results_{}_{}.pickle".format(basename, scheme)
-    postprocessor.flush_results(rank, filename)
+    postprocessor.flush_results(filename)
 
     # Pop results that we do not want to report at the moment
     postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
 
     # Flush plots as we now have data for all level values
-    postprocessor.flush_plots(rank)
+    postprocessor.flush_plots()
 
     # Store timings
     #datafile = os.path.join(outdir, "timings.xml")
@@ -163,8 +165,8 @@ def test_scaling_time(scheme, postprocessor):
     gc.collect()
 
 @pytest.fixture(scope='module')
-def postprocessor():
-    level = 5
+def postprocessor(request):
+    level = 5   # NOTE set to 6 for direct solvers
     t_end = 0.2 # FIXME: set t_end = 1.0
     OTD = 2
     rank = MPI.rank(mpi_comm_world())
@@ -185,6 +187,10 @@ def postprocessor():
         proc.create_plots(rank)
         #pyplot.show(); exit() # uncomment to explore current layout of plots
 
+    def fin():
+        print("teardown postprocessor")
+        proc.flush_results("results_flushed_at_teardown")
+    request.addfinalizer(fin)
     return proc
 
 class Postprocessor(GenericPostprocessorMMS):
@@ -204,11 +210,11 @@ class Postprocessor(GenericPostprocessorMMS):
         # Store names
         self.basename = "level_{}_t_end_{}_OTD_{}".format(level, t_end, OTD)
 
-    def flush_plots(self, rank):
-        if rank > 0:
+    def flush_plots(self):
+        if not self.plots:
+            self.results = []
             return
         coord_vars = (self.x_var, self.y_var0, self.y_var1)
-
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
@@ -236,7 +242,6 @@ class Postprocessor(GenericPostprocessorMMS):
                 ys1 = datapoints["ys1"]
                 self._plot(fig, xs, ys0, ys1, free_vars, self.OTD, style)
             self._save_plot(fig, fixed_vars, self.outdir)
-
         self.results = []
 
     @staticmethod
