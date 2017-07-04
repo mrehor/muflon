@@ -5,7 +5,6 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=express
 #SBATCH --constraint="InfiniBand"
-#SBATCH --mail-user=$USER@karlin.mff.cuni.cz
 #SBATCH --mail-type=END,FAIL
 
 # NOTE:
