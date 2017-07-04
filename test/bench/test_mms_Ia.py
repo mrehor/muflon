@@ -268,18 +268,23 @@ def test_scaling_mesh(scheme, postprocessor):
 
     degrise = 3 # degree rise for computation of errornorm
 
+    # Read parameters
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     prm_file = os.path.join(scriptdir, "muflon-parameters.xml")
     mpset.read(prm_file)
-
-    msol = create_manufactured_solution()
-    ic = create_initial_conditions(msol)
 
     # Fixed parameters
     OTD = postprocessor.OTD
     dt = postprocessor.dt
     t_end = postprocessor.t_end
-    basename = "dt_{}_t_end_{}_OTD_{}".format(dt, t_end, OTD)
+
+    # Names and directories
+    basename = postprocessor.basename
+    outdir = postprocessor.outdir
+
+    # Mesh independent predefined quantities
+    msol = create_manufactured_solution()
+    ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
     for level in range(1, 6):
@@ -311,7 +316,6 @@ def test_scaling_mesh(scheme, postprocessor):
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
-            outdir = os.path.join(scriptdir, __name__)
             # phi, chi, v, p = DS.primitive_vars_ctl()
             # phi_, chi_, v_ = phi.split(), chi.split(), v.split()
             xfields = None #list(phi_) + list(v_) + [p.dolfin_repr(),]
@@ -351,41 +355,55 @@ def test_scaling_mesh(scheme, postprocessor):
 
         # Send to posprocessor
         rank = MPI.rank(comm)
-        postprocessor.add_result(rank, result)
+        postprocessor.add_result(result)
 
     # Save results into a binary file
-    datafile = os.path.join(outdir, "results_{}_{}.pickle".format(basename, scheme))
-    postprocessor.flush_results(rank, datafile)
+    filename = "results_{}_{}.pickle".format(basename, scheme)
+    postprocessor.flush_results(rank, filename)
 
     # Pop results that we do not want to report at the moment
-    postprocessor.pop_items(rank, ["ndofs", "tmr_prepare", "tmr_solve", "it"])
+    postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
 
     # Flush plots as we now have data for all level values
-    postprocessor.flush_plots(rank, outdir)
+    postprocessor.flush_plots(rank)
 
     # Store timings
-    #dump_timings_to_xml(os.path.join(outdir, "timings.xml"), TimingClear_clear)
+    #datafile = os.path.join(outdir, "timings.xml")
+    #dump_timings_to_xml(datafile, TimingClear_clear)
 
     # Cleanup
     set_log_level(INFO)
-    #mpset.write(mesh.mpi_comm(), prm_file) # uncomment to save parameters
+    #mpset.write(comm, prm_file) # uncomment to save parameters
     mpset.refresh()
     gc.collect()
 
 @pytest.fixture(scope='module')
 def postprocessor():
     dt = 0.001
-    t_end = 0.002 # FIXME: set t_end = 0.1
+    t_end = 0.005 # FIXME: set t_end = 0.1
     OTD = 2
-    proc = Postprocessor(dt, t_end, OTD)
-    if not os.environ.get("DOLFIN_NOPLOT"): # check if plotting is enabled
-        proc.add_plot((("dt", dt), ("t_end", t_end), ("OTD", OTD)))
-    #pyplot.show(); exit() # uncomment to explore current layout of plots
+    rank = MPI.rank(mpi_comm_world())
+    scriptdir = os.path.dirname(os.path.realpath(__file__))
+    outdir = os.path.join(scriptdir, __name__)
+    proc = Postprocessor(dt, t_end, OTD, outdir)
+
+    # Decide what should be plotted
+    proc.register_fixed_variables((("dt", dt), ("t_end", t_end), ("OTD", OTD)))
+
+    # Dump empty postprocessor into a file for later use
+    filename = "proc_{}.pickle".format(proc.basename)
+    proc.dump_to_file(rank, filename)
+
+    # Create plots if plotting is enabled otherwise do nothing
+    if not os.environ.get("DOLFIN_NOPLOT"):
+        proc.create_plots(rank)
+        #pyplot.show(); exit() # uncomment to explore current layout of plots
+
     return proc
 
 class Postprocessor(GenericPostprocessorMMS):
-    def __init__(self, dt, t_end, OTD):
-        super(Postprocessor, self).__init__()
+    def __init__(self, dt, t_end, OTD, outdir):
+        super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
         self.dt = dt
@@ -397,11 +415,13 @@ class Postprocessor(GenericPostprocessorMMS):
         self.y_var0 = "err"
         self.y_var1 = "tmr_tstepping" # "tmr_solve"
 
-    def flush_plots(self, rank, outdir=""):
+        # Store names
+        self.basename = "dt_{}_t_end_{}_OTD_{}".format(dt, t_end, OTD)
+
+    def flush_plots(self, rank):
         if rank > 0:
             return
         coord_vars = (self.x_var, self.y_var0, self.y_var1)
-
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
@@ -428,7 +448,7 @@ class Postprocessor(GenericPostprocessorMMS):
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
                 self._plot(fig, xs, ys0, ys1, free_vars, style)
-            self._save_plot(fig, fixed_vars, outdir)
+            self._save_plot(fig, fixed_vars, self.outdir)
 
         self.results = []
 

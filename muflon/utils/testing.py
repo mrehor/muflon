@@ -21,32 +21,56 @@
 This module contains various utilities designed for testing of MUFLON.
 """
 
-import pickle
+import pickle, os
+
+from muflon.common.boilerplate import prepare_output_directory
 
 class GenericPostprocessorMMS(object):
     """
     This class represents generic interface for postprocessing of the results
     obtained from benchmarks based on the Method of Manufactured Solutions.
     """
-    def __init__(self):
+    def __init__(self, outdir=""):
         self.plots = {}
         self.results = []
+        self.fixvars = []
+        if outdir == "":
+            self.outdir = outdir
+        else:
+            self.outdir = prepare_output_directory(outdir)
 
-    def add_plot(self, fixed_variables=None):
+    def add_result(self, result):
+        self.results.append(result)
+
+    def pop_items(self, keys):
+        for r in self.results:
+            for key in keys:
+                r.pop(key, None)
+
+    def register_fixed_variables(self, fixed_variables=None):
         fixed_variables = fixed_variables or ()
         assert isinstance(fixed_variables, tuple)
         assert all(len(var)==2 and isinstance(var[0], str)
                    for var in fixed_variables)
-        self.plots[fixed_variables] = self._create_figure()
+        self.fixvars.append(fixed_variables)
 
-    def add_result(self, rank, result):
+    def create_plots(self, rank):
         if rank > 0:
             return
-        self.results.append(result)
+        for fixed_variables in self.fixvars:
+            self.plots[fixed_variables] = self._create_figure()
 
-    def flush_results(self, rank, datafile):
+    def dump_to_file(self, rank, filename):
         if rank > 0:
             return
+        datafile = os.path.join(self.outdir, filename)
+        with open(datafile, 'wb') as handle:
+            pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def flush_results(self, rank, filename):
+        if rank > 0:
+            return
+        datafile = os.path.join(self.outdir, filename)
         with open(datafile, 'wb') as handle:
             for result in self.results:
                 pickle.dump(result, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -63,15 +87,14 @@ class GenericPostprocessorMMS(object):
                 except EOFError:
                     break
 
-    def pop_items(self, rank, keys):
-        if rank > 0:
-            return
-        for r in self.results:
-            for key in keys:
-                r.pop(key, None)
-
     @staticmethod
     def _create_figure():
         msg = "You need to implement a method '%s' of class '%s'." \
           % ("_create_figure", str(GenericPostprocessorMMS))
         raise NotImplementedError(msg)
+
+
+def read_postprocessor(datafile):
+    with open(datafile, 'rb') as handle:
+        proc = pickle.load(handle)
+    return proc

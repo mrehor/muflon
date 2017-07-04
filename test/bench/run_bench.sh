@@ -35,8 +35,6 @@ else
 fi
 PYTHONHASHSEED=0 DOLFIN_NOPLOT=1 mpirun --display-map python -m pytest -svl $BENCH
 
-# TODO: Make plots
-
 # Move output file to OUTPUTDIR
 cd $SCRIPTDIR
 mv -f slurm-${SLURM_JOB_ID}.out $OUTPUTDIR/.

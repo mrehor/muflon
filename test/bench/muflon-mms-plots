@@ -1,0 +1,49 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# Copyright (C) 2017 Martin Řehoř
+#
+# This file is part of MUFLON.
+#
+# MUFLON is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# MUFLON is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
+
+"""
+This script is used to plot results obtained using Method of Manufactured
+Solutions.
+
+Usage:
+
+.. code-block:: console
+
+  $ ./muflon-mms-plots <postprocessor> <result1> [<result2>, [...]]
+"""
+
+import sys
+
+from muflon.utils.testing import read_postprocessor
+from dolfin import mpi_comm_world, MPI
+
+def main(argv):
+    proc = read_postprocessor(argv[0])
+    rank = 0
+    proc.create_plots(rank)
+    for arg in argv[1:]:
+        proc.read_results(rank, arg)
+        proc.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
+        proc.flush_plots(rank)
+
+if __name__ == "__main__":
+    if MPI.size(mpi_comm_world()) > 1:
+        raise RuntimeError("This script can be run only in serial")
+    main(sys.argv[1:])

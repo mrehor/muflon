@@ -49,7 +49,6 @@ parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 parameters["plotting_backend"] = "matplotlib"
 
-
 @pytest.mark.parametrize("scheme", ["Monolithic", "FullyDecoupled"]) #"SemiDecoupled",
 def test_scaling_time(scheme, postprocessor):
     """
@@ -60,18 +59,23 @@ def test_scaling_time(scheme, postprocessor):
 
     degrise = 3 # degree rise for computation of errornorm
 
+    # Read parameters
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     prm_file = os.path.join(scriptdir, "muflon-parameters.xml")
     mpset.read(prm_file)
-
-    msol = create_manufactured_solution()
-    ic = create_initial_conditions(msol)
 
     # Fixed parameters
     OTD = postprocessor.OTD
     level = postprocessor.level
     t_end = postprocessor.t_end
-    basename = "level_{}_t_end_{}_OTD_{}".format(level, t_end, OTD)
+
+    # Names and directories
+    basename = postprocessor.basename
+    outdir = postprocessor.outdir
+
+    # Mesh independent predefined quantities
+    msol = create_manufactured_solution()
+    ic = create_initial_conditions(msol)
 
     # Prepare space discretization, exact solution and bcs
     mesh, boundary_markers = create_domain(level)
@@ -100,7 +104,6 @@ def test_scaling_time(scheme, postprocessor):
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
-            outdir = os.path.join(scriptdir, __name__)
             # phi, chi, v, p = DS.primitive_vars_ctl()
             # phi_, chi_, v_ = phi.split(), chi.split(), v.split()
             xfields = None #list(phi_) + list(v_) + [p.dolfin_repr(),]
@@ -137,41 +140,56 @@ def test_scaling_time(scheme, postprocessor):
 
         # Send to posprocessor
         rank = MPI.rank(comm)
-        postprocessor.add_result(rank, result)
+        postprocessor.add_result(result)
 
     # Save results into a binary file
-    datafile = os.path.join(outdir, "results_{}_{}.pickle".format(basename, scheme))
-    postprocessor.flush_results(rank, datafile)
+    filename = "results_{}_{}.pickle".format(basename, scheme)
+    postprocessor.flush_results(rank, filename)
 
     # Pop results that we do not want to report at the moment
-    postprocessor.pop_items(rank, ["ndofs", "tmr_prepare", "tmr_solve", "it"])
+    postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
 
     # Flush plots as we now have data for all level values
-    postprocessor.flush_plots(rank, outdir)
+    postprocessor.flush_plots(rank)
 
     # Store timings
-    #dump_timings_to_xml(os.path.join(outdir, "timings.xml"), TimingClear_clear)
+    #datafile = os.path.join(outdir, "timings.xml")
+    #dump_timings_to_xml(datafile, TimingClear_clear)
 
     # Cleanup
     set_log_level(INFO)
-    #mpset.write(mesh.mpi_comm(), prm_file) # uncomment to save parameters
+    #mpset.write(comm, prm_file) # uncomment to save parameters
     mpset.refresh()
     gc.collect()
 
 @pytest.fixture(scope='module')
 def postprocessor():
-    t_end = 0.2 # FIXME: set t_end = 1.0
     level = 5
+    t_end = 0.2 # FIXME: set t_end = 1.0
     OTD = 2
-    proc = Postprocessor(t_end, level, OTD)
-    if not os.environ.get("DOLFIN_NOPLOT"): # check if plotting is enabled
-        proc.add_plot((("dt", dt), ("t_end", t_end), ("OTD", OTD)))
-    #pyplot.show(); exit() # uncomment to explore current layout of plots
+    rank = MPI.rank(mpi_comm_world())
+    scriptdir = os.path.dirname(os.path.realpath(__file__))
+    outdir = os.path.join(scriptdir, __name__)
+    proc = Postprocessor(t_end, level, OTD, outdir)
+
+    # Decide what should be plotted
+    proc.register_fixed_variables(
+        (("level", level), ("t_end", t_end), ("OTD", OTD)))
+
+    # Dump empty postprocessor into a file for later use
+    filename = "proc_{}.pickle".format(proc.basename)
+    proc.dump_to_file(rank, filename)
+
+    # Create plots if plotting is enabled otherwise do nothing
+    if not os.environ.get("DOLFIN_NOPLOT"):
+        proc.create_plots(rank)
+        #pyplot.show(); exit() # uncomment to explore current layout of plots
+
     return proc
 
 class Postprocessor(GenericPostprocessorMMS):
-    def __init__(self, t_end, level, OTD):
-        super(Postprocessor, self).__init__()
+    def __init__(self, t_end, level, OTD, outdir):
+        super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
         self.t_end = t_end
@@ -183,7 +201,10 @@ class Postprocessor(GenericPostprocessorMMS):
         self.y_var0 = "err"
         self.y_var1 = "tmr_tstepping"
 
-    def flush_plots(self, rank, outdir=""):
+        # Store names
+        self.basename = "level_{}_t_end_{}_OTD_{}".format(level, t_end, OTD)
+
+    def flush_plots(self, rank):
         if rank > 0:
             return
         coord_vars = (self.x_var, self.y_var0, self.y_var1)
@@ -214,7 +235,7 @@ class Postprocessor(GenericPostprocessorMMS):
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
                 self._plot(fig, xs, ys0, ys1, free_vars, self.OTD, style)
-            self._save_plot(fig, fixed_vars, outdir)
+            self._save_plot(fig, fixed_vars, self.outdir)
 
         self.results = []
 
