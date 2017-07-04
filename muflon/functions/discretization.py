@@ -919,7 +919,7 @@ class FullyDecoupled(Discretization):
         self._subspace["chi"] = [spaces[i] for i in range(N-1, 2*(N-1))]
         self._ndofs["chi"] = spaces[N-1].dim()
         self._subspace["v"] = [spaces[2*(N-1)+i] for i in range(gdim)]
-        self._ndofs["v"] = spaces[N].dim()
+        self._ndofs["v"] = spaces[2*(N-1)].dim()
         self._subspace["p"] = spaces[2*(N-1)+gdim]
         self._ndofs["p"] = spaces[2*(N-1)+gdim].dim()
         self._ndofs["th"] = 0
