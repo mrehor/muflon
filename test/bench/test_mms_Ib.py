@@ -56,7 +56,7 @@ def test_scaling_time(scheme, postprocessor):
     Compute convergence rates for fixed element order, fixed mesh and
     gradually time step.
     """
-    #set_log_level(WARNING)
+    set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm
 
@@ -164,7 +164,8 @@ def postprocessor():
     level = 5
     OTD = 2
     proc = Postprocessor(t_end, level, OTD)
-    proc.add_plot((("level", level), ("t_end", t_end), ("OTD", OTD)))
+    if not os.environ.get("DOLFIN_NOPLOT"): # check if plotting is enabled
+        proc.add_plot((("dt", dt), ("t_end", t_end), ("OTD", OTD)))
     #pyplot.show(); exit() # uncomment to explore current layout of plots
     return proc
 
@@ -273,9 +274,11 @@ class Postprocessor(GenericPostprocessorMMS):
         # Set scales
         ax1.set_xscale("log")
         ax1.set_yscale("log")
+        ax2.set_xscale("log")
         ax2.set_yscale("log")
         # Set labels
         ax1.set_xlabel("time step $\Delta t$")
+        ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("$L^2$ errors")
         ax2.set_ylabel("CPU time")
         ax1.set_ylim(0, None, auto=True)

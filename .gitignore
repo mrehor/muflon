@@ -12,6 +12,9 @@
 *.zip
 *.pickle
 
+# Results
+results
+
 # Installation
 /MUFLON.egg-info/
 
