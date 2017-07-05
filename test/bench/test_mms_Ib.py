@@ -146,7 +146,7 @@ def test_scaling_time(scheme, postprocessor):
 
     # Save results into a binary file
     filename = "results_{}_{}.pickle".format(basename, scheme)
-    postprocessor.flush_results(filename)
+    postprocessor.save_results(filename)
 
     # Pop results that we do not want to report at the moment
     postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
@@ -189,7 +189,7 @@ def postprocessor(request):
 
     def fin():
         print("teardown postprocessor")
-        proc.flush_results("results_flushed_at_teardown")
+        proc.save_results("results_saved_at_teardown")
     request.addfinalizer(fin)
     return proc
 

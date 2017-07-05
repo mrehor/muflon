@@ -40,7 +40,7 @@ class GenericPostprocessorMMS(object):
             self.outdir = prepare_output_directory(outdir)
 
     def __del__(self):
-        self.flush_results("results_flushed_at_destructor")
+        self.save_results("results_saved_at_destructor")
 
     def add_result(self, rank, result):
         if rank > 0:
@@ -72,7 +72,7 @@ class GenericPostprocessorMMS(object):
         with open(datafile, 'wb') as handle:
             pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def flush_results(self, filename):
+    def save_results(self, filename):
         if not self.results:
             return
         datafile = os.path.join(self.outdir, filename)
