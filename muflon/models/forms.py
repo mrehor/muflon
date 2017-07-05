@@ -466,9 +466,9 @@ class Incompressible(Model):
                 + Mo*inner(grad(chi), grad(test["chi"]))
             )*dx
             return G
-        # NOTE: A special quirk of Python is that – if no global statement is
+        # NOTE: A special quirk of Python is that -- if no global statement is
         #       in effect – assignments to names always go into the innermost
-        #       scope. Assignments do not copy data — they just bind names to
+        #       scope. Assignments do not copy data -- they just bind names to
         #       objects.
 
         dphidt = idt*inner(phi - phi0, test["chi"])*dx
@@ -570,8 +570,11 @@ class Incompressible(Model):
         discretization scheme. (Forms are linear in arguments, but generally
         **nonlinear** in coefficients.)
 
-        Forms are wrapped in a tuple and returned in a dictionary under
-        ``'linear'`` item.
+        A bilinear form for the left hand side of the equation corresponding to
+        a chosen `<variable>` is returned in a nested dictionary under the item
+        ``['bilinear']['lhs'][<variable>]``. Similarly, form corresponding to
+        right hand side of the equation is accessible through
+        ``['bilinear']['rhs'][<variable>]``.
 
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
                   the first one being set to ``None``
