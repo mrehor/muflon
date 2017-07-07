@@ -116,11 +116,16 @@ def test_scaling_time(scheme, postprocessor):
         t_beg = 0.0
         with Timer("Time stepping") as tmr_tstepping:
             if OTD == 2:
-                dt0 = dt if scheme == "FullyDecoupled" else 1.0e-4*dt
-                result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
-                if dt - dt0 > 0.0:
-                    result = TS.run(dt0, dt, dt - dt0, OTD=2)
-                t_beg = dt
+                if scheme == "FullyDecoupled":
+                    dt0 = dt
+                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                    t_beg = dt
+                # elif scheme == "Monolithic":
+                #     dt0 = 1.0e-4*dt
+                #     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                #     if dt - dt0 > 0.0:
+                #         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
+                #     t_beg = dt
             result = TS.run(t_beg, t_end, dt, OTD)
 
         # Prepare results

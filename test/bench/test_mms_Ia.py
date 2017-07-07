@@ -37,7 +37,7 @@ from muflon import DiscretizationFactory, SimpleCppIC
 from muflon import ModelFactory
 from muflon import SolverFactory
 from muflon import TimeSteppingFactory, TSHook
-from muflon import doublewell, multiwell
+from muflon import DoublewellFactory, multiwell
 from muflon import capillary_force, total_flux
 
 from muflon.utils.testing import GenericPostprocessorMMS
@@ -191,10 +191,11 @@ def create_source_terms(t_src, mesh, model, msol):
     omega_2 = Constant(prm["omega_2"])
     eps = Constant(prm["eps"])
     Mo = Constant(prm["M0"]) # FIXME: degenerate mobility
-    f, df, a, b = doublewell("poly4")
+    dw = DoublewellFactory.create(prm["doublewell"])
+    a, b = dw.free_energy_coefficents()
     a, b = Constant(a), Constant(b)
     varphi = variable(phi)
-    F = multiwell(varphi, f, S)
+    F = multiwell(dw, varphi, S)
     dF = diff(F, varphi)
 
     # Chemical potential
@@ -331,11 +332,16 @@ def test_scaling_mesh(scheme, postprocessor):
         t_beg = 0.0
         with Timer("Time stepping") as tmr_tstepping:
             if OTD == 2:
-                dt0 = dt if scheme == "FullyDecoupled" else 1.0e-4*dt
-                result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
-                if dt - dt0 > 0.0:
-                    result = TS.run(dt0, dt, dt - dt0, OTD=2)
-                t_beg = dt
+                if scheme == "FullyDecoupled":
+                    dt0 = dt
+                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                    t_beg = dt
+                # elif scheme == "Monolithic":
+                #     dt0 = 1.0e-4*dt
+                #     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                #     if dt - dt0 > 0.0:
+                #         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
+                #     t_beg = dt
             result = TS.run(t_beg, t_end, dt, OTD)
 
         # Prepare results

@@ -105,6 +105,7 @@ class MuflonParameterSet(Parameters, Singleton):
        \                     .N             Number of phases
        \                     .PTL           number of Previous Time Levels
        --model
+       \                     .doublewell    doublewell potential
        \                     .eps           width of the interface (scale)
        \                     .M0            mobility
        \                     .nu.i          dynamic viscosity of phase i
@@ -132,6 +133,7 @@ class MuflonParameterSet(Parameters, Singleton):
 
         # Model parameters
         nested_prm = Parameters("model")
+        nested_prm.add("doublewell", "Poly4", ["Poly4"]) # "MoYo"
         nested_prm.add("eps", 1.0)
         nested_prm.add("M0", 1.0)
         nested_prm.add(Parameters("nu"))
