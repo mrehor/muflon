@@ -259,7 +259,7 @@ def prepare_hook(t_src, DS, esol, degrise, err):
     return TailoredHook(t_src=t_src, DS=DS, esol=esol,
                         degrise=degrise, err=err)
 
-@pytest.mark.parametrize("scheme", ["FullyDecoupled", "Monolithic"]) #"SemiDecoupled"
+@pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
 def test_scaling_mesh(scheme, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed time step and
@@ -409,7 +409,7 @@ def postprocessor(request):
 
     def fin():
         print("teardown postprocessor")
-        proc.save_results("results_saved_at_teardown")
+        proc.save_results("results_saved_at_teardown.pickle")
     request.addfinalizer(fin)
     return proc
 

@@ -74,10 +74,7 @@ def test_forms(scheme, N, dim, th):
     forms = model.create_forms()
 
     # Update order of time discretization
-    if scheme == "SemiDecoupled":
-        with pytest.raises(NotImplementedError):
-            model.update_TD_factors(2)
-    elif scheme == "Monolithic":
+    if scheme in ["Monolithic", "SemiDecoupled"]:
         model.update_TD_factors(2)
         flag = False
         for c in forms["linear"][0].coefficients():

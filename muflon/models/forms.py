@@ -27,7 +27,7 @@ import numpy as np
 from collections import OrderedDict
 
 from dolfin import Parameters
-from dolfin import Constant, Function, Measure
+from dolfin import Constant, Function, Measure, assemble
 from dolfin import as_matrix, as_vector, conditional, lt, gt, variable
 from dolfin import dot, inner, outer, dx, ds, sym
 from dolfin import derivative, diff, div, grad, curl, sqrt
@@ -413,7 +413,6 @@ class Incompressible(Model):
 
         # Arguments of the system
         test = self._test
-        trial = self._trial
 
         # Coefficients of the system
         # FIXME: add th
@@ -481,7 +480,6 @@ class Incompressible(Model):
                 - 0.5*a*eps*inner(grad(phi), grad(test["phi"]))
                 - (b/eps)*inner(dot(iLA, dF), test["phi"])
             )*dx
-            #G -= (b/eps)*int_dF
             return G
         G_chi_ctl = G_chi(phi, chi)
         G_chi_ptl = G_chi(phi0, chi) # NOTE: intentionally not chi0
@@ -532,37 +530,161 @@ class Incompressible(Model):
 
 # --- SemiDecoupled forms for Incompressible model ----------------------------
 
-    # def _factors_SemiDecoupled(self, OTD):
-    #     if OTD == 1:
-    #         self.fact["theta"].assign(Constant(1.0))
-    #     elif OTD == 2:
-    #         self.fact["theta"].assign(Constant(0.5))
-    #         # FIXME: resolve the following issue or ban this option
-    #         from dolfin import warning
-    #         warning("Time discretization of order %g for '%s'"
-    #                 " scheme does not work properly" % (OTD, self._DS.name()))
-    #     else:
-    #         msg = "Time discretization of order %g for '%s'" \
-    #               " scheme is not implemented" % (OTD, self._DS.name())
-    #         raise NotImplementedError(msg)
+    def _factors_SemiDecoupled(self, OTD):
+        if OTD == 1:
+            self.fact["theta"].assign(Constant(1.0))
+            self.fact["dF_auto"].assign(Constant(0.0))
+            self.fact["dF_full"].assign(Constant(0.0))
+            self.fact["dF_semi"].assign(Constant(1.0))
+        elif OTD == 2:
+            self.fact["theta"].assign(Constant(0.5))
+            self.fact["dF_auto"].assign(Constant(0.0))
+            self.fact["dF_full"].assign(Constant(0.0))
+            self.fact["dF_semi"].assign(Constant(1.0))
+            # FIXME: resolve the following issue or ban this option
+            #from dolfin import warning
+            #warning("Time discretization of order %g for '%s'"
+            #        " scheme does not work properly" % (OTD, self._DS.name()))
+        else:
+            msg = "Time discretization of order %g for '%s'" \
+                  " scheme is not implemented" % (OTD, self._DS.name())
+            raise NotImplementedError(msg)
 
     def forms_SemiDecoupled(self, OTD=1):
         """
-        .. todo:: missing implementation
-
         Create linear and bilinear forms for incompressible model using
         :py:class:`SemiDecoupled <muflon.functions.discretization.SemiDecoupled>`
         discretization scheme. (Forms are linear in arguments, but generally
         **nonlinear** in coefficients.)
 
-        Forms for Cahn-Hilliard part are wrapped in a tuple and returned in a
-        dictionary under ``'linear'`` item, while forms for Navier-Stokes part
-        are returned under ``'bilinear'`` item.
+        Forms corresponding to CH part are wrapped in a tuple and returned
+        in a dictionary under ``'linear'`` item.
+
+        Bilinear forms corresponding to left hand sides of NS equations
+        are collected in a list and returned in a dictionary under the item
+        ``['bilinear']['lhs']``. Similarly, forms corresponding to
+        right hand sides are accessible through ``['bilinear']['rhs']``.
 
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``
         :rtype: dict
         """
-        return None
+        # Get parameters
+        prm = self.parameters
+
+        # Time discretization factors (defaults correspond to 1st order scheme)
+        cell = self._DS.mesh().ufl_cell()
+        self.fact = fact = OrderedDict()
+        fact["theta"] = Constant(1.0, cell=cell, name="fact_theta")
+        fact["dF_auto"] = Constant(0.0, cell=cell, name="fact_dF_auto")
+        fact["dF_full"] = Constant(0.0, cell=cell, name="fact_dF_full")
+        fact["dF_semi"] = Constant(1.0, cell=cell, name="fact_dF_semi")
+        fact_ctl = fact["theta"]
+        fact_ptl = 1.0 - fact["theta"]
+
+        # Arguments of the system
+        test = self._test
+        trial = self._trial
+
+        # Coefficients of the system
+        # FIXME: add th
+        phi, chi, v, p = self._pv_ctl
+        phi0, chi0, v0, p0 = self._pv_ptl[0]
+        del p0, chi0 # not needed
+
+        # Source terms
+        f_src = self._f_src
+        g_src = self._g_src
+
+        # Reciprocal time step
+        idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
+
+        # Model parameters
+        eps = Constant(prm["eps"], cell=cell, name="eps")
+        omega_2 = Constant(prm["omega_2"], cell=cell, name="omega_2")
+
+        # Matrices built from surface tensions
+        S, LA, iLA = self.build_stension_matrices()
+
+        # Construct double-well potential
+        dw = DoublewellFactory.create(prm["doublewell"])
+        a, b = dw.free_energy_coefficents()
+        a = Constant(a, cell=cell, name="a")
+        b = Constant(b, cell=cell, name="b")
+
+        # Prepare derivative of multi-well potential
+        # -- automatic differentiation
+        _phi = variable(phi)
+        F = multiwell(dw, _phi, S)
+        dF_auto = diff(F, _phi)
+        # -- manual differentiation
+        dF_full = multiwell_derivative(dw, phi, phi0, S, False)
+        dF_semi = multiwell_derivative(dw, phi, phi0, S, True)
+        dF = (
+              fact["dF_auto"]*dF_auto
+            + fact["dF_full"]*dF_full
+            + fact["dF_semi"]*dF_semi
+        )
+
+        # Capillary force
+        A = assemble(Constant(1.0)*dx(self._DS.mesh()))
+        alpha = [assemble(phi0[i]*dx)/A for i in range(len(phi0))]
+        ca = as_vector([phi0[i] - Constant(alpha[i]) for i in range(len(phi0))])
+        f_cap = - dot(grad(chi).T, dot(LA.T, ca))
+
+        # Density and viscosity
+        rho_mat = self.collect_material_params("rho")
+        rho = self.homogenized_quantity(rho_mat, phi)
+        rho0 = self.homogenized_quantity(rho_mat, phi0)
+        nu_mat = self.collect_material_params("nu")
+        nu = self.homogenized_quantity(nu_mat, phi)
+
+        # Explicit convective velocity
+        v_star = v0 + self._dt*f_cap/rho0
+
+        # System of CH eqns
+        Mo = Constant(prm["M0"], cell=cell, name="Mo") # FIXME: degenerate mobility
+        eqn_phi = (
+              idt*inner(phi - phi0, test["chi"])
+            - inner(ca, dot(grad(test["chi"]), v_star))
+            - inner(g_src, test["chi"])
+            + Mo*inner(grad(chi), grad(test["chi"]))
+        )*dx
+
+        phi_star = fact_ctl*phi + fact_ptl*phi0
+        eqn_chi = (
+              inner(chi, test["phi"])
+            - 0.5*a*eps*inner(grad(phi_star), grad(test["phi"]))
+            - (b/eps)*inner(dot(iLA, dF), test["phi"])
+        )*dx
+
+        system_ch = eqn_phi + eqn_chi
+
+        # System of NS eqns
+        J = total_flux(Mo, rho_mat, chi)
+        Dv  = sym(grad(trial["v"]))
+        Dv_ = sym(grad(test["v"]))
+
+        a_00 = (
+              idt*0.5*(rho + rho0)*inner(trial["v"], test["v"])
+            + 0.5*inner(dot(grad(trial["v"]), rho*v0 + omega_2*J), test["v"])
+            - 0.5*inner(dot(grad(test["v"]), rho*v0 + omega_2*J), trial["v"])
+            + 2.0*nu*inner(Dv, Dv_)
+        )*dx
+        a_01 = - trial["p"]*div(test["v"])*dx
+        a_10 = Constant(-1.0)*div(trial["v"])*test["p"]*dx # FIXME: + or -
+
+        rhs = (
+              idt*rho0*inner(v0, test["v"])
+            + inner(f_cap, test["v"])
+            + inner(f_src, test["v"])
+        )*dx
+
+        system_ns = {
+            "lhs" : a_00 + a_01 + a_10,
+            "rhs" : rhs
+        }
+
+        return dict(linear=(system_ch,), bilinear=system_ns)
 
 # --- FullyDecoupled forms for Incompressible model  --------------------------
 
@@ -587,16 +709,14 @@ class Incompressible(Model):
     def forms_FullyDecoupled(self):
         """
         Create linear forms for incompressible model using
-        :py:class:`FullyDecoupled \
-                   <muflon.functions.discretization.FullyDecoupled>`
+        :py:class:`FullyDecoupled <muflon.functions.discretization.FullyDecoupled>`
         discretization scheme. (Forms are linear in arguments, but generally
         **nonlinear** in coefficients.)
 
-        A bilinear form for the left hand side of the equation corresponding to
-        a chosen `<variable>` is returned in a nested dictionary under the item
-        ``['bilinear']['lhs'][<variable>]``. Similarly, form corresponding to
-        right hand side of the equation is accessible through
-        ``['bilinear']['rhs'][<variable>]``.
+        Bilinear forms corresponding to left hand sides of the equations
+        are collected in a list and returned in a dictionary under the item
+        ``['bilinear']['lhs']``. Similarly, forms corresponding to
+        right hand sides are accessible through ``['bilinear']['rhs']``.
 
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
                   the first one being set to ``None``

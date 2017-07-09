@@ -263,7 +263,7 @@ class ConstantTimeStep(TimeStepping):
         sol_ptl = model.discretization_scheme().solution_ptl()
 
         t = t_beg
-        if OTD == 2:
+        if OTD != 1:
             model.update_TD_factors(OTD)
         model.update_time_step_value(dt)
         while t < t_end and not near(t, t_end, 0.1*dt):

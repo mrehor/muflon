@@ -49,7 +49,7 @@ parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 parameters["plotting_backend"] = "matplotlib"
 
-@pytest.mark.parametrize("scheme", ["FullyDecoupled", "Monolithic"]) #"SemiDecoupled",
+@pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
 def test_scaling_time(scheme, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
@@ -194,7 +194,7 @@ def postprocessor(request):
 
     def fin():
         print("teardown postprocessor")
-        proc.save_results("results_saved_at_teardown")
+        proc.save_results("results_saved_at_teardown.pickle")
     request.addfinalizer(fin)
     return proc
 

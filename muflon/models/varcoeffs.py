@@ -27,7 +27,7 @@ from dolfin import dot, grad
 
 def capillary_force(phi, chi, LA):
     """
-    Builds capillary force in the form
+    Builds capillary force of the form
 
     .. math ::
 

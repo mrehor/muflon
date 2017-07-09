@@ -24,7 +24,7 @@ def prepare_solver(scheme):
 
     return SolverFactory.create(model)
 
-@pytest.mark.parametrize("scheme", ["Monolithic", "FullyDecoupled"]) #, "SemiDecoupled"
+@pytest.mark.parametrize("scheme", ["Monolithic", "FullyDecoupled", "SemiDecoupled"])
 def test_solvers(scheme):
     solver = prepare_solver(scheme)
     model = solver.data["model"]

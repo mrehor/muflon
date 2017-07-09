@@ -40,7 +40,7 @@ class GenericPostprocessorMMS(object):
             self.outdir = prepare_output_directory(outdir)
 
     def __del__(self):
-        self.save_results("results_saved_at_destructor")
+        self.save_results("results_saved_at_destructor.pickle")
 
     def add_result(self, rank, result):
         if rank > 0:
