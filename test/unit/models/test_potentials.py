@@ -22,8 +22,8 @@ def test_potentials(scheme, N, dim, th):
     #info(model.parameters, True)
 
     # Prepare arguments for obtaining multi-well potential
-    phi = DS.primitive_vars_ctl(indexed=True)[0]
-    phi0 = DS.primitive_vars_ptl(indexed=True)[0]
+    phi = DS.primitive_vars_ctl(indexed=True)["phi"]
+    phi0 = DS.primitive_vars_ptl(indexed=True)["phi"]
     phi_te = DS.test_functions()["phi"]
     dw = DoublewellFactory.create(model.parameters["doublewell"])
     S, A, iA = model.build_stension_matrices()

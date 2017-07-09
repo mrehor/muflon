@@ -208,10 +208,9 @@ class FullyDecoupled(Solver):
         DS = self.data["model"].discretization_scheme()
         w = DS.solution_ctl()
         eqn = self.data["forms"]["bilinear"]
-        phi, chi, v, p = DS.primitive_vars_ctl()
-        n = len(phi) # n = N - 1
-        gdim = len(v)
-        del phi, chi, v, p
+        pv = DS.primitive_vars_ctl()
+        n = len(pv["phi"]) # n = N - 1
+        gdim = len(pv["v"])
 
         _A   = OrderedDict(phi=[], chi=[], v=[])
         _rhs = OrderedDict(phi=[], chi=[], v=[])

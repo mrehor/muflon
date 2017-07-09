@@ -19,7 +19,7 @@ def test_ConstantTimeStep(scheme):
 
     mesh = DS.mesh()
     comm = mesh.mpi_comm()
-    phi = DS.primitive_vars_ctl()[0].split()
+    phi = DS.primitive_vars_ctl()["phi"].split()
     fields = list(phi)
 
     arbit_solver = dolfin.LinearSolver()

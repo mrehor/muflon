@@ -104,7 +104,8 @@ def test_scaling_time(scheme, postprocessor):
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
-            # phi, chi, v, p = DS.primitive_vars_ctl()
+            # pv = self.DS.primitive_vars_ctl()
+            # phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
             # phi_, chi_, v_ = phi.split(), chi.split(), v.split()
             xfields = None #list(phi_) + list(v_) + [p.dolfin_repr(),]
             hook = prepare_hook(t_src, DS, esol, degrise, {})

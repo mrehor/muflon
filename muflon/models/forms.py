@@ -126,8 +126,8 @@ class Model(object):
         self._bcs = bcs
 
         # Initialize source terms
-        self._f_src = as_vector(len(self._pv_ctl[2])*[Constant(0.0),])
-        self._g_src = as_vector(len(self._pv_ctl[0])*[Constant(0.0),])
+        self._f_src = as_vector(len(self._pv_ctl["v"])*[Constant(0.0),])
+        self._g_src = as_vector(len(self._pv_ctl["phi"])*[Constant(0.0),])
 
         # Store time step
         self._dt = Function(DS.reals())    # function that wraps dt
@@ -414,11 +414,10 @@ class Incompressible(Model):
         # Arguments of the system
         test = self._test
 
-        # Coefficients of the system
-        # FIXME: add th
-        phi, chi, v, p = self._pv_ctl
-        phi0, chi0, v0, p0 = self._pv_ptl[0]
-        del p0, chi0 # not needed
+        # Primitive variables
+        pv, pv0 = self._pv_ctl, self._pv_ptl[0]
+        phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
+        phi0, v0 = pv0["phi"], pv0["v"]
 
         # Source terms
         f_src = self._f_src
@@ -542,9 +541,9 @@ class Incompressible(Model):
             self.fact["dF_full"].assign(Constant(0.0))
             self.fact["dF_semi"].assign(Constant(1.0))
             # FIXME: resolve the following issue or ban this option
-            #from dolfin import warning
-            #warning("Time discretization of order %g for '%s'"
-            #        " scheme does not work properly" % (OTD, self._DS.name()))
+            from dolfin import warning
+            warning("Time discretization of order %g for '%s'"
+                   " scheme does not work properly" % (OTD, self._DS.name()))
         else:
             msg = "Time discretization of order %g for '%s'" \
                   " scheme is not implemented" % (OTD, self._DS.name())
@@ -585,11 +584,10 @@ class Incompressible(Model):
         test = self._test
         trial = self._trial
 
-        # Coefficients of the system
-        # FIXME: add th
-        phi, chi, v, p = self._pv_ctl
-        phi0, chi0, v0, p0 = self._pv_ptl[0]
-        del p0, chi0 # not needed
+        # Primitive variables
+        pv, pv0 = self._pv_ctl, self._pv_ptl[0]
+        phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
+        phi0, v0 = pv0["phi"], pv0["v"]
 
         # Source terms
         f_src = self._f_src
@@ -738,15 +736,14 @@ class Incompressible(Model):
         test = self._test
         trial = self._trial
 
-        # Coefficients of the system
-        # FIXME: add th
-        phi, chi, v, p = self._pv_ctl
-        phi0, chi0, v0, p0 = self._pv_ptl[0]
-        del chi0 # not needed
+        # Primitive variables
+        pv, pv0 = self._pv_ctl, self._pv_ptl[0]
+        phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
+        phi0, v0, p0 = pv0["phi"], pv0["v"], pv0["p"]
         # FIXME: A small hack ensuring that the following variables can be used
         #        to define "_star" and "_hat" quantities even if OTD == 1
-        phi1, chi1, v1, p1 = self._pv_ptl[-1]
-        del chi1 # not needed
+        pv1 = self._pv_ptl[-1]
+        phi1, v1, p1 = pv1["phi"], pv1["v"], pv1["p"]
 
         # Build approximated coefficients
         phi_star = fact["star0"]*phi0 + fact["star1"]*phi1

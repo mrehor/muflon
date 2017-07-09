@@ -1,4 +1,5 @@
 import pytest
+import six
 
 import dolfin
 
@@ -91,22 +92,22 @@ def test_discretization_schemes(scheme, N, dim, th):
 
     # --- Check primitive variables -------------------------------------------
     pv = DS.primitive_vars_ctl()
-    assert isinstance(pv, tuple)
-    for foo in pv:
+    assert isinstance(pv, dict)
+    for foo in six.itervalues(pv):
         assert isinstance(foo, PrimitiveShell)
     assert len(pv) == len(args)-1 # mesh is the additional argument
 
     # Try to unpack 'phi' and 'chi' variables
-    assert len(pv[0]) == N-1
-    assert len(pv[1]) == N-1
-    for i in range(2):
-        foo_list = pv[i].split()
+    assert len(pv["phi"]) == N-1
+    assert len(pv["chi"]) == N-1
+    for key in ["phi", "chi"]:
+        foo_list = pv[key].split()
         assert isinstance(foo_list, tuple)
         for foo in foo_list:
             assert isinstance(foo, dolfin.Function)
 
     # Try to unpack velocity vector
-    v = pv[2]
+    v = pv["v"]
     gdim = DS.solution_ctl()[0].function_space().mesh().geometry().dim()
     assert len(v) == gdim
     foo_list = v.split()
@@ -115,7 +116,7 @@ def test_discretization_schemes(scheme, N, dim, th):
         assert isinstance(foo, dolfin.Function)
 
     # Try to unpack pressure
-    p = pv[3]
+    p = pv["p"]
     with pytest.raises(NotImplementedError):
         len(p)
     with pytest.raises(RuntimeError):
@@ -131,11 +132,11 @@ def test_discretization_schemes(scheme, N, dim, th):
     w0[0].assign(w[0])
     # check that first component of phi0 has changed
     pv0 = DS.primitive_vars_ptl(0, deepcopy=True) # 1st deepcopy
-    phi0_1st = pv0[0].split(deepcopy=True)[0]     # 2nd deepcopy
+    phi0_1st = pv0["phi"].split(deepcopy=True)[0] # 2nd deepcopy
     assert phi0_1st.vector()[0] == 1.0
 
     # Check effect of the 1st deepcopy
-    phi0_dolfin = pv0[0].dolfin_repr()
+    phi0_dolfin = pv0["phi"].dolfin_repr()
     if isinstance(phi0_dolfin, dolfin.Function):
         phi0_dolfin.vector()[:] = 2.0
     else:
@@ -167,19 +168,20 @@ def test_discretization_schemes(scheme, N, dim, th):
     DS.load_ic_from_simple_cpp(ic)
     # check the result
     pv0 = DS.primitive_vars_ptl(0, deepcopy=True)
-    v0 = pv0[2].split(deepcopy=True) # get components of v0
+    v0 = pv0["v"].split(deepcopy=True) # get components of v0
     assert v0[0].vector().array()[0] == 1.0
 
     # # Visual check
-    # dolfin.info(pv0[0].split(deepcopy=True)[0].vector(), True)
+    # dolfin.info(pv0["phi"].split(deepcopy=True)[0].vector(), True)
     # if N == 3:
-    #     dolfin.info(pv0[0].split(deepcopy=True)[1].vector(), True)
-    # dolfin.info(pv0[1].split(deepcopy=True)[0].vector(), True)
+    #     dolfin.info(pv0["phi"].split(deepcopy=True)[1].vector(), True)
+    # dolfin.info(pv0["chi"].split(deepcopy=True)[0].vector(), True)
     # if N == 3:
-    #     dolfin.info(pv0[1].split(deepcopy=True)[1].vector(), True)
-    # dolfin.info(pv0[2].split(deepcopy=True)[0].vector(), True)
-    # dolfin.info(pv0[2].split(deepcopy=True)[1].vector(), True)
-    # dolfin.info(pv0[3].dolfin_repr().vector(), True)
+    #     dolfin.info(pv0["chi"].split(deepcopy=True)[1].vector(), True)
+    # dolfin.info(pv0["v"].split(deepcopy=True)[0].vector(), True)
+    # if gdim > 1:
+    #     dolfin.info(pv0["v"].split(deepcopy=True)[1].vector(), True)
+    # dolfin.info(pv0["p"].dolfin_repr().vector(), True)
 
     # prepare initial condition from files
     with pytest.raises(NotImplementedError):

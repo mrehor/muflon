@@ -141,7 +141,16 @@ class Discretization(object):
       sol_ctl = DS.solution_ctl()
       assert isinstance(sol_ctl, tuple)
 
-    *Primitive variables* are wrapped using the class
+    *Primitive variables* at the current time level can be accessed via
+    :py:meth:`Discretization.primitive_vars_ctl()` as follows
+
+    .. code-block:: python
+
+      # let 'DS' is a discretization scheme that has already been setup
+      pv_ctl = DS.primitive_vars_ctl()
+      assert isinstance(pv_ctl, dict)
+
+    Primitive variables are wrapped using the class
     :py:class:`muflon.functions.primitives.PrimitiveShell`.
     Components of vector quantities can be obtained by calling the
     *split* method.
@@ -161,15 +170,6 @@ class Discretization(object):
     Some primitive variables may be omitted depending on the
     particular setting, e.g. we do not consider ``th`` in the isothermal
     setting.
-
-    Primitive variables at the current time level can be accessed via
-    :py:meth:`Discretization.primitive_vars_ctl()` as follows:
-
-    .. code-block:: python
-
-      # let 'DS' is a discretization scheme that has already been setup
-      pv_ctl = DS.primitive_vars_ctl()
-      assert isinstance(pv_ctl, tuple)
 
     **Previous time levels (PTL)**
 
@@ -453,7 +453,6 @@ class Discretization(object):
             return self._solution_ptl[level]
 
     def primitive_vars_ctl(self, deepcopy=False, indexed=False):
-        # FIXME: consider returning pvars in a dict
         """
         Provides access to primitive variables ``phi, chi, v, p, th``
         (or allowable subset) at the current time level.
@@ -467,10 +466,10 @@ class Discretization(object):
                         the context of :py:meth:`dolfin.Function.split` method
                         and free function :py:func:`dolfin.split` otherwise
         :type indexed: bool
-        :returns: vector of (indexed) :py:class:`ufl.Argument` objects or
+        :returns: dictionary with (indexed) :py:class:`ufl.Argument` objects or
                   :py:class:`muflon.functions.primitives.PrimitiveShell`
                   objects
-        :rtype: tuple
+        :rtype: dict
         """
         assert hasattr(self, "_fit_primitives")
         assert hasattr(self, "_solution_ctl")
@@ -480,12 +479,13 @@ class Discretization(object):
             wrapped_pv = list(map(lambda var: \
                 PrimitiveShell(var[1], self._varnames[var[0]]),
                 enumerate(pv)))
-            return tuple(wrapped_pv)
-        else:
-            return pv
+            pv = tuple(wrapped_pv)
+        pv_dict = {}
+        for i, f in enumerate(pv):
+            pv_dict[self._varnames[i]] = f
+        return pv_dict
 
     def primitive_vars_ptl(self, level=0, deepcopy=False, indexed=False):
-        # FIXME: consider returning pvars in a dict
         """
         Provides access to primitive variables ``phi, chi, v, p, th``
         (or allowable subset) at previous time levels.
@@ -501,10 +501,10 @@ class Discretization(object):
                         the context of :py:meth:`dolfin.Function.split` method
                         and free function :py:func:`dolfin.split` otherwise
         :type indexed: bool
-        :returns: vector of (indexed) :py:class:`ufl.Argument` objects or
+        :returns: dictionary with (indexed) :py:class:`ufl.Argument` objects or
                   :py:class:`muflon.functions.primitives.PrimitiveShell`
                   objects
-        :rtype: tuple
+        :rtype: dict
         """
         assert hasattr(self, "_fit_primitives")
         assert hasattr(self, "_solution_ptl")
@@ -514,9 +514,11 @@ class Discretization(object):
             wrapped_pv = list(map(lambda var: \
                 PrimitiveShell(var[1], self._varnames[var[0]]+"0"+str(level)),
                 enumerate(pv)))
-            return tuple(wrapped_pv)
-        else:
-            return pv
+            pv = tuple(wrapped_pv)
+        pv_dict = {}
+        for i, f in enumerate(pv):
+            pv_dict[self._varnames[i]] = f
+        return pv_dict
 
     def number_of_ptl(self):
         """
