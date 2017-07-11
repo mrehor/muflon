@@ -49,8 +49,9 @@ parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 parameters["plotting_backend"] = "matplotlib"
 
+@pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
-def test_scaling_time(scheme, postprocessor):
+def test_scaling_time(scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
     gradually time step.
@@ -95,20 +96,20 @@ def test_scaling_time(scheme, postprocessor):
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
             t_src = Function(DS.reals()); t_src.rename("t_src", "t_source")
-            f_src, g_src = create_source_terms(t_src, mesh, model, msol)
+            f_src, g_src = create_source_terms(t_src, mesh, model, msol, matching_p)
             model.load_sources(f_src, g_src)
-            forms = model.create_forms()
+            forms = model.create_forms(matching_p)
 
             # Prepare solver
             solver = SolverFactory.create(model, forms)
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
-            # pv = self.DS.primitive_vars_ctl()
+            # pv = DS.primitive_vars_ctl()
             # phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
             # phi_, chi_, v_ = phi.split(), chi.split(), v.split()
             xfields = None #list(phi_) + list(v_) + [p.dolfin_repr(),]
-            hook = prepare_hook(t_src, DS, esol, degrise, {})
+            hook = prepare_hook(t_src, model, esol, degrise, {})
             logfile = "log_{}_dt_{}_{}.dat".format(basename, dt, scheme)
             TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)

@@ -33,7 +33,7 @@ def capillary_force(phi, chi, LA):
 
       \\vec{f_{ca}}
       = \\sum_{i,j=1}^{N-1} \\lambda_{ij} \\chi_j \\nabla \\phi_i
-      = \\left[\\nabla \\vec \\phi\\right]^{T} \\bf{\\Lambda} \\vec \chi
+      = \\left(\\nabla \\vec \\phi\\right)^{T} {\\bf \\Lambda} \\vec \\chi
 
     :returns: vector representing the capillary force
     :rtype: :py:class:`ufl.core.expr.Expr`

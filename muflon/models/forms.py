@@ -231,7 +231,7 @@ class Model(object):
                    % ("forms_" + scheme, self.__str__())
             raise NotImplementedError(msg)
 
-    def build_stension_matrices(self, const=True):
+    def build_stension_matrices(self, const=True, prefix=""):
         """
         :returns: tuple of matrices :math:`\\bf{\\Sigma}, \\bf{\\Lambda}`
                   and :math:`\\bf{\\Lambda^{-1}}`
@@ -273,11 +273,11 @@ class Model(object):
         # Wrap components using ``Constant`` if required
         cell = self._DS.mesh().ufl_cell()
         if const:
-            S = [[Constant(S[i,j], cell=cell, name="S{}{}".format(i, j))
+            S = [[Constant(S[i,j], cell=cell, name="{}S{}{}".format(prefix, i, j))
                       for j in range(N)] for i in range(N)]
-            LA = [[Constant(LA[i,j], cell=cell, name="LA{}{}".format(i, j))
+            LA = [[Constant(LA[i,j], cell=cell, name="{}LA{}{}".format(prefix, i, j))
                        for j in range(N-1)] for i in range(N-1)]
-            iLA = [[Constant(iLA[i,j], cell=cell, name="iLA{}{}".format(i, j))
+            iLA = [[Constant(iLA[i,j], cell=cell, name="{}iLA{}{}".format(prefix, i, j))
                         for j in range(N-1)] for i in range(N-1)]
 
         return (as_matrix(S), as_matrix(LA), as_matrix(iLA))
@@ -434,7 +434,7 @@ class Incompressible(Model):
                   " scheme is not implemented" % (OTD, self._DS.name())
             raise NotImplementedError(msg)
 
-    def forms_Monolithic(self):
+    def forms_Monolithic(self, matching_p=False):
         """
         Create linear forms for incompressible model using
         :py:class:`Monolithic <muflon.functions.discretization.Monolithic>`
@@ -444,6 +444,9 @@ class Incompressible(Model):
         Forms are wrapped in a tuple and returned in a dictionary under
         ``'linear'`` item.
 
+        :param matching_p: does not take any effect here because *monolithic
+                           pressure* is considered as default for comparison
+        :type matching_p: bool
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
                   the second one being set to ``None``
         :rtype: dict
@@ -583,7 +586,7 @@ class Incompressible(Model):
                   " scheme is not implemented" % (OTD, self._DS.name())
             raise NotImplementedError(msg)
 
-    def forms_SemiDecoupled(self, OTD=1):
+    def forms_SemiDecoupled(self, matching_p=False):
         """
         Create linear and bilinear forms for incompressible model using
         :py:class:`SemiDecoupled <muflon.functions.discretization.SemiDecoupled>`
@@ -598,6 +601,8 @@ class Incompressible(Model):
         ``['bilinear']['lhs']``. Similarly, forms corresponding to
         right hand sides are accessible through ``['bilinear']['rhs']``.
 
+        :param matching_p: if True then pressure matches *monolithic pressure*
+        :type matching_p: bool
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``
         :rtype: dict
         """
@@ -647,7 +652,10 @@ class Incompressible(Model):
         domain_vol = assemble(Constant(1.0)*dx(self._DS.mesh()))
         alpha = [assemble(phi0[i]*dx)/domain_vol for i in range(len(phi0))]
         ca = as_vector([phi0[i] - Constant(alpha[i]) for i in range(len(phi0))])
-        f_cap = - dot(grad(chi).T, dot(cc["LA"].T, ca))
+        if matching_p:
+            f_cap = capillary_force(phi0, chi, cc["LA"])
+        else:
+            f_cap = - dot(grad(chi).T, dot(cc["LA"].T, ca))
 
         # Density and viscosity
         rho_mat = self.collect_material_params("rho")
@@ -667,6 +675,8 @@ class Incompressible(Model):
             - inner(g_src, test["chi"])
             + Mo*inner(grad(chi), grad(test["chi"]))
         )*dx
+        if matching_p:
+            eqn_phi -= inner(grad(inner(ca, test["chi"])), v_star)*dx
 
         phi_star = fact_ctl*phi + fact_ptl*phi0
         eqn_chi = (
@@ -724,7 +734,7 @@ class Incompressible(Model):
                   " scheme is not implemented." % (OTD, self._DS.name())
             raise NotImplementedError(msg)
 
-    def forms_FullyDecoupled(self):
+    def forms_FullyDecoupled(self, matching_p=False):
         """
         Create linear forms for incompressible model using
         :py:class:`FullyDecoupled <muflon.functions.discretization.FullyDecoupled>`
@@ -736,6 +746,8 @@ class Incompressible(Model):
         ``['bilinear']['lhs']``. Similarly, forms corresponding to
         right hand sides are accessible through ``['bilinear']['rhs']``.
 
+        :param matching_p: if True then pressure matches *monolithic pressure*
+        :type matching_p: bool
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
                   the first one being set to ``None``
         :rtype: dict
@@ -833,16 +845,20 @@ class Incompressible(Model):
                 - chi[i]*test["phi"][i]
             )*dx)
 
-        # 4. Definition of CHI from the thesis (using "smart Laplace" of phi)
+        # 4. Total flux
+        #    Def: CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*div(grad(phi))
+        #    Def: div(grad(phi)) = chi - 2.0/(a*eps)*alpha*phi
         CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*chi + alpha*phi
-        #Laplace_phi = chi - 2.0/(a*eps)*alpha*phi
-        #CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*Laplace_phi
-
-        # 5. Total flux and capillary force
         rho_mat = self.collect_material_params("rho")
         nu_mat = self.collect_material_params("nu")
         J = total_flux(Mo, rho_mat, CHI)
-        f_cap = capillary_force(phi, CHI, LA)
+
+        # 5. Capillary force
+        #    Def: f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*div(grad(phi)))
+        if matching_p:
+            f_cap = capillary_force(phi, CHI, LA)
+        else:
+            f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*chi - alpha*phi))
 
         # 6. Density and viscosity
         rho = self.homogenized_quantity(rho_mat, phi)

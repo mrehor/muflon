@@ -146,35 +146,36 @@ def create_bcs(DS, boundary_markers, esol):
 
     return bcs
 
-def create_source_terms(t_src, mesh, model, msol):
-    S, LA, iLA = model.build_stension_matrices()
-
+def create_source_terms(t_src, mesh, model, msol, matching_p):
     # Space and time variables
     # NOTE: Time variable must be named 't' because of 't' used in the string
     #       representations stored in 'msol[<var>]["expr"]'
     x = SpatialCoordinate(mesh)
     t = variable(t_src)
 
+    DS = model.discretization_scheme()
+    cell = DS.mesh().ufl_cell()
+
     # Manufactured solution
-    A0 = Constant(msol["v1"]["prms"]["A0"])
-    a0 = Constant(msol["v1"]["prms"]["a0"])
-    b0 = Constant(msol["v1"]["prms"]["b0"])
-    w0 = Constant(msol["v1"]["prms"]["w0"])
+    A0 = Constant(msol["v1"]["prms"]["A0"], cell=cell, name="A0")
+    a0 = Constant(msol["v1"]["prms"]["a0"], cell=cell, name="a0")
+    b0 = Constant(msol["v1"]["prms"]["b0"], cell=cell, name="b0")
+    w0 = Constant(msol["v1"]["prms"]["w0"], cell=cell, name="w0")
 
-    A1 = Constant(msol["phi1"]["prms"]["A1"])
-    a1 = Constant(msol["phi1"]["prms"]["a1"])
-    b1 = Constant(msol["phi1"]["prms"]["b1"])
-    w1 = Constant(msol["phi1"]["prms"]["w1"])
+    A1 = Constant(msol["phi1"]["prms"]["A1"], cell=cell, name="A1")
+    a1 = Constant(msol["phi1"]["prms"]["a1"], cell=cell, name="a1")
+    b1 = Constant(msol["phi1"]["prms"]["b1"], cell=cell, name="b1")
+    w1 = Constant(msol["phi1"]["prms"]["w1"], cell=cell, name="w1")
 
-    A2 = Constant(msol["phi2"]["prms"]["A2"])
-    a2 = Constant(msol["phi2"]["prms"]["a2"])
-    b2 = Constant(msol["phi2"]["prms"]["b2"])
-    w2 = Constant(msol["phi2"]["prms"]["w2"])
+    A2 = Constant(msol["phi2"]["prms"]["A2"], cell=cell, name="A2")
+    a2 = Constant(msol["phi2"]["prms"]["a2"], cell=cell, name="a2")
+    b2 = Constant(msol["phi2"]["prms"]["b2"], cell=cell, name="b2")
+    w2 = Constant(msol["phi2"]["prms"]["w2"], cell=cell, name="w2")
 
-    A3 = Constant(msol["phi3"]["prms"]["A3"])
-    a3 = Constant(msol["phi3"]["prms"]["a3"])
-    b3 = Constant(msol["phi3"]["prms"]["b3"])
-    w3 = Constant(msol["phi3"]["prms"]["w3"])
+    A3 = Constant(msol["phi3"]["prms"]["A3"], cell=cell, name="A3")
+    a3 = Constant(msol["phi3"]["prms"]["a3"], cell=cell, name="a3")
+    b3 = Constant(msol["phi3"]["prms"]["b3"], cell=cell, name="b3")
+    w3 = Constant(msol["phi3"]["prms"]["w3"], cell=cell, name="w3")
 
     phi1 = eval(msol["phi1"]["expr"])
     phi2 = eval(msol["phi2"]["expr"])
@@ -187,31 +188,45 @@ def create_source_terms(t_src, mesh, model, msol):
     v   = as_vector([v1, v2])
 
     # Intermediate manipulations
+    # -- create multi-well potential and its derivative
     prm = model.parameters
-    omega_2 = Constant(prm["omega_2"])
-    eps = Constant(prm["eps"])
-    Mo = Constant(prm["M0"]) # FIXME: degenerate mobility
+    S, LA, iLA = model.build_stension_matrices(prefix="MS_")
     dw = DoublewellFactory.create(prm["doublewell"])
-    a, b = dw.free_energy_coefficents()
-    a, b = Constant(a), Constant(b)
     varphi = variable(phi)
     F = multiwell(dw, varphi, S)
     dF = diff(F, varphi)
-
-    # Chemical potential
+    # -- initialize constant coefficients
+    omega_2 = Constant(prm["omega_2"], cell=cell, name="MS_omega_2")
+    eps = Constant(prm["eps"], cell=cell, name="MS_eps")
+    Mo = Constant(prm["M0"], cell=cell, name="MS_M0") # FIXME: degenerate mobility
+    a, b = dw.free_energy_coefficents()
+    a = Constant(a, cell=cell, name="MS_a")
+    b = Constant(b, cell=cell, name="MS_b")
+    # -- define chemical potential
     chi = (b/eps)*dot(iLA, dF) - 0.5*a*eps*div(grad(phi))
+    # -- define homogenized density and viscosity
+    rho_mat = model.collect_material_params("rho")
+    nu_mat = model.collect_material_params("nu")
+    rho = model.homogenized_quantity(rho_mat, phi)
+    nu = model.homogenized_quantity(nu_mat, phi)
+    # -- define total flux
+    J = total_flux(Mo, rho_mat, chi)
+    # -- define capillary force
+    f_cap = capillary_force(phi, chi, LA) # --> leads to "monolithic pressure"
+    if not matching_p:
+        if DS.name() == "FullyDecoupled":
+            f_cap = - 0.5*a*eps*dot(grad(phi).T, dot(LA, div(grad(phi))))
+        elif DS.name() == "SemiDecoupled":
+            domain_vol = assemble(Constant(1.0)*dx(DS.mesh()))
+            alpha = [assemble(phi[i]*dx)/domain_vol for i in range(len(phi))]
+            ca = as_vector([phi[i] - Constant(alpha[i]) for i in range(len(phi))])
+            f_cap = - dot(grad(chi).T, dot(LA.T, ca))
 
     # Source term for CH part
     g_src = diff(phi, t) + div(outer(phi, v)) - div(Mo*grad(chi))
     #g_src = diff(phi, t) + dot(grad(phi), v) - div(Mo*grad(chi))
 
     # Source term for NS part
-    rho_mat = model.collect_material_params("rho")
-    nu_mat = model.collect_material_params("nu")
-    rho = model.homogenized_quantity(rho_mat, phi)
-    nu = model.homogenized_quantity(nu_mat, phi)
-    J = total_flux(Mo, rho_mat, chi)
-    f_cap = capillary_force(phi, chi, LA)
     f_src = (
           rho*diff(v, t)
         + dot(grad(v), rho*v + omega_2*J)
@@ -222,9 +237,10 @@ def create_source_terms(t_src, mesh, model, msol):
 
     return f_src, g_src
 
-def prepare_hook(t_src, DS, esol, degrise, err):
+def prepare_hook(t_src, model, esol, degrise, err):
 
     class TailoredHook(TSHook):
+
         def head(self, t, it, logger):
             self.t_src.assign(Constant(t)) # update source terms
             for key in six.iterkeys(self.esol):
@@ -232,7 +248,7 @@ def prepare_hook(t_src, DS, esol, degrise, err):
         def tail(self, t, it, logger):
             esol = self.esol
             degrise = self.degrise
-            pv = self.DS.primitive_vars_ctl()
+            pv = self.model.discretization_scheme().primitive_vars_ctl()
             phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
             phi_ = phi.split()
             chi_ = chi.split()
@@ -257,11 +273,12 @@ def prepare_hook(t_src, DS, esol, degrise, err):
             end()
             info("")
 
-    return TailoredHook(t_src=t_src, DS=DS, esol=esol,
+    return TailoredHook(t_src=t_src, model=model, esol=esol,
                         degrise=degrise, err=err)
 
+@pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
-def test_scaling_mesh(scheme, postprocessor):
+def test_scaling_mesh(scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed time step and
     gradually refined mesh.
@@ -303,12 +320,12 @@ def test_scaling_mesh(scheme, postprocessor):
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
             t_src = Function(DS.reals()); t_src.rename("t_src", "t_source")
-            f_src, g_src = create_source_terms(t_src, mesh, model, msol)
+            f_src, g_src = create_source_terms(t_src, mesh, model, msol, matching_p)
             # NOTE: Source terms are time-dependent. The updates to these terms
             #       are possible via ``t_src.assign(Constant(t))``, where ``t``
             #       denotes the actual time value.
             model.load_sources(f_src, g_src)
-            forms = model.create_forms()
+            forms = model.create_forms(matching_p)
 
             # NOTE: Here is the possibility to modify forms, e.g. by adding
             #       boundary integrals.
@@ -318,11 +335,11 @@ def test_scaling_mesh(scheme, postprocessor):
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
-            # pv = self.DS.primitive_vars_ctl()
+            # pv = DS.primitive_vars_ctl()
             # phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
             # phi_, chi_, v_ = phi.split(), chi.split(), v.split()
             xfields = None #list(phi_) + list(v_) + [p.dolfin_repr(),]
-            hook = prepare_hook(t_src, DS, esol, degrise, {})
+            hook = prepare_hook(t_src, model, esol, degrise, {})
             logfile = "log_{}_level_{}_{}.dat".format(basename, level, scheme)
             #info("BREAK POINT %ia" % level)
             TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
