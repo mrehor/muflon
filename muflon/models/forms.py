@@ -22,6 +22,7 @@ This module provides tools for creating UFL forms representing different
 variants of Cahn-Hilliard-Navier-Stokes-Fourier (CHNSF) type models.
 """
 
+import six
 import numpy as np
 
 from collections import OrderedDict
@@ -95,17 +96,13 @@ class Model(object):
         :type bcs: dict
         """
         # Initialize parameters
-        self.parameters = Parameters(mpset["model"])
-
-        nested_prm = Parameters("mono")
-        nested_prm.add("theta", 1.0) # parameter in theta scheme
-        self.parameters.add(nested_prm)
+        self.parameters = prm = Parameters(mpset["model"])
 
         nested_prm = Parameters("full")
         nested_prm.add("factor_s", 1.0) # to control num. parameter 's'
         nested_prm.add("factor_rho0", 1.0) # to control num. param 'rho0'
         nested_prm.add("factor_nu0", 1.0) # to control num. param 'nu0'
-        self.parameters.add(nested_prm)
+        prm.add(nested_prm)
 
         # Strore discretization scheme
         self._DS = DS
@@ -126,8 +123,9 @@ class Model(object):
         self._bcs = bcs
 
         # Initialize source terms
-        self._f_src = as_vector(len(self._pv_ctl["v"])*[Constant(0.0),])
-        self._g_src = as_vector(len(self._pv_ctl["phi"])*[Constant(0.0),])
+        zero = Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
+        self._f_src = as_vector(len(self._pv_ctl["v"])*[zero,])
+        self._g_src = as_vector(len(self._pv_ctl["phi"])*[zero,])
 
         # Store time step
         self._dt = Function(DS.reals())    # function that wraps dt
@@ -273,10 +271,14 @@ class Model(object):
         iLA = np.linalg.inv(LA)
 
         # Wrap components using ``Constant`` if required
+        cell = self._DS.mesh().ufl_cell()
         if const:
-            S = [[Constant(S[i,j]) for j in range(N)] for i in range(N)]
-            LA = [[Constant(LA[i,j]) for j in range(N-1)] for i in range(N-1)]
-            iLA = [[Constant(iLA[i,j]) for j in range(N-1)] for i in range(N-1)]
+            S = [[Constant(S[i,j], cell=cell, name="S{}{}".format(i, j))
+                      for j in range(N)] for i in range(N)]
+            LA = [[Constant(LA[i,j], cell=cell, name="LA{}{}".format(i, j))
+                       for j in range(N-1)] for i in range(N-1)]
+            iLA = [[Constant(iLA[i,j], cell=cell, name="iLA{}{}".format(i, j))
+                        for j in range(N-1)] for i in range(N-1)]
 
         return (as_matrix(S), as_matrix(LA), as_matrix(iLA))
 
@@ -360,6 +362,53 @@ class Incompressible(Model):
         # Add specific model parameters
         self.parameters.add("omega_2", 1.0)
 
+    def _create_doublewell_and_coefficients(self, factors=()):
+        """
+        This methods sets attributes 'doublewell' and 'const_coeffs' to the
+        current class.
+
+        The first attribute corresponds to
+        :py:class:`Doublewell <muflon.models.potentials.Doublewell>`
+        that is required to create general multi-well potential.
+
+        The second attribute is a dictionary that collects all constant
+        coefficients used in the generated forms. These coefficients
+        are created from model parameters and factors passed in via the
+        argument 'factors' -- a tuple of pairs '(key, val)'.
+        """
+        num_types = tuple(list(six.integer_types) + [float,])
+        cell = self._DS.mesh().ufl_cell()
+
+        # Create empty dictionary for constant coefficients
+        self.const_coeffs = cc = OrderedDict()
+
+        # Process factors
+        for key, val in factors:
+            assert isinstance(key, str)
+            assert isinstance(val, num_types)
+            cc[key] = Constant(val, cell=cell, name=key)
+        # NOTE:
+        #   It is not suggested to use dictionary of kwargs (**factors) here,
+        #   because then one needs to set PYTHONHASHSEED=0 to prevent repeated
+        #   JIT compilations.
+
+        # Initialize constant coefficients from parameters
+        prm = self.parameters
+        # -- model parameters
+        cc["M0"] = Constant(prm["M0"], cell=cell, name="M0")
+        cc["eps"] = Constant(prm["eps"], cell=cell, name="eps")
+        cc["omega_2"] = Constant(prm["omega_2"], cell=cell, name="omega_2")
+        # -- matrices built from surface tensions
+        cc["S"], cc["LA"], cc["iLA"] = self.build_stension_matrices()
+        # -- free energy coefficients (depend on the choice of double-well)
+        dw = DoublewellFactory.create(prm["doublewell"])
+        a, b = dw.free_energy_coefficents()
+        cc["a"] = Constant(a, cell=cell, name="a")
+        cc["b"] = Constant(b, cell=cell, name="b")
+
+        # Store created double-well potential
+        self.doublewell = dw
+
 # --- Monolithic forms for Incompressible model -------------------------------
 
     def _factors_Monolithic(self, OTD):
@@ -367,15 +416,15 @@ class Incompressible(Model):
         Set factors according to chosen order of time discretization OTD.
         """
         if OTD == 1:
-            self.fact["theta"].assign(Constant(1.0))
-            self.fact["dF_auto"].assign(Constant(1.0))
-            self.fact["dF_full"].assign(Constant(0.0))
-            self.fact["dF_semi"].assign(Constant(0.0))
+            self.const_coeffs["TD_theta"].assign(Constant(1.0))
+            self.const_coeffs["TD_dF_auto"].assign(Constant(1.0))
+            self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
+            self.const_coeffs["TD_dF_semi"].assign(Constant(0.0))
         elif OTD == 2:
-            self.fact["theta"].assign(Constant(0.5))
-            self.fact["dF_auto"].assign(Constant(0.0))
-            self.fact["dF_full"].assign(Constant(0.0))
-            self.fact["dF_semi"].assign(Constant(1.0))
+            self.const_coeffs["TD_theta"].assign(Constant(0.5))
+            self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
+            self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
+            self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
             # FIXME: resolve the following issue or ban this option
             from dolfin import warning
             warning("Time discretization of order %g for '%s'"
@@ -399,25 +448,39 @@ class Incompressible(Model):
                   the second one being set to ``None``
         :rtype: dict
         """
-        # Get parameters
-        prm = self.parameters
-
-        # Time discretization factors (defaults correspond to 1st order scheme)
-        cell = self._DS.mesh().ufl_cell()
-        self.fact = fact = OrderedDict()
-        fact["theta"] = Constant(1.0, cell=cell, name="fact_theta")
-        fact["dF_auto"] = Constant(1.0, cell=cell, name="fact_dF_auto")
-        fact["dF_full"] = Constant(0.0, cell=cell, name="fact_dF_full")
-        fact["dF_semi"] = Constant(0.0, cell=cell, name="fact_dF_semi")
-        fact_ctl, fact_ptl = fact["theta"], 1.0 - fact["theta"]
-
-        # Arguments of the system
-        test = self._test
+        self._create_doublewell_and_coefficients((
+            ("TD_theta",   1.0),
+            ("TD_dF_auto", 1.0),
+            ("TD_dF_full", 0.0),
+            ("TD_dF_semi", 0.0)
+        ))
+        cc = self.const_coeffs
+        dw = self.doublewell
 
         # Primitive variables
         pv, pv0 = self._pv_ctl, self._pv_ptl[0]
         phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
         phi0, v0 = pv0["phi"], pv0["v"]
+
+        # Derivative of multi-well potential
+        # -- automatic differentiation
+        _phi = variable(phi)
+        F = multiwell(dw, _phi, cc["S"])
+        dF_auto = diff(F, _phi)
+        # -- manual differentiation
+        dF_full = multiwell_derivative(dw, phi, phi0, cc["S"], False)
+        dF_semi = multiwell_derivative(dw, phi, phi0, cc["S"], True)
+        dF = (
+              cc["TD_dF_auto"]*dF_auto
+            + cc["TD_dF_full"]*dF_full
+            + cc["TD_dF_semi"]*dF_semi
+        )
+
+        # Time discretization factors for theta scheme
+        fact_ctl, fact_ptl = cc["TD_theta"], 1.0 - cc["TD_theta"]
+
+        # Arguments of the system
+        test = self._test
 
         # Source terms
         f_src = self._f_src
@@ -426,39 +489,12 @@ class Incompressible(Model):
         # Reciprocal time step
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
-        # Model parameters
-        eps = Constant(prm["eps"], cell=cell, name="eps")
-        omega_2 = Constant(prm["omega_2"], cell=cell, name="omega_2")
-
-        # Matrices built from surface tensions
-        S, LA, iLA = self.build_stension_matrices()
-
-        # Construct double-well potential
-        dw = DoublewellFactory.create(prm["doublewell"])
-        a, b = dw.free_energy_coefficents()
-        a = Constant(a, cell=cell, name="a")
-        b = Constant(b, cell=cell, name="b")
-
-        # Prepare derivative of multi-well potential
-        # -- automatic differentiation
-        _phi = variable(phi)
-        F = multiwell(dw, _phi, S)
-        dF_auto = diff(F, _phi)
-        # -- manual differentiation
-        dF_full = multiwell_derivative(dw, phi, phi0, S, False)
-        dF_semi = multiwell_derivative(dw, phi, phi0, S, True)
-        dF = (
-              fact["dF_auto"]*dF_auto
-            + fact["dF_full"]*dF_full
-            + fact["dF_semi"]*dF_semi
-        )
-
         # System of CH eqns
-        Mo = Constant(prm["M0"], cell=cell, name="Mo") # FIXME: degenerate mobility
+        Mo = cc["M0"] # FIXME: degenerate mobility
         def G_phi(phi, chi, v):
             G = (
-                  inner(div(outer(phi, v)), test["chi"])
-                  #inner(dot(grad(phi), v), test["chi"])
+                  #inner(div(outer(phi, v)), test["chi"])
+                  inner(dot(grad(phi), v), test["chi"])
                 - inner(g_src, test["chi"])
                 + Mo*inner(grad(chi), grad(test["chi"]))
             )*dx
@@ -476,8 +512,8 @@ class Incompressible(Model):
         def G_chi(phi, chi):
             G = (
                   inner(chi, test["phi"])
-                - 0.5*a*eps*inner(grad(phi), grad(test["phi"]))
-                - (b/eps)*inner(dot(iLA, dF), test["phi"])
+                - 0.5*cc["a"]*cc["eps"]*inner(grad(phi), grad(test["phi"]))
+                - (cc["b"]/cc["eps"])*inner(dot(cc["iLA"], dF), test["phi"])
             )*dx
             return G
         G_chi_ctl = G_chi(phi, chi)
@@ -495,13 +531,13 @@ class Incompressible(Model):
             nu = self.homogenized_quantity(nu_mat, phi)
             # Variable coefficients
             J = total_flux(Mo, rho_mat, chi)
-            f_cap = capillary_force(phi, chi, LA)
+            f_cap = capillary_force(phi, chi, cc["LA"])
             # Special definitions
             Dv  = sym(grad(v))
             Dv_ = sym(grad(test["v"]))
             # Form
             G = (
-                  inner(dot(grad(v), rho*v + omega_2*J), test["v"])
+                  inner(dot(grad(v), rho*v + cc["omega_2"]*J), test["v"])
                 + 2.0*nu*inner(Dv, Dv_)
                 - p*div(test["v"])
                 - inner(f_cap, test["v"])
@@ -521,9 +557,7 @@ class Incompressible(Model):
         G_p_ptl = G_p(v) # NOTE: intentionally not v0
         eqn_p = fact_ctl*G_p_ctl + fact_ptl*G_p_ptl
 
-        # FIXME: Which one to use?
-        system_ns = eqn_v + eqn_p
-        #system_ns = eqn_v - eqn_p
+        system_ns = eqn_v + Constant(-1.0)*eqn_p # FIXME: + or -
 
         return dict(linear=(system_ch + system_ns,), bilinear=None)
 
@@ -531,15 +565,15 @@ class Incompressible(Model):
 
     def _factors_SemiDecoupled(self, OTD):
         if OTD == 1:
-            self.fact["theta"].assign(Constant(1.0))
-            self.fact["dF_auto"].assign(Constant(0.0))
-            self.fact["dF_full"].assign(Constant(0.0))
-            self.fact["dF_semi"].assign(Constant(1.0))
+            self.const_coeffs["TD_theta"].assign(Constant(1.0))
+            self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
+            self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
+            self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
         elif OTD == 2:
-            self.fact["theta"].assign(Constant(0.5))
-            self.fact["dF_auto"].assign(Constant(0.0))
-            self.fact["dF_full"].assign(Constant(0.0))
-            self.fact["dF_semi"].assign(Constant(1.0))
+            self.const_coeffs["TD_theta"].assign(Constant(0.5))
+            self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
+            self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
+            self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
             # FIXME: resolve the following issue or ban this option
             from dolfin import warning
             warning("Time discretization of order %g for '%s'"
@@ -567,27 +601,40 @@ class Incompressible(Model):
         :returns: dictonary with items ``'linear'`` and ``'bilinear'``
         :rtype: dict
         """
-        # Get parameters
-        prm = self.parameters
-
-        # Time discretization factors (defaults correspond to 1st order scheme)
-        cell = self._DS.mesh().ufl_cell()
-        self.fact = fact = OrderedDict()
-        fact["theta"] = Constant(1.0, cell=cell, name="fact_theta")
-        fact["dF_auto"] = Constant(0.0, cell=cell, name="fact_dF_auto")
-        fact["dF_full"] = Constant(0.0, cell=cell, name="fact_dF_full")
-        fact["dF_semi"] = Constant(1.0, cell=cell, name="fact_dF_semi")
-        fact_ctl = fact["theta"]
-        fact_ptl = 1.0 - fact["theta"]
-
-        # Arguments of the system
-        test = self._test
-        trial = self._trial
+        self._create_doublewell_and_coefficients((
+            ("TD_theta",   1.0),
+            ("TD_dF_auto", 0.0),
+            ("TD_dF_full", 0.0),
+            ("TD_dF_semi", 1.0)
+        ))
+        cc = self.const_coeffs
+        dw = self.doublewell
 
         # Primitive variables
         pv, pv0 = self._pv_ctl, self._pv_ptl[0]
         phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
         phi0, v0 = pv0["phi"], pv0["v"]
+
+        # Derivative of multi-well potential
+        # -- automatic differentiation
+        _phi = variable(phi)
+        F = multiwell(dw, _phi, cc["S"])
+        dF_auto = diff(F, _phi)
+        # -- manual differentiation
+        dF_full = multiwell_derivative(dw, phi, phi0, cc["S"], False)
+        dF_semi = multiwell_derivative(dw, phi, phi0, cc["S"], True)
+        dF = (
+              cc["TD_dF_auto"]*dF_auto
+            + cc["TD_dF_full"]*dF_full
+            + cc["TD_dF_semi"]*dF_semi
+        )
+
+        # Time discretization factors for theta scheme
+        fact_ctl, fact_ptl = cc["TD_theta"], 1.0 - cc["TD_theta"]
+
+        # Arguments of the system
+        test = self._test
+        trial = self._trial
 
         # Source terms
         f_src = self._f_src
@@ -596,38 +643,11 @@ class Incompressible(Model):
         # Reciprocal time step
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
-        # Model parameters
-        eps = Constant(prm["eps"], cell=cell, name="eps")
-        omega_2 = Constant(prm["omega_2"], cell=cell, name="omega_2")
-
-        # Matrices built from surface tensions
-        S, LA, iLA = self.build_stension_matrices()
-
-        # Construct double-well potential
-        dw = DoublewellFactory.create(prm["doublewell"])
-        a, b = dw.free_energy_coefficents()
-        a = Constant(a, cell=cell, name="a")
-        b = Constant(b, cell=cell, name="b")
-
-        # Prepare derivative of multi-well potential
-        # -- automatic differentiation
-        _phi = variable(phi)
-        F = multiwell(dw, _phi, S)
-        dF_auto = diff(F, _phi)
-        # -- manual differentiation
-        dF_full = multiwell_derivative(dw, phi, phi0, S, False)
-        dF_semi = multiwell_derivative(dw, phi, phi0, S, True)
-        dF = (
-              fact["dF_auto"]*dF_auto
-            + fact["dF_full"]*dF_full
-            + fact["dF_semi"]*dF_semi
-        )
-
         # Capillary force
-        A = assemble(Constant(1.0)*dx(self._DS.mesh()))
-        alpha = [assemble(phi0[i]*dx)/A for i in range(len(phi0))]
+        domain_vol = assemble(Constant(1.0)*dx(self._DS.mesh()))
+        alpha = [assemble(phi0[i]*dx)/domain_vol for i in range(len(phi0))]
         ca = as_vector([phi0[i] - Constant(alpha[i]) for i in range(len(phi0))])
-        f_cap = - dot(grad(chi).T, dot(LA.T, ca))
+        f_cap = - dot(grad(chi).T, dot(cc["LA"].T, ca))
 
         # Density and viscosity
         rho_mat = self.collect_material_params("rho")
@@ -640,7 +660,7 @@ class Incompressible(Model):
         v_star = v0 + self._dt*f_cap/rho0
 
         # System of CH eqns
-        Mo = Constant(prm["M0"], cell=cell, name="Mo") # FIXME: degenerate mobility
+        Mo = cc["M0"] # FIXME: degenerate mobility
         eqn_phi = (
               idt*inner(phi - phi0, test["chi"])
             - inner(ca, dot(grad(test["chi"]), v_star))
@@ -651,8 +671,8 @@ class Incompressible(Model):
         phi_star = fact_ctl*phi + fact_ptl*phi0
         eqn_chi = (
               inner(chi, test["phi"])
-            - 0.5*a*eps*inner(grad(phi_star), grad(test["phi"]))
-            - (b/eps)*inner(dot(iLA, dF), test["phi"])
+            - 0.5*cc["a"]*cc["eps"]*inner(grad(phi_star), grad(test["phi"]))
+            - (cc["b"]/cc["eps"])*inner(dot(cc["iLA"], dF), test["phi"])
         )*dx
 
         system_ch = eqn_phi + eqn_chi
@@ -664,8 +684,8 @@ class Incompressible(Model):
 
         a_00 = (
               idt*0.5*(rho + rho0)*inner(trial["v"], test["v"])
-            + 0.5*inner(dot(grad(trial["v"]), rho*v0 + omega_2*J), test["v"])
-            - 0.5*inner(dot(grad(test["v"]), rho*v0 + omega_2*J), trial["v"])
+            + 0.5*inner(dot(grad(trial["v"]), rho*v0 + cc["omega_2"]*J), test["v"])
+            - 0.5*inner(dot(grad(test["v"]), rho*v0 + cc["omega_2"]*J), trial["v"])
             + 2.0*nu*inner(Dv, Dv_)
         )*dx
         a_01 = - trial["p"]*div(test["v"])*dx
@@ -688,17 +708,17 @@ class Incompressible(Model):
 
     def _factors_FullyDecoupled(self, OTD):
         if OTD == 1:
-            self.fact["gamma0"].assign(Constant(1.0))
-            self.fact["star0"].assign(Constant(1.0))
-            self.fact["star1"].assign(Constant(0.0))
-            self.fact["hat0"].assign(Constant(1.0))
-            self.fact["hat1"].assign(Constant(0.0))
+            self.const_coeffs["TD_gamma0"].assign(Constant(1.0))
+            self.const_coeffs["TD_star0"].assign(Constant(1.0))
+            self.const_coeffs["TD_star1"].assign(Constant(0.0))
+            self.const_coeffs["TD_hat0"].assign(Constant(1.0))
+            self.const_coeffs["TD_hat1"].assign(Constant(0.0))
         elif OTD == 2:
-            self.fact["gamma0"].assign(Constant(1.5))
-            self.fact["star0"].assign(Constant(2.0))
-            self.fact["star1"].assign(Constant(-1.0))
-            self.fact["hat0"].assign(Constant(2.0))
-            self.fact["hat1"].assign(Constant(-0.5))
+            self.const_coeffs["TD_gamma0"].assign(Constant(1.5))
+            self.const_coeffs["TD_star0"].assign(Constant(2.0))
+            self.const_coeffs["TD_star1"].assign(Constant(-1.0))
+            self.const_coeffs["TD_hat0"].assign(Constant(2.0))
+            self.const_coeffs["TD_hat1"].assign(Constant(-0.5))
         else:
             msg = "Time discretization of order %g for '%s'" \
                   " scheme is not implemented." % (OTD, self._DS.name())
@@ -720,17 +740,17 @@ class Incompressible(Model):
                   the first one being set to ``None``
         :rtype: dict
         """
-        # Get parameters
         prm = self.parameters
-
-        # Time discretization factors (defaults correspond to 1st order scheme)
-        cell = self._DS.mesh().ufl_cell()
-        self.fact = fact = OrderedDict()
-        fact["gamma0"] = Constant(1.0, cell=cell, name="gamma0")
-        fact["star0"] = Constant(1.0, cell=cell, name="star0")
-        fact["star1"] = Constant(0.0, cell=cell, name="star1")
-        fact["hat0"] = Constant(1.0, cell=cell, name="hat0")
-        fact["hat1"] = Constant(0.0, cell=cell, name="hat1")
+        self._create_doublewell_and_coefficients((
+            ("TD_gamma0", 1.0),
+            ("TD_star0",  1.0), ("TD_star1", 0.0),
+            ("TD_hat0",   1.0), ("TD_hat1",  0.0),
+            ("factor_s",    prm["full"]["factor_s"]),
+            ("factor_rho0", prm["full"]["factor_rho0"]),
+            ("factor_nu0",  prm["full"]["factor_nu0"]),
+        ))
+        cc = self.const_coeffs
+        dw = self.doublewell
 
         # Arguments of the system
         test = self._test
@@ -745,12 +765,30 @@ class Incompressible(Model):
         pv1 = self._pv_ptl[-1]
         phi1, v1, p1 = pv1["phi"], pv1["v"], pv1["p"]
 
-        # Build approximated coefficients
-        phi_star = fact["star0"]*phi0 + fact["star1"]*phi1
-        phi_hat = fact["hat0"]*phi0 + fact["hat1"]*phi1
-        v_star = fact["star0"]*v0 + fact["star1"]*v1
-        v_hat = fact["hat0"]*v0 + fact["hat1"]*v1
-        p_star = fact["star0"]*p0 + fact["star1"]*p1
+        # Primitive variables at starred time level
+        phi_star = cc["TD_star0"]*phi0 + cc["TD_star1"]*phi1
+        phi_hat = cc["TD_hat0"]*phi0 + cc["TD_hat1"]*phi1
+        v_star = cc["TD_star0"]*v0 + cc["TD_star1"]*v1
+        v_hat = cc["TD_hat0"]*v0 + cc["TD_hat1"]*v1
+        p_star = cc["TD_star0"]*p0 + cc["TD_star1"]*p1
+
+        # Extract constant coefficients
+        S, LA, iLA = cc["S"], cc["LA"], cc["iLA"]
+        a, b = cc["a"], cc["b"]
+        eps, omega_2 = cc["eps"], cc["omega_2"]
+        gamma0 = cc["TD_gamma0"]
+
+        # Prepare non-linear potential term @ CTL
+        _phi = variable(phi)
+        F = multiwell(dw, _phi, S)
+        dF = diff(F, _phi)
+        #dF = multiwell_derivative(dw, phi, phi0, S, False)
+
+        # Prepare non-linear potential term at starred time level
+        _phi_star = variable(phi_star)
+        F_star = multiwell(dw, _phi_star, S)
+        dF_star = diff(F_star, _phi_star)
+        #dF_star = multiwell_derivative(dw, phi_star, phi0, S, False)
 
         # Source terms
         f_src = self._f_src
@@ -759,37 +797,12 @@ class Incompressible(Model):
         # Reciprocal time step
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
-        # Model parameters
-        eps = Constant(prm["eps"], cell=cell, name="eps")
-        omega_2 = Constant(prm["omega_2"], cell=cell, name="omega_2")
-
-        # Matrices built from surface tensions
-        S, LA, iLA = self.build_stension_matrices()
-
-        # Construct double-well potential
-        dw = DoublewellFactory.create(prm["doublewell"])
-        a, b = dw.free_energy_coefficents()
-        a = Constant(a, cell=cell, name="a")
-        b = Constant(b, cell=cell, name="b")
-
-        # Prepare non-linear potential term @ CTL
-        _phi = variable(phi)
-        F = multiwell(dw, _phi, S)
-        dF = diff(F, _phi)
-        #dF = multiwell_derivative(dw, phi, phi0, S, False)
-
-        # Prepare non-linear potential term starred time level
-        _phi_star = variable(phi_star)
-        F_star = multiwell(dw, _phi_star, S)
-        dF_star = diff(F_star, _phi_star)
-        #dF_star = multiwell_derivative(dw, phi_star, phi0, S, False)
-
         # --- Forms for Advance-Phase procedure ---
 
         # 1. Vectors Q and R
-        Mo = Constant(prm["M0"], cell=cell, name="Mo")
-        s_bar = sqrt(2.0*a*eps*fact["gamma0"]*idt/Mo)
-        s_fac = Constant(prm["full"]["factor_s"], cell=cell, name="s_fac")
+        Mo = cc["M0"] # FIXME: degenerate mobility
+        s_bar = sqrt(2.0*a*eps*gamma0*idt/Mo)
+        s_fac = cc["factor_s"]
         #s = s_fac*s_bar*(eps**2.0)
         alpha = 0.5*s_bar*(sqrt(s_fac**2.0 - 1.0) - s_fac)
         Q = (g_src + idt*phi_hat - dot(grad(phi_star), v_star))/Mo
@@ -801,7 +814,7 @@ class Incompressible(Model):
             lhs_chi.append((
                   inner(grad(trial["chi"][i]), grad(test["chi"][i]))
                 + 2.0/(a*eps)*(
-                    + (alpha + s_fac*s_bar)*trial["chi"][i]*test["chi"][i]
+                    (alpha + s_fac*s_bar)*trial["chi"][i]*test["chi"][i]
             ))*dx)
             rhs_chi.append((
                 - 2.0/(a*eps)*(
@@ -835,13 +848,17 @@ class Incompressible(Model):
         rho = self.homogenized_quantity(rho_mat, phi)
         nu = self.homogenized_quantity(nu_mat, phi)
 
-        # --- Forms for projection method (velocity correction-type) ---
-        rho0 = min(rho_mat)
-        rho0 = Constant(prm["full"]["factor_rho0"]*rho0, cell=cell, name="rho0")
+        cell = self._DS.mesh().ufl_cell()
+        cc["rho0"] = Constant(min(rho_mat), cell=cell, name="rho0")
+        rho0 = cc["factor_rho0"]*cc["rho0"]
         nu0 = max([nu_mat[i]/rho_mat[i] for i in range(len(rho_mat))])
-        nu0 = Constant(prm["full"]["factor_nu0"]*nu0, cell=cell, name="nu0")
+        cc["nu0"] = Constant(nu0, cell=cell, name="nu0")
+        nu0 = cc["factor_nu0"]*cc["nu0"]
+
         irho, irho0 = 1.0/rho, 1.0/rho0
         inu, inu0 = 1.0/nu, 1.0/nu0
+
+        # --- Forms for projection method (velocity correction-type) ---
 
         # Provide own definition of cross product in 2D between the vectors u
         # and w, where the 2nd one was obtained as curl of another vector
@@ -890,7 +907,7 @@ class Incompressible(Model):
                 assert label == label_ref
             v_dbc = as_vector(v_dbc)
             ds_dbc = Measure("ds", subdomain_data=markers)
-            rhs_p -= idt*rho0*fact["gamma0"]*inner(n, v_dbc)*test["p"]*ds_dbc(label)
+            rhs_p -= idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
 
         lhs_p, rhs_p = [lhs_p,], [rhs_p,]
 
@@ -900,7 +917,7 @@ class Incompressible(Model):
         for i in range(len(test["v"])):
             lhs_v.append((
                   inner(grad(trial["v"][i]), grad(test["v"][i]))
-                + inu0*fact["gamma0"]*idt*(trial["v"][i]*test["v"][i])
+                + inu0*gamma0*idt*(trial["v"][i]*test["v"][i])
             )*dx)
             rhs_v.append((
                 + inu0*(G[i] - irho0*p.dx(i))*test["v"][i]

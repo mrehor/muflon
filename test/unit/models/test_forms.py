@@ -78,7 +78,7 @@ def test_forms(scheme, N, dim, th):
         model.update_TD_factors(2)
         flag = False
         for c in forms["linear"][0].coefficients():
-            if c.name() == "fact_theta":
+            if c.name() == "TD_theta":
                 flag = True
                 assert float(c) == 0.5
         assert flag
@@ -86,7 +86,7 @@ def test_forms(scheme, N, dim, th):
         model.update_TD_factors(2)
         flag = False
         for c in forms["bilinear"]["lhs"][0].coefficients():
-            if c.name() == "gamma0":
+            if c.name() == "TD_gamma0":
                 flag = True
                 assert float(c) == 1.5
         assert flag
