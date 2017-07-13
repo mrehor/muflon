@@ -77,7 +77,7 @@ def test_forms(scheme, N, dim, th):
     if scheme in ["Monolithic", "SemiDecoupled"]:
         model.update_TD_factors(2)
         flag = False
-        for c in forms["linear"][0].coefficients():
+        for c in forms["nln"].coefficients():
             if c.name() == "TD_theta":
                 flag = True
                 assert float(c) == 0.5
@@ -85,7 +85,7 @@ def test_forms(scheme, N, dim, th):
     else:
         model.update_TD_factors(2)
         flag = False
-        for c in forms["bilinear"]["lhs"][0].coefficients():
+        for c in forms["lin"]["lhs"][0].coefficients():
             if c.name() == "TD_gamma0":
                 flag = True
                 assert float(c) == 1.5
@@ -93,12 +93,12 @@ def test_forms(scheme, N, dim, th):
 
     # Check assembly of returned forms
     if scheme == "Monolithic":
-        assert forms["bilinear"] is None
-        F = forms["linear"][0]
+        assert forms["lin"] is None
+        F = forms["nln"]
         r = dolfin.assemble(F)
     elif scheme == "FullyDecoupled":
-        assert forms["linear"] is None
-        bforms = forms["bilinear"]
+        assert forms["nln"] is None
+        bforms = forms["lin"]
         for a, L in zip(bforms["lhs"], bforms["rhs"]):
             A, b = dolfin.assemble_system(a, L)
 
@@ -107,8 +107,8 @@ def test_forms(scheme, N, dim, th):
     model.update_time_step_value(dt)
     assert dt == model.time_step_value()
     if scheme in ["Monolithic", "FullyDecoupled"]:
-        F = forms["linear"][0] \
-          if scheme == "Monolithic" else forms["bilinear"]["lhs"][0]
+        F = forms["nln"] \
+          if scheme == "Monolithic" else forms["lin"]["lhs"][0]
         flag = False
         for c in F.coefficients():
             if c.name() == "dt":

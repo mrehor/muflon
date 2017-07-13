@@ -90,7 +90,7 @@ class Solver(object):
         """
         :param model: model of the CHNSF type
         :type model: :py:class:`Model <muflon.models.forms.Model>`
-        :param forms: dictonary with items ``'linear'`` and ``'bilinear'``
+        :param forms: dictonary with items ``'nln'`` and ``'lin'``
                       containing :py:class:`ufl.form.Form` objects
         :type forms: dict
         :param name: name of the solver (if ``None`` then it is extracted
@@ -139,7 +139,7 @@ class Monolithic(Solver):
 
         # Adjust forms
         w = self.data["model"].discretization_scheme().solution_ctl()[0]
-        F = self.data["forms"]["linear"][0]
+        F = self.data["forms"]["nln"]
         J = derivative(F, w)
 
         # Adjust bcs
@@ -165,6 +165,77 @@ class Monolithic(Solver):
         Perform one solution step (in time).
         """
         self.data["solver"].solve()
+
+# --- Semi-decoupled nonlinear solver ---------------------------------------------
+
+class SemiDecoupled(Solver):
+    """
+    This class implements nonlinear solver for semi-decoupled discretization
+    scheme.
+    """
+    class Factory(object):
+        def create(self, *args, **kwargs):
+            return SemiDecoupled(*args, **kwargs)
+
+    def __init__(self, *args, **kwargs):
+        """
+        Create solver for
+        :py:class:`SemiDecoupled <muflon.functions.discretization.SemiDecoupled>`
+        discretization scheme.
+
+        See :py:class:`Solver <muflon.solving.solvers.Solver>` for the list of
+        valid initialization arguments.
+        """
+        super(SemiDecoupled, self).__init__(*args, **kwargs)
+
+        # Extract solution functions
+        DS = self.data["model"].discretization_scheme()
+        w_ch, w_ns = DS.solution_ctl()
+
+        # Adjust bcs
+        bcs_ch = []
+        bcs_ns = []
+        _bcs = self.data["model"].bcs()
+        for bc in _bcs.get("v", []):
+            bcs_ns += list(bc)
+        bcs_ns += [bc for bc in _bcs.get("p", [])]
+        # FIXME: Deal with possible bcs for ``phi`` and ``th``
+
+        # Prepare solver for CH part
+        flag = False
+        F = self.data["forms"]["nln"]
+        J = derivative(F, w_ch)
+        problem = NonlinearVariationalProblem(F, w_ch, bcs_ch, J)
+        solver_ch = NonlinearVariationalSolver(problem)
+        solver_ch.parameters['newton_solver']['absolute_tolerance'] = 1E-8
+        solver_ch.parameters['newton_solver']['relative_tolerance'] = 1E-16
+        solver_ch.parameters['newton_solver']['maximum_iterations'] = 10
+        solver_ch.parameters['newton_solver']['linear_solver'] = "mumps"
+        #solver_ch.parameters['newton_solver']['relaxation_parameter'] = 1.0
+        #solver_ch.parameters['newton_solver']['error_on_nonconvergence'] = False
+
+        # Store solvers and collect other data
+        self.data["solver"] = OrderedDict()
+        self.data["solver"]["CH"] = solver_ch
+        self.data["solver"]["NS"] = LUSolver("mumps")
+        self.data["sol_ns"] = w_ns
+        self.data["bcs_ns"] = bcs_ns
+
+    def solve(self):
+        """
+        Perform one solution step (in time).
+        """
+        begin("Cahn-Hilliard step")
+        self.data["solver"]["CH"].solve()
+        end()
+
+        begin("Navier-Stokes step")
+        A = assemble(self.data["forms"]["lin"]["lhs"])
+        b = assemble(self.data["forms"]["lin"]["rhs"])
+        for bc in self.data["bcs_ns"]:
+                bc.apply(A, b)
+        self.data["solver"]["NS"].solve(A, self.data["sol_ns"].vector(), b)
+        end()
 
 # --- FullyDecoupled linear solver --------------------------------------------
 
@@ -207,7 +278,7 @@ class FullyDecoupled(Solver):
         """
         DS = self.data["model"].discretization_scheme()
         w = DS.solution_ctl()
-        eqn = self.data["forms"]["bilinear"]
+        eqn = self.data["forms"]["lin"]
         pv = DS.primitive_vars_ctl()
         n = len(pv["phi"]) # n = N - 1
         gdim = len(pv["v"])
@@ -284,75 +355,3 @@ class FullyDecoupled(Solver):
         Put solver into its initial state.
         """
         self._flags["setup"] = False
-
-
-# --- Semi-decoupled nonlinear solver ---------------------------------------------
-
-class SemiDecoupled(Solver):
-    """
-    This class implements nonlinear solver for semi-decoupled discretization
-    scheme.
-    """
-    class Factory(object):
-        def create(self, *args, **kwargs):
-            return SemiDecoupled(*args, **kwargs)
-
-    def __init__(self, *args, **kwargs):
-        """
-        Create solver for
-        :py:class:`SemiDecoupled <muflon.functions.discretization.SemiDecoupled>`
-        discretization scheme.
-
-        See :py:class:`Solver <muflon.solving.solvers.Solver>` for the list of
-        valid initialization arguments.
-        """
-        super(SemiDecoupled, self).__init__(*args, **kwargs)
-
-        # Extract solution functions
-        DS = self.data["model"].discretization_scheme()
-        w_ch, w_ns = DS.solution_ctl()
-
-        # Adjust bcs
-        bcs_ch = []
-        bcs_ns = []
-        _bcs = self.data["model"].bcs()
-        for bc in _bcs.get("v", []):
-            bcs_ns += list(bc)
-        bcs_ns += [bc for bc in _bcs.get("p", [])]
-        # FIXME: Deal with possible bcs for ``phi`` and ``th``
-
-        # Prepare solver for CH part
-        flag = False
-        F = self.data["forms"]["linear"][0]
-        J = derivative(F, w_ch)
-        problem = NonlinearVariationalProblem(F, w_ch, bcs_ch, J)
-        solver_ch = NonlinearVariationalSolver(problem)
-        solver_ch.parameters['newton_solver']['absolute_tolerance'] = 1E-8
-        solver_ch.parameters['newton_solver']['relative_tolerance'] = 1E-16
-        solver_ch.parameters['newton_solver']['maximum_iterations'] = 10
-        solver_ch.parameters['newton_solver']['linear_solver'] = "mumps"
-        #solver_ch.parameters['newton_solver']['relaxation_parameter'] = 1.0
-        #solver_ch.parameters['newton_solver']['error_on_nonconvergence'] = False
-
-        # Store solvers and collect other data
-        self.data["solver"] = OrderedDict()
-        self.data["solver"]["CH"] = solver_ch
-        self.data["solver"]["NS"] = LUSolver("mumps")
-        self.data["sol_ns"] = w_ns
-        self.data["bcs_ns"] = bcs_ns
-
-    def solve(self):
-        """
-        Perform one solution step (in time).
-        """
-        begin("Cahn-Hilliard step")
-        self.data["solver"]["CH"].solve()
-        end()
-
-        begin("Navier-Stokes step")
-        A = assemble(self.data["forms"]["bilinear"]["lhs"])
-        b = assemble(self.data["forms"]["bilinear"]["rhs"])
-        for bc in self.data["bcs_ns"]:
-                bc.apply(A, b)
-        self.data["solver"]["NS"].solve(A, self.data["sol_ns"].vector(), b)
-        end()

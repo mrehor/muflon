@@ -90,7 +90,7 @@ class Model(object):
     def __init__(self, DS, bcs={}):
         """
         :param DS: discretization scheme
-        :type DS: :py:class:`muflon.functions.discretization.Discretization`
+        :type DS: :py:class:`Discretization <muflon.functions.discretization.Discretization>`
         :param bcs: dictionary with Dirichlet boundary conditions for
                     individual primitive variables
         :type bcs: dict
@@ -224,9 +224,30 @@ class Model(object):
 
     def create_forms(self, *args, **kwargs):
         """
-        Create forms for a given discretization scheme.
+        Create forms for a given discretization scheme and return them in a
+        dictionary.
 
-        :returns: dictonary with items ``'linear'`` and ``'bilinear'``
+        Some discretization schemes, for example
+        :py:class:`Monolithic <muflon.functions.discretization.Monolithic>`,
+        lead to **nonlinear** system of algebraic equations that must be
+        consequently solved by an appropriate nonlinear solver. In such a case
+        the forms are returned under the key ``['nln']`` and correspond
+        to functionals representing the residuum of the system of equations.
+
+        On the contrary, other schemes, such as
+        :py:class:`FullyDecoupled <muflon.functions.discretization.FullyDecoupled>`,
+        yield systems of purely **linear** algebraic equations. In such cases
+        we are dealing with bilinear forms  corresponding to left hand sides of
+        the equations but also with linear forms (or functionals) corresponding
+        to right hand sides of the same equations. Hence those bilinear and
+        linear forms can be found in the returned dictionary under the keys
+        ``['lin']['lhs']`` and ``['lin']['rhs']`` respectively.
+
+        Note that there exist discretization schemes, for example
+        :py:class:`SemiDecoupled <muflon.functions.discretization.SemiDecoupled>`,
+        that combine both nonlinear and linear versions of variational forms.
+
+        :returns: dictonary with items ``'lin'`` and ``'nln'``
                   containing :py:class:`ufl.form.Form` objects
         :rtype: dict
         """
@@ -445,18 +466,16 @@ class Incompressible(Model):
 
     def forms_Monolithic(self, matching_p=False):
         """
-        Create linear forms for incompressible model using
+        Creates forms for incompressible model using
         :py:class:`Monolithic <muflon.functions.discretization.Monolithic>`
-        discretization scheme. (Forms are linear in arguments, but generally
-        **nonlinear** in coefficients.)
+        discretization scheme.
 
-        Forms are wrapped in a tuple and returned in a dictionary under
-        ``'linear'`` item.
+        Forms are returned in a dictionary under ``'nln'`` item.
 
         :param matching_p: does not take any effect here because *monolithic
                            pressure* is considered as default for comparison
         :type matching_p: bool
-        :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
+        :returns: dictonary with items ``'nln'`` and ``'lin'``,
                   the second one being set to ``None``
         :rtype: dict
         """
@@ -571,7 +590,7 @@ class Incompressible(Model):
 
         system_ns = eqn_v + Constant(-1.0)*eqn_p # FIXME: + or -
 
-        return dict(linear=(system_ch + system_ns,), bilinear=None)
+        return dict(nln=system_ch + system_ns, lin=None)
 
 # --- SemiDecoupled forms for Incompressible model ----------------------------
 
@@ -596,22 +615,21 @@ class Incompressible(Model):
 
     def forms_SemiDecoupled(self, matching_p=False):
         """
-        Create linear and bilinear forms for incompressible model using
+        Creates forms for incompressible model using
         :py:class:`SemiDecoupled <muflon.functions.discretization.SemiDecoupled>`
-        discretization scheme. (Forms are linear in arguments, but generally
-        **nonlinear** in coefficients.)
+        discretization scheme.
 
         Forms corresponding to CH part are wrapped in a tuple and returned
-        in a dictionary under ``'linear'`` item.
+        in a dictionary under ``'nln'`` item.
 
-        Bilinear forms corresponding to left hand sides of NS equations
-        are collected in a list and returned in a dictionary under the item
-        ``['bilinear']['lhs']``. Similarly, forms corresponding to
-        right hand sides are accessible through ``['bilinear']['rhs']``.
+        Forms corresponding to left hand sides of NS equations
+        are accessible through ``['lin']['lhs']``. Similarly, forms
+        corresponding to right hand sides can be found under
+        ``['lin']['rhs']``.
 
         :param matching_p: if True then pressure matches *monolithic pressure*
         :type matching_p: bool
-        :returns: dictonary with items ``'linear'`` and ``'bilinear'``
+        :returns: dictonary with items ``'nln'`` and ``'lin'``
         :rtype: dict
         """
         self._create_doublewell_and_coefficients((
@@ -721,7 +739,7 @@ class Incompressible(Model):
             "rhs" : rhs
         }
 
-        return dict(linear=(system_ch,), bilinear=system_ns)
+        return dict(nln=system_ch, lin=system_ns)
 
 # --- FullyDecoupled forms for Incompressible model  --------------------------
 
@@ -745,19 +763,18 @@ class Incompressible(Model):
 
     def forms_FullyDecoupled(self, matching_p=False):
         """
-        Create linear forms for incompressible model using
+        Creates linear forms for incompressible model using
         :py:class:`FullyDecoupled <muflon.functions.discretization.FullyDecoupled>`
-        discretization scheme. (Forms are linear in arguments, but generally
-        **nonlinear** in coefficients.)
+        discretization scheme.
 
         Bilinear forms corresponding to left hand sides of the equations
         are collected in a list and returned in a dictionary under the item
-        ``['bilinear']['lhs']``. Similarly, forms corresponding to
-        right hand sides are accessible through ``['bilinear']['rhs']``.
+        ``['lin']['lhs']``. Similarly, forms corresponding to
+        right hand sides are accessible through ``['lin']['rhs']``.
 
         :param matching_p: if True then pressure matches *monolithic pressure*
         :type matching_p: bool
-        :returns: dictonary with items ``'linear'`` and ``'bilinear'``,
+        :returns: dictonary with items ``'nln'`` and ``'lin'``,
                   the first one being set to ``None``
         :rtype: dict
         """
@@ -953,4 +970,4 @@ class Incompressible(Model):
             "lhs" : lhs_phi + lhs_chi + lhs_v + lhs_p,
             "rhs" : rhs_phi + rhs_chi + rhs_v + rhs_p
         }
-        return dict(linear=None, bilinear=forms)
+        return dict(nln=None, lin=forms)
