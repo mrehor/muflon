@@ -322,12 +322,9 @@ class Discretization(object):
         :returns: tuple with default variable names
         :rtype: tuple
         """
-        # Check if the temperature is considered
-        FE_th = self._FE.get("th")
-        if FE_th is None:
-            return self._varnames[:-1]
-        else:
-            return _varnames
+        # FIXME: This method is redundant as names of primitive variables can
+        #        be obtained as keys of self._FE dictionary
+        return self._varnames
 
     def mesh(self):
         """
@@ -725,6 +722,10 @@ class Monolithic(Discretization):
         # Interpolate expression to solution at PTL
         w0.interpolate(expr)
 
+        # Copy interpolated initial condition also to CTL,
+        # so it can be used as an initial guess for nonlinear solvers
+        self.solution_ctl()[0].assign(w0)  # t^(n+1) <-- t^(n-0)
+
     load_ic_from_simple_cpp.__doc__ = \
       Discretization._inherit_docstring("load_ic_from_simple_cpp")
 
@@ -855,6 +856,11 @@ class SemiDecoupled(Discretization):
         w0_ch.interpolate(expr_ch)
         w0_ns.interpolate(expr_ns)
 
+        # Copy interpolated initial condition also to CTL,
+        # so it can be used as an initial guess for nonlinear solvers
+        self.solution_ctl()[0].assign(w0_ch)
+        self.solution_ctl()[1].assign(w0_ns)
+
     load_ic_from_simple_cpp.__doc__ = \
       Discretization._inherit_docstring("load_ic_from_simple_cpp")
 
@@ -970,6 +976,11 @@ class FullyDecoupled(Discretization):
         for i, val in enumerate(values):
             w0[i].interpolate(
                 Expression(val, element=w0[i].ufl_element(), **coeffs[i]))
+
+        # Copy interpolated initial condition also to CTL,
+        # although it is not necessary in this case
+        for i, f in enumerate(w0):
+            self.solution_ctl()[i].assign(f)
 
     load_ic_from_simple_cpp.__doc__ = \
       Discretization._inherit_docstring("load_ic_from_simple_cpp")

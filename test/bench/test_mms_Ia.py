@@ -47,6 +47,7 @@ from muflon.common.timer import Timer
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
+#parameters["form_compiler"]["quadrature_degree"] = 4
 parameters["plotting_backend"] = "matplotlib"
 
 def create_domain(refinement_level):
@@ -242,10 +243,11 @@ def prepare_hook(t_src, model, esol, degrise, err):
     class TailoredHook(TSHook):
 
         def head(self, t, it, logger):
-            self.t_src.assign(Constant(t)) # update source terms
+            self.t_src[0].assign(Constant(t))    # update source terms @ CTL
             for key in six.iterkeys(self.esol):
                 self.esol[key].t = t # update exact solution (including bcs)
         def tail(self, t, it, logger):
+            self.t_src[-1].assign(Constant(t))   # update source terms @ PTL
             esol = self.esol
             degrise = self.degrise
             pv = self.model.discretization_scheme().primitive_vars_ctl()
@@ -319,11 +321,24 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
-            t_src = Function(DS.reals()); t_src.rename("t_src", "t_source")
-            f_src, g_src = create_source_terms(t_src, mesh, model, msol, matching_p)
-            # NOTE: Source terms are time-dependent. The updates to these terms
-            #       are possible via ``t_src.assign(Constant(t))``, where ``t``
+            cell = DS.mesh().ufl_cell()
+            t_src_ctl = Constant(0.0, cell=cell, name="t_src_ctl")
+            t_src_ptl = Constant(0.0, cell=cell, name="t_src_ptl")
+            f_src_ctl, g_src_ctl = \
+              create_source_terms(t_src_ctl, mesh, model, msol, matching_p)
+            f_src_ptl, g_src_ptl = \
+              create_source_terms(t_src_ptl, mesh, model, msol, matching_p)
+            # NOTE: Source terms are time-dependent. Updates to these terms
+            #       are possible via 't_src.assign(Constant(t))', where 't'
             #       denotes the actual time value.
+            t_src = [t_src_ctl,]
+            f_src = [f_src_ctl,]
+            g_src = [g_src_ctl,]
+            if OTD == 2 and scheme in ["Monolithic", "SemiDecoupled"]:
+                t_src.append(t_src_ptl)
+                g_src.append(g_src_ptl)
+                if scheme == "Monolithic":
+                    f_src.append(f_src_ptl)
             model.load_sources(f_src, g_src)
             forms = model.create_forms(matching_p)
 

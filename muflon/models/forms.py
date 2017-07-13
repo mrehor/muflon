@@ -124,8 +124,8 @@ class Model(object):
 
         # Initialize source terms
         zero = Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
-        self._f_src = as_vector(len(self._pv_ctl["v"])*[zero,])
-        self._g_src = as_vector(len(self._pv_ctl["phi"])*[zero,])
+        self._f_src = [as_vector(len(self._pv_ctl["v"])*[zero,]),]
+        self._g_src = [as_vector(len(self._pv_ctl["phi"])*[zero,]),]
 
         # Store time step
         self._dt = Function(DS.reals())    # function that wraps dt
@@ -196,8 +196,14 @@ class Model(object):
         Load external source terms.
 
         This method must be called before calling :py:meth:`Model.create_forms`
-        otherwise the source terms are automatically set to zero in the created
+        otherwise the source terms are automatically set to zero in created
         forms.
+
+        Note that one can pass source terms @ CTL and PTL in a ``list``,
+        i.e. ``f_src = [f_src_ctl, f_src_ptl]`` and similarly for g_src.
+
+        *Developer's note:* Even if ``f_src`` is a single (vector) expression,
+        it is wrapped into a list.
 
         :param f_src: external source term in the balance of linear momentum
         :type f_src: :py:class:`dolfin.Expression` or anything reasonable
@@ -205,11 +211,17 @@ class Model(object):
                       for **numerical testing only**
         :type g_src: :py:class:`dolfin.Expression` or anything reasonable
         """
-        assert len(f_src) == len(self._test["v"])
+        if not isinstance(f_src, (list, tuple)):
+            f_src = [f_src,]
+        assert len(f_src[0])  == len(self._test["v"])
+        assert len(f_src[-1]) == len(self._test["v"])
         self._f_src = f_src
 
-        if g_src is not None:
-            assert len(g_src) == len(self._test["phi"])
+        if g_src:
+            if not isinstance(g_src, (list, tuple)):
+                g_src = [g_src,]
+            assert len(g_src[0])  == len(self._test["phi"])
+            assert len(g_src[-1]) == len(self._test["phi"])
             self._g_src = g_src
 
     def create_forms(self, *args, **kwargs):
@@ -425,10 +437,9 @@ class Incompressible(Model):
             self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
             self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
             self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
-            # FIXME: resolve the following issue or ban this option
-            from dolfin import warning
-            warning("Time discretization of order %g for '%s'"
-                    " scheme does not work properly" % (OTD, self._DS.name()))
+            # from dolfin import warning
+            # warning("Time discretization of order %g for '%s'"
+            #         " scheme does not work properly" % (OTD, self._DS.name()))
         else:
             msg = "Time discretization of order %g for '%s'" \
                   " scheme is not implemented" % (OTD, self._DS.name())
@@ -463,7 +474,7 @@ class Incompressible(Model):
         # Primitive variables
         pv, pv0 = self._pv_ctl, self._pv_ptl[0]
         phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
-        phi0, v0 = pv0["phi"], pv0["v"]
+        phi0, v0, p0 = pv0["phi"], pv0["v"], pv0["p"]
 
         # Derivative of multi-well potential
         # -- automatic differentiation
@@ -494,12 +505,12 @@ class Incompressible(Model):
 
         # System of CH eqns
         Mo = cc["M0"] # FIXME: degenerate mobility
-        def G_phi(phi, chi, v):
+        def G_phi(phi, v, g_src):
             G = (
                   #inner(div(outer(phi, v)), test["chi"])
                   inner(dot(grad(phi), v), test["chi"])
-                - inner(g_src, test["chi"])
                 + Mo*inner(grad(chi), grad(test["chi"]))
+                - inner(g_src, test["chi"])
             )*dx
             return G
         # NOTE: A special quirk of Python is that -- if no global statement is
@@ -508,19 +519,19 @@ class Incompressible(Model):
         #       objects.
 
         dphidt = idt*inner(phi - phi0, test["chi"])*dx
-        G_phi_ctl = G_phi(phi, chi, v)
-        G_phi_ptl = G_phi(phi0, chi, v0) # NOTE: intentionally not chi0
+        G_phi_ctl = G_phi(phi, v, g_src[0])
+        G_phi_ptl = G_phi(phi0, v0, g_src[-1])
         eqn_phi = dphidt + fact_ctl*G_phi_ctl + fact_ptl*G_phi_ptl
 
-        def G_chi(phi, chi):
+        def G_chi(phi):
             G = (
                   inner(chi, test["phi"])
                 - 0.5*cc["a"]*cc["eps"]*inner(grad(phi), grad(test["phi"]))
                 - (cc["b"]/cc["eps"])*inner(dot(cc["iLA"], dF), test["phi"])
             )*dx
             return G
-        G_chi_ctl = G_chi(phi, chi)
-        G_chi_ptl = G_chi(phi0, chi) # NOTE: intentionally not chi0
+        G_chi_ctl = G_chi(phi)
+        G_chi_ptl = G_chi(phi0)
         eqn_chi = fact_ctl*G_chi_ctl + fact_ptl*G_chi_ptl
 
         system_ch = eqn_phi + eqn_chi
@@ -528,7 +539,7 @@ class Incompressible(Model):
         # System of NS eqns
         rho_mat = self.collect_material_params("rho")
         nu_mat = self.collect_material_params("nu")
-        def G_v(phi, chi, v, p):
+        def G_v(phi, v, p, f_src):
             # Homogenized quantities
             rho = self.homogenized_quantity(rho_mat, phi)
             nu = self.homogenized_quantity(nu_mat, phi)
@@ -550,8 +561,8 @@ class Incompressible(Model):
 
         rho = self.homogenized_quantity(rho_mat, phi)
         dvdt = idt*rho*inner(v - v0, test["v"])*dx
-        G_v_ctl = G_v(phi, chi, v, p)
-        G_v_ptl = G_v(phi0, chi, v0, p) # NOTE: intentionally not p0, chi0
+        G_v_ctl = G_v(phi, v, p, f_src[0])
+        G_v_ptl = G_v(phi0, v0, p, f_src[-1]) # NOTE: intentionally not p0
         eqn_v = dvdt + fact_ctl*G_v_ctl + fact_ptl*G_v_ptl
 
         def G_p(v):
@@ -577,10 +588,9 @@ class Incompressible(Model):
             self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
             self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
             self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
-            # FIXME: resolve the following issue or ban this option
-            from dolfin import warning
-            warning("Time discretization of order %g for '%s'"
-                   " scheme does not work properly" % (OTD, self._DS.name()))
+            # from dolfin import warning
+            # warning("Time discretization of order %g for '%s'"
+            #        " scheme does not work properly" % (OTD, self._DS.name()))
         else:
             msg = "Time discretization of order %g for '%s'" \
                   " scheme is not implemented" % (OTD, self._DS.name())
@@ -642,7 +652,7 @@ class Incompressible(Model):
         trial = self._trial
 
         # Source terms
-        f_src = self._f_src
+        f_src = self._f_src[0]
         g_src = self._g_src
 
         # Reciprocal time step
@@ -669,11 +679,12 @@ class Incompressible(Model):
 
         # System of CH eqns
         Mo = cc["M0"] # FIXME: degenerate mobility
+        g_src_star = fact_ctl*g_src[0] + fact_ptl*g_src[-1]
         eqn_phi = (
               idt*inner(phi - phi0, test["chi"])
             - inner(ca, dot(grad(test["chi"]), v_star))
-            - inner(g_src, test["chi"])
             + Mo*inner(grad(chi), grad(test["chi"]))
+            - inner(g_src_star, test["chi"])
         )*dx
         if matching_p:
             eqn_phi -= inner(grad(inner(ca, test["chi"])), v_star)*dx
@@ -803,8 +814,8 @@ class Incompressible(Model):
         #dF_star = multiwell_derivative(dw, phi_star, phi0, S, False)
 
         # Source terms
-        f_src = self._f_src
-        g_src = self._g_src
+        f_src = self._f_src[0]
+        g_src = self._g_src[0]
 
         # Reciprocal time step
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)

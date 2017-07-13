@@ -47,6 +47,7 @@ from test_mms_Ia import (
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
+#parameters["form_compiler"]["quadrature_degree"] = 4
 parameters["plotting_backend"] = "matplotlib"
 
 @pytest.mark.parametrize("matching_p", [False,])
@@ -95,8 +96,21 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
-            t_src = Function(DS.reals()); t_src.rename("t_src", "t_source")
-            f_src, g_src = create_source_terms(t_src, mesh, model, msol, matching_p)
+            cell = DS.mesh().ufl_cell()
+            t_src_ctl = Constant(0.0, cell=cell, name="t_src_ctl")
+            t_src_ptl = Constant(0.0, cell=cell, name="t_src_ptl")
+            f_src_ctl, g_src_ctl = \
+              create_source_terms(t_src_ctl, mesh, model, msol, matching_p)
+            f_src_ptl, g_src_ptl = \
+              create_source_terms(t_src_ptl, mesh, model, msol, matching_p)
+            t_src = [t_src_ctl,]
+            f_src = [f_src_ctl,]
+            g_src = [g_src_ctl,]
+            if OTD == 2 and scheme in ["Monolithic", "SemiDecoupled"]:
+                t_src.append(t_src_ptl)
+                g_src.append(g_src_ptl)
+                if scheme == "Monolithic":
+                    f_src.append(f_src_ptl)
             model.load_sources(f_src, g_src)
             forms = model.create_forms(matching_p)
 

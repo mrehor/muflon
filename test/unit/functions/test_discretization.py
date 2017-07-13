@@ -59,10 +59,7 @@ def test_discretization_schemes(scheme, N, dim, th):
 
     # Check variable names
     names = DS.variable_names()
-    if th:
-        assert len(names) == 5
-    else:
-        assert len(names) == 4
+    assert len(names) == 5
     del names
 
     # Get facet normal
@@ -167,8 +164,11 @@ def test_discretization_schemes(scheme, N, dim, th):
     # assign to PTL-0
     DS.load_ic_from_simple_cpp(ic)
     # check the result
+    pv = DS.primitive_vars_ctl(deepcopy=True)
     pv0 = DS.primitive_vars_ptl(0, deepcopy=True)
+    v = pv["v"].split(deepcopy=True) # get components of v
     v0 = pv0["v"].split(deepcopy=True) # get components of v0
+    assert v[0].vector().array()[0] == 1.0
     assert v0[0].vector().array()[0] == 1.0
 
     # # Visual check
