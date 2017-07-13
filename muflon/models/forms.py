@@ -127,10 +127,8 @@ class Model(object):
         self._f_src = [as_vector(len(self._pv_ctl["v"])*[zero,]),]
         self._g_src = [as_vector(len(self._pv_ctl["phi"])*[zero,]),]
 
-        # Store time step
-        self._dt = Function(DS.reals())    # function that wraps dt
-        self._dt.rename("dt", "time_step") # rename for easy identification
-        self._dt.assign(Constant(0.0))     # assign the initial value
+        # Store time step in a Constant
+        self._dt = Constant(0.0, cell=DS.mesh().ufl_cell(), name="dt")
 
         # Initialize flags
         self._flag_forms = False
