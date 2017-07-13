@@ -24,6 +24,7 @@ This module contains various utilities designed for testing of MUFLON.
 import pickle, os
 
 from muflon.common.boilerplate import prepare_output_directory
+from muflon.common.boilerplate import not_implemented_msg
 
 class GenericPostprocessorMMS(object):
     """
@@ -92,11 +93,8 @@ class GenericPostprocessorMMS(object):
                 except EOFError:
                     break
 
-    @staticmethod
-    def _create_figure():
-        msg = "You need to implement a method '%s' of class '%s'." \
-          % ("_create_figure", str(GenericPostprocessorMMS))
-        raise NotImplementedError(msg)
+    def _create_figure(self):
+        not_implemented_msg(self)
 
 
 def read_postprocessor(datafile):

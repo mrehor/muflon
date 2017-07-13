@@ -69,6 +69,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
     # Fixed parameters
     OTD = postprocessor.OTD
     level = postprocessor.level
+    k = postprocessor.OPA
     t_end = postprocessor.t_end
 
     # Names and directories
@@ -81,15 +82,15 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 
     # Prepare space discretization, exact solution and bcs
     mesh, boundary_markers = create_domain(level)
-    DS = create_discretization(scheme, mesh)
+    DS = create_discretization(scheme, mesh, k)
     DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
     DS.setup()
     esol = create_exact_solution(msol, DS.finite_elements(), degrise)
     bcs = create_bcs(DS, boundary_markers, esol)
 
     # Iterate over time step
-    for k in range(3): # FIXME: set to 7
-        dt = 0.1*0.5**k
+    for m in range(5): # FIXME: set to 7
+        dt = 0.1*0.5**m
         with Timer("Prepare") as tmr_prepare:
             # Reset sol_ptl[0] back to initial conditions
             DS.load_ic_from_simple_cpp(ic)
@@ -154,7 +155,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
             OTD=OTD,
             err=hook.err,
             level=level,
-            #hmin=mesh.hmin(),
+            k=k,
             tmr_prepare=tmr_prepare.elapsed()[0],
             tmr_tstepping=tmr_tstepping.elapsed()[0]
         )
@@ -187,17 +188,18 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    level = 5   # NOTE set to 6 for direct solvers
     t_end = 0.2 # FIXME: set t_end = 1.0
+    level = 1   # NOTE: set to 6 for direct solvers
+    OPA = 7     # Order of Polynomial Approximation
     OTD = 2
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(t_end, level, OTD, outdir)
+    proc = Postprocessor(t_end, level, OTD, OPA, outdir)
 
     # Decide what should be plotted
     proc.register_fixed_variables(
-        (("level", level), ("t_end", t_end), ("OTD", OTD)))
+        (("level", level), ("k", OPA), ("t_end", t_end), ("OTD", OTD)))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -215,13 +217,14 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericPostprocessorMMS):
-    def __init__(self, t_end, level, OTD, outdir):
+    def __init__(self, t_end, level, OTD, OPA, outdir):
         super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
         self.t_end = t_end
         self.level = level
         self.OTD = OTD
+        self.OPA = OPA
 
         # So far hardcoded values
         self.x_var = "dt"
@@ -229,7 +232,7 @@ class Postprocessor(GenericPostprocessorMMS):
         self.y_var1 = "tmr_tstepping"
 
         # Store names
-        self.basename = "level_{}_t_end_{}_OTD_{}".format(level, t_end, OTD)
+        self.basename = "level_{}_k_{}_t_end_{}_OTD_{}".format(level, OPA, t_end, OTD)
 
     def flush_plots(self):
         if not self.plots:
@@ -306,8 +309,7 @@ class Postprocessor(GenericPostprocessorMMS):
             pdf.savefig(fig)
         pdf.close()
 
-    @staticmethod
-    def _create_figure():
+    def _create_figure(self):
         fig1, fig2 = pyplot.figure(), pyplot.figure()
         gs = gridspec.GridSpec(2, 2, width_ratios=[1, 0.01],
                                height_ratios=[10, 1], hspace=0.1)

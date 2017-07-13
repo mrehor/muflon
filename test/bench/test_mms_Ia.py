@@ -47,7 +47,6 @@ from muflon.common.timer import Timer
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
-#parameters["form_compiler"]["quadrature_degree"] = 4
 parameters["plotting_backend"] = "matplotlib"
 
 def create_domain(refinement_level):
@@ -66,12 +65,12 @@ def create_domain(refinement_level):
 
     return mesh, boundary_markers
 
-def create_discretization(scheme, mesh):
+def create_discretization(scheme, mesh, k=1):
     # Prepare finite elements
-    P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
-    P2 = FiniteElement("Lagrange", mesh.ufl_cell(), 2)
+    Pk = FiniteElement("Lagrange", mesh.ufl_cell(), k)
+    Pk1 = FiniteElement("Lagrange", mesh.ufl_cell(), k+1)
 
-    return DiscretizationFactory.create(scheme, mesh, P1, P1, P2, P1)
+    return DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk)
 
 def create_manufactured_solution():
     coeffs_NS = dict(A0=2.0, a0=pi, b0=pi, w0=1.0)
@@ -298,6 +297,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
     OTD = postprocessor.OTD
     dt = postprocessor.dt
     t_end = postprocessor.t_end
+    test_type = postprocessor.test
 
     # Names and directories
     basename = postprocessor.basename
@@ -308,11 +308,18 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
-    for level in range(1, 6): # NOTE: set max to 8 for direct solvers
+    for it in range(1, 8): # NOTE: set max to 8 for direct solvers
+        # Decide which test to perform
+        if test_type == "ref":
+            level = it
+            k = 1
+        elif test_type == "ord":
+            level = 1
+            k = it
         with Timer("Prepare") as tmr_prepare:
             # Prepare discretization
             mesh, boundary_markers = create_domain(level)
-            DS = create_discretization(scheme, mesh)
+            DS = create_discretization(scheme, mesh, k)
             DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
@@ -355,7 +362,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
             # phi_, chi_, v_ = phi.split(), chi.split(), v.split()
             xfields = None #list(phi_) + list(v_) + [p.dolfin_repr(),]
             hook = prepare_hook(t_src, model, esol, degrise, {})
-            logfile = "log_{}_level_{}_{}.dat".format(basename, level, scheme)
+            logfile = "log_{}_level_{}_k_{}_{}.dat".format(basename, level, k, scheme)
             #info("BREAK POINT %ia" % level)
             TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
@@ -380,6 +387,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
 
         # Prepare results
         name = logfile[4:-4]
+        x_var = k if test_type == "ord" else mesh.hmin()
         result.update(
             ndofs=DS.num_dofs(),
             scheme=scheme,
@@ -387,8 +395,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
             t_end=t_end,
             OTD=OTD,
             err=hook.err,
-            #level=level,
-            hmin=mesh.hmin(),
+            x_var=x_var,
             tmr_prepare=tmr_prepare.elapsed()[0],
             tmr_tstepping=tmr_tstepping.elapsed()[0]
         )
@@ -424,10 +431,11 @@ def postprocessor(request):
     dt = 0.001
     t_end = 0.005 # FIXME: set t_end = 0.1
     OTD = 2
+    test = 0 # 0 ... order, 1 ... refinement
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(dt, t_end, OTD, outdir)
+    proc = Postprocessor(dt, t_end, OTD, test, outdir)
 
     # Decide what should be plotted
     proc.register_fixed_variables((("dt", dt), ("t_end", t_end), ("OTD", OTD)))
@@ -448,21 +456,25 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericPostprocessorMMS):
-    def __init__(self, dt, t_end, OTD, outdir):
+    def __init__(self, dt, t_end, OTD, test, outdir):
         super(Postprocessor, self).__init__(outdir)
+
+        # Determine test_type
+        _test_type = ["ord", "ref"]
 
         # Hack enabling change of fixed variables at one place
         self.dt = dt
         self.t_end = t_end
         self.OTD = OTD
+        self.test = _test_type[test]
 
         # So far hardcoded values
-        self.x_var = "hmin" #"level"
+        self.x_var = "x_var"
         self.y_var0 = "err"
         self.y_var1 = "tmr_tstepping" # "tmr_solve"
 
         # Store names
-        self.basename = "dt_{}_t_end_{}_OTD_{}".format(dt, t_end, OTD)
+        self.basename = "{}_dt_{}_t_end_{}_OTD_{}".format(self.test, dt, t_end, OTD)
 
     def flush_plots(self):
         if not self.plots:
@@ -495,7 +507,7 @@ class Postprocessor(GenericPostprocessorMMS):
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
                 self._plot(fig, xs, ys0, ys1, free_vars, style)
-            self._save_plot(fig, fixed_vars, self.outdir)
+            self._save_plot(fig, fixed_vars, self.outdir, self.test+"_")
         self.results = []
 
     @staticmethod
@@ -517,18 +529,17 @@ class Postprocessor(GenericPostprocessorMMS):
                    fontsize='x-small', ncol=3)
 
     @staticmethod
-    def _save_plot(fig, fixed_vars, outdir=""):
+    def _save_plot(fig, fixed_vars, outdir="", prefix=""):
         subfigs, (ax1, ax2) = fig
         filename = "_".join(map(str, itertools.chain(*fixed_vars)))
         import matplotlib.backends.backend_pdf
         pdf = matplotlib.backends.backend_pdf.PdfPages(
-                  os.path.join(outdir, "fig_" + filename + ".pdf"))
+                  os.path.join(outdir, "fig_" + prefix + filename + ".pdf"))
         for fig in subfigs:
             pdf.savefig(fig)
         pdf.close()
 
-    @staticmethod
-    def _create_figure():
+    def _create_figure(self):
         fig1, fig2 = pyplot.figure(), pyplot.figure()
         gs = gridspec.GridSpec(2, 2, width_ratios=[1, 0.01],
                                height_ratios=[10, 1], hspace=0.1)
@@ -540,12 +551,17 @@ class Postprocessor(GenericPostprocessorMMS):
         #ax1.xaxis.set_tick_params(labeltop="on", labelbottom="off")
         #pyplot.setp(ax2.get_xticklabels(), visible=False)
         # Set scales
-        ax1.set_xscale("log")
+        if self.test == "ref":
+            ax1.set_xscale("log")
+            ax2.set_xscale("log")
+        if self.test == "ord":
+            from matplotlib.ticker import MaxNLocator
+            ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax1.set_yscale("log")
-        ax2.set_xscale("log")
         ax2.set_yscale("log")
         # Set labels
-        ax1.set_xlabel("$h_{\min}$")
+        xlabel = "$h_{\min}$" if self.test == "ref" else "Element order"
+        ax1.set_xlabel(xlabel)
         ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("$L^2$ errors")
         ax2.set_ylabel("CPU time")
