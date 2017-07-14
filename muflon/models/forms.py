@@ -675,8 +675,8 @@ class Incompressible(Model):
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
         # Capillary force
-        domain_vol = assemble(Constant(1.0)*dx(self._DS.mesh()))
-        alpha = [assemble(phi0[i]*dx)/domain_vol for i in range(len(phi0))]
+        domain_size = self._DS.compute_domain_size()
+        alpha = [assemble(phi0[i]*dx)/domain_size for i in range(len(phi0))]
         ca = as_vector([phi0[i] - Constant(alpha[i]) for i in range(len(phi0))])
         if matching_p:
             f_cap = capillary_force(phi0, chi, cc["LA"])

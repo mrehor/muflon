@@ -52,7 +52,8 @@ Typical usage:
 from ufl.tensors import ListTensor
 from dolfin import as_vector, split, FacetNormal
 from dolfin import Parameters, VectorElement, MixedElement, FunctionSpace
-from dolfin import Function, TrialFunction, TestFunction, Expression
+from dolfin import Function, TrialFunction, TestFunction, Expression, Constant
+from dolfin import assemble, dx
 
 from muflon.common.boilerplate import not_implemented_msg
 from muflon.common.parameters import mpset
@@ -332,6 +333,18 @@ class Discretization(object):
         :rtype: :py:class:`dolfin.Mesh`
         """
         return self._mesh
+
+    def compute_domain_size(self):
+        """
+        Computes size (length/area/volume depending on the dimension) of the
+        mesh on which the discretization scheme is being built.
+
+        :returns: size of the computational domain
+        :rtype: float
+        """
+        if not hasattr(self, "_domain_size"):
+            self._domain_size = assemble(Constant(1.0)*dx(self._mesh))
+        return self._domain_size
 
     def facet_normal(self):
         """
