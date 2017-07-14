@@ -106,7 +106,7 @@ class Solver(object):
         self.data["model"] = model
         self.data["forms"] = forms
 
-    def sol_ctl(self):
+    def solution_ctl(self):
         """
         Provides access to solution functions at current time level.
 

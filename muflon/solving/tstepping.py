@@ -294,7 +294,7 @@ class ConstantTimeStep(TimeStepping):
             for k in reversed(range(1, L)): # k goes from L-1 to 1
                 for (i, w) in enumerate(sol_ptl[k-1]):
                     sol_ptl[k][i].assign(w) # t^(n-k) <-- t^(n-k+1)
-            for (i, w) in enumerate(solver.sol_ctl()):
+            for (i, w) in enumerate(solver.solution_ctl()):
                 sol_ptl[0][i].assign(w) # t^(n-0) <-- t^(n+1)
 
         # Flush output from logger
