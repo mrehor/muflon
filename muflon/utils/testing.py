@@ -26,10 +26,10 @@ import pickle, os
 from muflon.common.boilerplate import prepare_output_directory
 from muflon.common.boilerplate import not_implemented_msg
 
-class GenericPostprocessorMMS(object):
+class GenericBenchPostprocessor(object):
     """
     This class represents generic interface for postprocessing of the results
-    obtained from benchmarks based on the Method of Manufactured Solutions.
+    obtained from muflon's benchmarks.
     """
     def __init__(self, outdir=""):
         self.plots = {}

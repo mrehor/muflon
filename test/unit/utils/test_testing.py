@@ -3,14 +3,14 @@ import os
 
 from dolfin import mpi_comm_world, MPI
 
-from muflon.utils.testing import GenericPostprocessorMMS
+from muflon.utils.testing import GenericBenchPostprocessor
 
-def test_GenericPostprocessorMMS():
+def test_GenericBenchPostprocessor():
     comm = mpi_comm_world()
     rank = MPI.rank(comm)
 
     # Create postprocessor
-    p1 = GenericPostprocessorMMS()
+    p1 = GenericBenchPostprocessor()
     p1.register_fixed_variables((("a", 1), ("b", 2)))
 
     # Test that 'create_plots' raises for generic class
@@ -45,7 +45,7 @@ def test_GenericPostprocessorMMS():
     p1.save_results(fname)
 
     # Create another empty postprocessor
-    p2 = GenericPostprocessorMMS()
+    p2 = GenericBenchPostprocessor()
 
     # Test reading the results from binary
     p2.read_results(rank, fname)

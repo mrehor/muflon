@@ -34,7 +34,7 @@ from matplotlib import pyplot, gridspec
 
 from muflon import mpset, ModelFactory, SolverFactory, TimeSteppingFactory
 
-from muflon.utils.testing import GenericPostprocessorMMS
+from muflon.utils.testing import GenericBenchPostprocessor
 
 # FIXME: remove the following workaround
 from muflon.common.timer import Timer
@@ -216,7 +216,7 @@ def postprocessor(request):
     request.addfinalizer(fin)
     return proc
 
-class Postprocessor(GenericPostprocessorMMS):
+class Postprocessor(GenericBenchPostprocessor):
     def __init__(self, t_end, level, OTD, OPA, outdir):
         super(Postprocessor, self).__init__(outdir)
 

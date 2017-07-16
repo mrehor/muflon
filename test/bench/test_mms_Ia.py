@@ -40,7 +40,7 @@ from muflon import TimeSteppingFactory, TSHook
 from muflon import DoublewellFactory, multiwell
 from muflon import capillary_force, total_flux
 
-from muflon.utils.testing import GenericPostprocessorMMS
+from muflon.utils.testing import GenericBenchPostprocessor
 
 # FIXME: remove the following workaround
 from muflon.common.timer import Timer
@@ -460,7 +460,7 @@ def postprocessor(request):
     request.addfinalizer(fin)
     return proc
 
-class Postprocessor(GenericPostprocessorMMS):
+class Postprocessor(GenericBenchPostprocessor):
     def __init__(self, dt, t_end, OTD, test, outdir):
         super(Postprocessor, self).__init__(outdir)
 
