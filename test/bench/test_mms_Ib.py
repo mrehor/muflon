@@ -55,7 +55,7 @@ parameters["plotting_backend"] = "matplotlib"
 def test_scaling_time(scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
-    gradually time step.
+    gradually decreasing time step.
     """
     set_log_level(WARNING)
 
@@ -63,7 +63,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 
     # Read parameters
     scriptdir = os.path.dirname(os.path.realpath(__file__))
-    prm_file = os.path.join(scriptdir, "muflon-parameters.xml")
+    prm_file = os.path.join(scriptdir, "mms-parameters.xml")
     mpset.read(prm_file)
 
     # Fixed parameters
