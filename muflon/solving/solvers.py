@@ -25,9 +25,10 @@ import six
 
 from collections import OrderedDict
 
-from dolfin import derivative, lhs, rhs, assemble, begin, end
+from dolfin import derivative, lhs, rhs, assemble, dx, begin, end
 from dolfin import NonlinearVariationalProblem, NonlinearVariationalSolver
-from dolfin import LUSolver
+from dolfin import NewtonSolver, NonlinearProblem, SystemAssembler
+from dolfin import as_backend_type, LUSolver
 
 from muflon.common.boilerplate import not_implemented_msg
 from muflon.models.forms import Model
@@ -86,7 +87,7 @@ class Solver(object):
             msg = "Cannot create solver from a generic class."
             not_implemented_msg(self, msg)
 
-    def __init__(self, model, forms=None, name=None):
+    def __init__(self, model, forms=None, name=None, fix_p=False):
         """
         :param model: model of the CHNSF type
         :type model: :py:class:`Model <muflon.models.forms.Model>`
@@ -96,6 +97,9 @@ class Solver(object):
         :param name: name of the solver (if ``None`` then it is extracted
                      from ``model``)
         :type name: str
+        :param fix_p: set this parameter to True value if you want to fix
+                      the pressure so its mean value is equal to zero
+        :type fix_p: bool
         """
         # Get bare version of forms if not given
         if forms is None:
@@ -106,6 +110,10 @@ class Solver(object):
         self.data["model"] = model
         self.data["forms"] = forms
 
+        # Initialize flags
+        self._flags = OrderedDict()
+        self._flags["fix_p"] = fix_p
+
     def solution_ctl(self):
         """
         Provides access to solution functions at current time level.
@@ -114,6 +122,24 @@ class Solver(object):
         :rtype: tuple
         """
         return self.data["model"].discretization_scheme().solution_ctl()
+
+    def _calibrate_pressure(self, sol_fcn, null_fcn):
+        """
+        Corrects pressure values so that :math:`\\int_{\\Omega} p \\; dx = 0`.
+
+        :param sol_fcn: "a pointer" to solution function, whose vector of DOF
+                        is going to be modified here
+        :type sol_fcn: :py:class:`dolfin.Function`
+        :param null_fcn: a function representing the constant vector that forms
+                         the basis of pressure null space (must respect the
+                         shape of ``sol_fcn``, so `axpy` operation may be used)
+        :type null_fcn: :py:class:`dolfin.Function`
+        """
+        DS = self.data["model"].discretization_scheme()
+        domain_size = DS.compute_domain_size()
+        p = DS.primitive_vars_ctl()["p"].dolfin_repr()
+        p_corr = assemble(p*dx)/domain_size
+        sol_fcn.vector().axpy(-p_corr, null_fcn.vector())
 
 # --- Monolithic nonlinear solver ---------------------------------------------
 
@@ -125,6 +151,27 @@ class Monolithic(Solver):
     class Factory(object):
         def create(self, *args, **kwargs):
             return Monolithic(*args, **kwargs)
+
+    class Problem(NonlinearProblem):
+        """
+        Class for interfacing with :py:class:`NewtonSolver`.
+        """
+        def __init__(self, F, bcs, J, null_space=None):
+            super(Monolithic.Problem, self).__init__()
+            self.assembler = SystemAssembler(J, F, bcs)
+            self.null_space = null_space
+
+        def F(self, b, x):
+            self.assembler.assemble(b, x)
+            if self.null_space:
+                # Orthogonalize RHS vector b with respect to the null space
+                self.null_space.orthogonalize(b)
+
+        def J(self, A, x):
+            self.assembler.assemble(A)
+            if self.null_space:
+                # Attach null space to PETSc matrix
+                as_backend_type(A).set_nullspace(self.null_space)
 
     def __init__(self, *args, **kwargs):
         """
@@ -138,7 +185,8 @@ class Monolithic(Solver):
         super(Monolithic, self).__init__(*args, **kwargs)
 
         # Adjust forms
-        w = self.data["model"].discretization_scheme().solution_ctl()[0]
+        DS = self.data["model"].discretization_scheme()
+        w = DS.solution_ctl()[0]
         F = self.data["forms"]["nln"]
         J = derivative(F, w)
 
@@ -151,20 +199,33 @@ class Monolithic(Solver):
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
 
         # Adjust solver
-        problem = NonlinearVariationalProblem(F, w, bcs, J)
-        solver = NonlinearVariationalSolver(problem)
-        solver.parameters['newton_solver']['absolute_tolerance'] = 1E-8
-        solver.parameters['newton_solver']['relative_tolerance'] = 1E-16
-        solver.parameters['newton_solver']['maximum_iterations'] = 25
-        solver.parameters['newton_solver']['linear_solver'] = "mumps"
-        #solver.parameters['newton_solver']['relaxation_parameter'] = 1.0
+        solver = NewtonSolver()
+        solver.parameters['absolute_tolerance'] = 1E-8
+        solver.parameters['relative_tolerance'] = 1E-16
+        solver.parameters['maximum_iterations'] = 10
+        solver.parameters['linear_solver'] = "mumps"
+        #solver.parameters['relaxation_parameter'] = 1.0
+
+        # Preparation for tackling singular systems
+        null_space = None
+        if self._flags["fix_p"]:
+            null_space, null_fcn = DS.build_pressure_null_space()
+            self.data["null_fcn"] = null_fcn
+
+        # Store solvers and collect other data
         self.data["solver"] = solver
+        self.data["problem"] = Monolithic.Problem(F, bcs, J, null_space)
+        self.data["sol_fcn"] = w
 
     def solve(self):
         """
         Perform one solution step (in time).
         """
-        self.data["solver"].solve()
+        self.data["solver"].solve(
+            self.data["problem"], self.data["sol_fcn"].vector())
+
+        if self._flags["fix_p"]:
+            self._calibrate_pressure(self.data["sol_fcn"], self.data["null_fcn"])
 
 # --- Semi-decoupled nonlinear solver ---------------------------------------------
 
@@ -202,7 +263,6 @@ class SemiDecoupled(Solver):
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
 
         # Prepare solver for CH part
-        flag = False
         F = self.data["forms"]["nln"]
         J = derivative(F, w_ch)
         problem = NonlinearVariationalProblem(F, w_ch, bcs_ch, J)
@@ -221,6 +281,12 @@ class SemiDecoupled(Solver):
         self.data["sol_ns"] = w_ns
         self.data["bcs_ns"] = bcs_ns
 
+        # Preparation for tackling singular systems
+        if self._flags["fix_p"]:
+            null_space, null_fcn = DS.build_pressure_null_space()
+            self.data["null_space"] = null_space
+            self.data["null_fcn"] = null_fcn
+
     def solve(self):
         """
         Perform one solution step (in time).
@@ -234,7 +300,18 @@ class SemiDecoupled(Solver):
         b = assemble(self.data["forms"]["lin"]["rhs"])
         for bc in self.data["bcs_ns"]:
                 bc.apply(A, b)
+
+        if self._flags["fix_p"]:
+            # Attach null space to PETSc matrix
+            as_backend_type(A).set_nullspace(self.data["null_space"])
+            # Orthogonalize RHS vector b with respect to the null space
+            self.data["null_space"].orthogonalize(b)
+
         self.data["solver"]["NS"].solve(A, self.data["sol_ns"].vector(), b)
+
+        if self._flags["fix_p"]:
+            self._calibrate_pressure(
+                self.data["sol_ns"], self.data["null_fcn"])
         end()
 
 # --- FullyDecoupled linear solver --------------------------------------------
@@ -268,7 +345,6 @@ class FullyDecoupled(Solver):
         self.data["solver"] = solver
 
         # Initialize flags
-        self._flags = OrderedDict()
         self._flags["setup"] = False
 
     def _assemble_constant_matrices(self):
@@ -307,6 +383,14 @@ class FullyDecoupled(Solver):
         _sol["p"] = w[2*n+gdim]
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
 
+        # Preparation for tackling singular systems
+        if self._flags["fix_p"]:
+            null_space, null_fcn = DS.build_pressure_null_space()
+            self.data["null_space"] = null_space
+            self.data["null_fcn"] = null_fcn
+            # Attach null space to PETSc matrix
+            as_backend_type(_A["p"]).set_nullspace(null_space)
+
         # Store matrices + grouped right hand sides and solution functions
         self.data["A"]   = _A
         self.data["rhs"] = _rhs
@@ -337,8 +421,16 @@ class FullyDecoupled(Solver):
         b = assemble(self.data["rhs"]["p"])
         for bc in self.data["bcs"].get("p", []):
             bc.apply(b)
+        if self._flags["fix_p"]:
+            # Orthogonalize RHS vector b with respect to the null space
+            self.data["null_space"].orthogonalize(b)
+
         solver["p"].solve(
             self.data["A"]["p"], self.data["sol"]["p"].vector(), b)
+
+        if self._flags["fix_p"]:
+            self._calibrate_pressure(
+                self.data["sol"]["p"], self.data["null_fcn"])
         end()
 
         begin("Velocity step")

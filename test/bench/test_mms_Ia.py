@@ -139,11 +139,16 @@ def create_bcs(DS, boundary_markers, esol):
     bcs_v2 = DirichletBC(DS.subspace("v", 1), esol["v2"], boundary_markers, 0)
     bcs = {}
     bcs["v"] = [(bcs_v1, bcs_v2),]
-    bcs["p"] = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
+    # Possible bcs fixing the pressure
+    # -- 1. Dirichlet on the whole boundary
+    # bcs["p"] = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
+    # -- 2. Dirichlet in the corner
     # corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=-1.0)
-    # bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0),
-    #                         corner, method="pointwise"),]
-
+    # bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0), corner, method="pointwise"),]
+    # NOTE:
+    #   The above pressure bcs are not needed anymore as we can attach the null
+    #   space to the system matrix and we can postprocess the pressure so its
+    #   mean value is equal to zero (see 'fix_p' option in solver definition)
     return bcs
 
 def create_source_terms(t_src, mesh, model, msol, matching_p):
@@ -281,8 +286,8 @@ def prepare_hook(t_src, model, esol, degrise, err):
 @pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
 def test_scaling_mesh(scheme, matching_p, postprocessor):
     """
-    Compute convergence rates for fixed element order, fixed time step and
-    gradually refined mesh.
+    Compute convergence rates for fixed time step and gradually refined mesh or
+    increasing element order.
     """
     set_log_level(WARNING)
 
@@ -353,7 +358,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
             #       boundary integrals.
 
             # Prepare solver
-            solver = SolverFactory.create(model, forms)
+            solver = SolverFactory.create(model, forms, fix_p=True)
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()

@@ -54,6 +54,7 @@ from dolfin import as_vector, split, FacetNormal
 from dolfin import Parameters, VectorElement, MixedElement, FunctionSpace
 from dolfin import Function, TrialFunction, TestFunction, Expression, Constant
 from dolfin import assemble, dx
+from dolfin import Vector, VectorSpaceBasis
 
 from muflon.common.boilerplate import not_implemented_msg
 from muflon.common.parameters import mpset
@@ -619,6 +620,29 @@ class Discretization(object):
         """
         not_implemented_msg(self)
 
+    def build_pressure_null_space(self):
+        """
+        An abstract method.
+
+        This method takes responsibility for building the null space associated
+        with pressure values for problems in which pressure is not fixed at the
+        boundary. (There is only :math:`\\nabla p` in Navier-Stokes equations,
+        which leads to the fact that in such type of problems the pressure is
+        unique up to a constant.) The null space can be later attached to the
+        system matrix.
+
+        This method also returns a constant vector with pressure DOFs being set
+        to one and other DOFs being set to zero. This vector forms the basis of
+        the created null space and can be used to postprocess computed pressure
+        in a way that its (integral) mean value is equal to zero.
+
+        :returns: a pair of null space represented by a
+                  :py:class:`dolfin.VectorSpaceBasis` object and the
+                  corresponding basis vector as a :py:class:`Function` object
+        :rtype: tuple
+        """
+        not_implemented_msg(self)
+
     @classmethod
     def _inherit_docstring(cls, meth):
         doc = eval("cls." + meth + ".__doc__")
@@ -741,6 +765,24 @@ class Monolithic(Discretization):
 
     load_ic_from_simple_cpp.__doc__ = \
       Discretization._inherit_docstring("load_ic_from_simple_cpp")
+
+    def build_pressure_null_space(self):
+        # Prepare function used to correct pressure values
+        W = self.function_spaces()[0]
+        null_fcn = Function(W)
+        W.sub(3).dofmap().set(null_fcn.vector(), 1.0)
+
+        # Create vector that spans the null space and normalize
+        null_vec = Vector(null_fcn.vector())
+        null_vec *= 1.0/null_vec.norm("l2")
+
+        # Create null space basis object
+        null_space = VectorSpaceBasis([null_vec])
+
+        return (null_space, null_fcn)
+
+    build_pressure_null_space.__doc__ = \
+      Discretization._inherit_docstring("build_pressure_null_space")
 
 # --- Semi-decoupled discretization scheme ------------------------------------
 
@@ -877,6 +919,24 @@ class SemiDecoupled(Discretization):
     load_ic_from_simple_cpp.__doc__ = \
       Discretization._inherit_docstring("load_ic_from_simple_cpp")
 
+    def build_pressure_null_space(self):
+        # Prepare function used to correct pressure values
+        W_ns = self.function_spaces()[1]
+        null_fcn = Function(W_ns)
+        W_ns.sub(1).dofmap().set(null_fcn.vector(), 1.0)
+
+        # Create vector that spans the null space and normalize
+        null_vec = Vector(null_fcn.vector())
+        null_vec *= 1.0/null_vec.norm("l2")
+
+        # Create null space basis object
+        null_space = VectorSpaceBasis([null_vec])
+
+        return (null_space, null_fcn)
+
+    build_pressure_null_space.__doc__ = \
+      Discretization._inherit_docstring("build_pressure_null_space")
+
 # --- Fully-decoupled discretization scheme -----------------------------------
 
 class FullyDecoupled(Discretization):
@@ -997,3 +1057,20 @@ class FullyDecoupled(Discretization):
 
     load_ic_from_simple_cpp.__doc__ = \
       Discretization._inherit_docstring("load_ic_from_simple_cpp")
+
+    def build_pressure_null_space(self):
+        # Prepare function used to correct pressure values
+        null_fcn = Function(self.subspace("p"))
+        null_fcn.vector()[:] = 1.0
+
+        # Create vector that spans the null space and normalize
+        null_vec = Vector(null_fcn.vector())
+        null_vec *= 1.0/null_vec.norm("l2")
+
+        # Create null space basis object
+        null_space = VectorSpaceBasis([null_vec])
+
+        return (null_space, null_fcn)
+
+    build_pressure_null_space.__doc__ = \
+      Discretization._inherit_docstring("build_pressure_null_space")

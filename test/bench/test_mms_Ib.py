@@ -116,7 +116,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
             forms = model.create_forms(matching_p)
 
             # Prepare solver
-            solver = SolverFactory.create(model, forms)
+            solver = SolverFactory.create(model, forms, fix_p=True)
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
