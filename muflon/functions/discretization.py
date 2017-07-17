@@ -669,10 +669,16 @@ class Monolithic(Discretization):
         """
         def fit_primitives(vec, deepcopy=False, indexed=True):
             assert not (deepcopy and indexed)
+            N = self.parameters["N"] # 'self' is visible from here
             if indexed:
-                return split(vec[0])
+                ws = split(vec[0])
+                ws_ch = split(ws[0])
             else:
-                return vec[0].split(deepcopy)
+                ws = vec[0].split(deepcopy)
+                ws_ch = ws[0].split(deepcopy)
+            pv = [as_vector(ws_ch[:N-1]), as_vector(ws_ch[N-1:])]
+            pv += ws[1:]
+            return tuple(pv)
 
         # Set required attributes
         self._solution_ctl, self._solution_ptl = self._prepare_solution_fcns()
@@ -684,9 +690,14 @@ class Monolithic(Discretization):
         gdim = self._mesh.geometry().dim()
 
         # Group elements for phi, chi, v
+        elements_ch = (N-1)*[self._FE["phi"],] + (N-1)*[self._FE["chi"],]
+        # NOTE: Elements for phi and chi are grouped together to avoid special
+        #       treatment of the case with N = 2. For example, if N == 2 and
+        #       phi would be represented as a vector with a single component
+        #       then a special treatment is needed to plot this single
+        #       component (UFL/DOLFIN ban to plot 1D function on a 2D mesh).
         elements = []
-        elements.append(VectorElement(self._FE["phi"], dim=N-1))
-        elements.append(VectorElement(self._FE["chi"], dim=N-1))
+        elements.append(MixedElement(elements_ch))
         elements.append(VectorElement(self._FE["v"], dim=gdim))
 
         # Append elements for p and th
@@ -697,35 +708,29 @@ class Monolithic(Discretization):
         # Build function spaces
         W = FunctionSpace(self._mesh, MixedElement(elements))
         self._ndofs["total"] = W.dim()
-        if N == 2:
-            self._subspace["phi"] = [W.sub(0),]
-            self._subspace["chi"] = [W.sub(1),]
-            self._ndofs["phi"] = W.sub(0).dim()
-            self._ndofs["chi"] = W.sub(1).dim()
-        else:
-            self._subspace["phi"] = [W.sub(0).sub(i) for i in range(N-1)]
-            self._subspace["chi"] = [W.sub(1).sub(i) for i in range(N-1)]
-            self._ndofs["phi"] = W.sub(0).sub(0).dim()
-            self._ndofs["chi"] = W.sub(1).sub(0).dim()
+        self._subspace["phi"] = [W.sub(0).sub(i) for i in range(N-1)]
+        self._subspace["chi"] = [W.sub(0).sub(i) for i in range(N-1, 2*(N-1))]
+        self._ndofs["phi"] = W.sub(0).sub(0).dim()
+        self._ndofs["chi"] = W.sub(0).sub(N-1).dim()
         if gdim == 1:
-            self._subspace["v"] = [W.sub(2),]
-            self._ndofs["v"] = W.sub(2).dim()
+            self._subspace["v"] = [W.sub(1),]
+            self._ndofs["v"] = W.sub(1).dim()
         else:
-            self._subspace["v"] = [W.sub(2).sub(i) for i in range(gdim)]
-            self._ndofs["v"] = W.sub(2).sub(0).dim()
-        self._subspace["p"] = W.sub(3)
-        self._ndofs["p"] = W.sub(3).dim()
+            self._subspace["v"] = [W.sub(1).sub(i) for i in range(gdim)]
+            self._ndofs["v"] = W.sub(1).sub(0).dim()
+        self._subspace["p"] = W.sub(2)
+        self._ndofs["p"] = W.sub(2).dim()
         self._ndofs["th"] = 0
-        if W.num_sub_spaces() == 5:
-            self._subspace["th"] = W.sub(4)
-            self._ndofs["th"] = W.sub(4).dim()
-        self._ndofs["CH"] = (N-1)*(self._ndofs["phi"] + self._ndofs["chi"])
+        if W.num_sub_spaces() == 4:
+            self._subspace["th"] = W.sub(3)
+            self._ndofs["th"] = W.sub(3).dim()
+        self._ndofs["CH"] = W.sub(0).dim()
         self._ndofs["NS"] = (
               gdim*self._ndofs["v"]
             + self._ndofs["p"]
             + self._ndofs["th"]
         )
-        #assert self._ndofs["total"] == self._ndofs["CH"] + self._ndofs["NS"]
+        assert self._ndofs["total"] == self._ndofs["CH"] + self._ndofs["NS"]
 
         # Create solution variable at ctl
         w_ctl = (Function(W),)
@@ -770,7 +775,7 @@ class Monolithic(Discretization):
         # Prepare function used to correct pressure values
         W = self.function_spaces()[0]
         null_fcn = Function(W)
-        W.sub(3).dofmap().set(null_fcn.vector(), 1.0)
+        W.sub(2).dofmap().set(null_fcn.vector(), 1.0)
 
         # Create vector that spans the null space and normalize
         null_vec = Vector(null_fcn.vector())
