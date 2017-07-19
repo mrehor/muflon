@@ -200,10 +200,14 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
     varphi = variable(phi)
     F = multiwell(dw, varphi, S)
     dF = diff(F, varphi)
+    # -- initialize mobility
+    M0 = Constant(prm["mobility"]["M0"], cell=cell, name="MS_M0")
+    m = Constant(prm["mobility"]["m"], cell=cell, name="MS_m")
+    beta = Constant(1.0, cell=cell, name="MS_beta")
+    Mo = model.mobility(M0, phi, phi, m, beta, False)
     # -- initialize constant coefficients
     omega_2 = Constant(prm["omega_2"], cell=cell, name="MS_omega_2")
     eps = Constant(prm["eps"], cell=cell, name="MS_eps")
-    Mo = Constant(prm["M0"], cell=cell, name="MS_M0") # FIXME: degenerate mobility
     a, b = dw.free_energy_coefficents()
     a = Constant(a, cell=cell, name="MS_a")
     b = Constant(b, cell=cell, name="MS_b")
@@ -212,8 +216,8 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
     # -- define homogenized density and viscosity
     rho_mat = model.collect_material_params("rho")
     nu_mat = model.collect_material_params("nu")
-    rho = model.homogenized_quantity(rho_mat, phi)
-    nu = model.homogenized_quantity(nu_mat, phi)
+    rho = model.homogenized_quantity(rho_mat, phi, False)
+    nu = model.homogenized_quantity(nu_mat, phi, False)
     # -- define total flux
     J = total_flux(Mo, rho_mat, chi)
     # -- define capillary force

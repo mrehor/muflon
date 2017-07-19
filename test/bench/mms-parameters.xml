@@ -8,7 +8,10 @@
     <parameters name="model">
       <!-- eps = eta*2.0*sqrt(2.0), where eta = 0.1 -->
       <parameter key="eps" type="double" value="0.28284271247461906" />
-      <parameter key="M0" type="double" value="1.0e-05" />
+      <parameters name="mobility">
+        <parameter key="M0" type="double" value="1.0e-05" />
+        <parameter key="m"  type="int" value="0" />
+      </parameters>
       <parameters name="nu">
         <parameter key="1" type="double" value="0.01" />
         <parameter key="2" type="double" value="0.02" />

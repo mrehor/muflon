@@ -96,22 +96,27 @@ class MuflonParameterSet(Parameters, Singleton):
     """
     .. _tab_mpset:
 
-       ====================  =============  ===================================
+       ====================  ===============  ===================================
        MUFLON parameters
-       ------------------------------------------------------------------------
-       Option                Suboption      Description
-       ====================  =============  ===================================
+       --------------------------------------------------------------------------
+       Option                Suboption        Description
+       ====================  ===============  ===================================
        --discretization
-       \                     .N             Number of phases
-       \                     .PTL           number of Previous Time Levels
+       \                     .N               Number of phases
+       \                     .PTL             number of Previous Time Levels
        --model
-       \                     .doublewell    doublewell potential
-       \                     .eps           width of the interface (scale)
-       \                     .M0            mobility
-       \                     .nu.i          dynamic viscosity of phase i
-       \                     .rho.i         density of phase i
-       \                     .sigma.ij      surface tension between phases i,j
-       ====================  =============  ===================================
+       \                     .doublewell      doublewell potential
+       \                     .eps             width of the interface (scale)
+       \                     .mobility.M0     constant mobility coefficient
+       \                     .mobility.m      mobility exponent
+       \                     .mobility.beta   time discretization factor
+       \                     .nu.i            dynamic viscosity of phase i
+       \                     .rho.i           density of phase i
+       \                     .sigma.ij        surface tension between phases i,j
+       \                     .cut.density     toggle for truncation of density
+       \                     .cut.mobility    toggle for truncation of mobility
+       \                     .cut.viscosity   toggle for truncation of viscosity
+       ====================  ===============  ===================================
     """
 
     def __init__(self, name="muflon-parameters"):
@@ -132,13 +137,22 @@ class MuflonParameterSet(Parameters, Singleton):
         self.add(nested_prm)
 
         # Model parameters
+        mobility_prm = Parameters("mobility")
+        mobility_prm.add("M0", 1.0)
+        mobility_prm.add("m", 2)
+        mobility_prm.add("beta", 0.0, 0.0, 1.0)
+        cut_prm = Parameters("cut")
+        cut_prm.add("density", False)
+        cut_prm.add("mobility", False)
+        cut_prm.add("viscosity", False)
         nested_prm = Parameters("model")
         nested_prm.add("doublewell", "Poly4", ["Poly4"]) # "MoYo"
         nested_prm.add("eps", 1.0)
-        nested_prm.add("M0", 1.0)
+        nested_prm.add(mobility_prm)
         nested_prm.add(Parameters("nu"))
         nested_prm.add(Parameters("rho"))
         nested_prm.add(Parameters("sigma"))
+        nested_prm.add(cut_prm)
         self.add(nested_prm)
 
     def show(self, verbose=False):

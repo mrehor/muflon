@@ -29,7 +29,8 @@ from collections import OrderedDict
 
 from dolfin import Parameters
 from dolfin import Constant, Function, Measure, assemble
-from dolfin import as_matrix, as_vector, conditional, lt, gt, variable
+from dolfin import as_matrix, as_vector, variable
+from dolfin import conditional, lt, gt, Min, Max
 from dolfin import dot, inner, outer, dx, ds, sym
 from dolfin import derivative, diff, div, grad, curl, sqrt
 
@@ -333,7 +334,7 @@ class Model(object):
         return q
 
     @staticmethod
-    def homogenized_quantity(q, phi, cut=True):
+    def homogenized_quantity(q, phi, trunc=False):
         """
         From given material parameters (density, viscosity, conductivity)
         builds homogenized quantity and returns the result.
@@ -342,9 +343,9 @@ class Model(object):
         :type q: list
         :param phi: vector of volume fractions
         :type phi: :py:class:`ufl.tensors.ListTensor`
-        :param cut: whether to cut values above the maximum value and below the
-                    minimum value respectively
-        :type cut: bool
+        :param trunc: whether to truncate values above the maximum value and
+                      below the minimum value respectively
+        :type trunc: bool
         :returns: single homogenized quantity
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
@@ -354,11 +355,81 @@ class Model(object):
         q = list(map(Constant, q))
         q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
         homogq = inner(q_diff, phi) + Constant(q[-1])
-        if cut:
+        if trunc:
             A = conditional(lt(homogq, q_min), 1.0, 0.0)
             B = conditional(gt(homogq, q_max), 1.0, 0.0)
             return A*Constant(q_min) + B*Constant(q_max) + (1.0 - A - B)*homogq
         return homogq
+
+    @staticmethod
+    def mobility(M0, phi, phi0, m=2, beta=0.0, trunc=False):
+        """
+        Returns degenerate (and possibly truncated) mobility coefficient that
+        can be used in the definition of forms.
+
+        The mobility coefficient is defined by
+
+        .. math::
+
+            M(\\vec{\phi}) = M_0 \prod_{i=1}^{N}(1 - \phi_i)^{m}
+                               \Big|_{\phi_N = 1 - \sum_{j=1}^{N-1} \phi_j},
+
+        where :math:`m \geq 0` is an even number and :math:`M_0` is a positive
+        constant. (Note that constant mobility coefficient is obtained if ``m``
+        is set to zero.)
+
+        The time discretized value of the above function is obtained as
+        :math:`M^{n + \\beta} = M(\\beta \\vec{\phi}^{n+1} \
+                                    + (1 - \\beta)\\vec{\phi}^{n})`,
+        where :math:`\\beta \in [0, 1]`.
+
+        Values of :math:`M_0, m` and :math:`\\beta` used to define the mobility
+        coefficient within a :py:class:`Model` are controlled via parameters of
+        this class.
+
+        :param M0: constant mobility parameter
+        :type M0: :py:class:`dolfin.Coefficient` (float)
+        :param phi: vector of volume fractions at the current time level
+        :type phi: :py:class:`ufl.tensors.ListTensor`
+        :param phi0: vector of volume fractions at the previous time level
+        :type phi0: :py:class:`ufl.tensors.ListTensor`
+        :param m: exponent used in the definition of the mobility
+        :type m: :py:class:`dolfin.Coefficient` (int)
+        :param beta: a factor used to weight contributions of order parameters
+                     from current and previous time levels respectively
+        :type beta: :py:class:`dolfin.Coefficient` (float)
+        :param trunc: whether to truncate values of ``phi`` and ``phi0``
+        :type trunc: bool
+        :returns: [degenerate [truncated]] mobility coefficient
+        :rtype: :py:class:`ufl.core.expr.Expr`
+        """
+        M0 = Constant(M0) if not isinstance(M0, Constant) else M0
+        if float(m) == 0.0:
+            # Constant mobility
+            Mo = M0
+        else:
+            # Degenerate mobility
+            assert float(m) % 2 == 0
+            ones = as_vector(len(phi)*[1.0,])
+            if trunc:
+                phi_  = as_vector([Max(Min(phi[i], 1.0), 0.0)
+                                       for i in range(len(phi))])
+                phi0_ = as_vector([Max(Min(phi0[i], 1.0), 0.0)
+                                       for i in range(len(phi0))])
+            else:
+                phi_  = phi
+                phi0_ = phi0
+            Mo_ctl, Mo_ptl = 1.0, 1.0
+            for i in range(len(phi_)):
+                Mo_ctl *= (1.0 - phi_[i])
+                Mo_ptl *= (1.0 - phi0_[i])
+                Mo_ctl *= inner(ones, phi_)
+                Mo_ptl *= inner(ones, phi0_)
+            m = Constant(m) if not isinstance(m, Constant) else m
+            beta = Constant(beta) if not isinstance(beta, Constant) else beta
+            Mo = M0*(beta*(Mo_ctl**m) + (1.0 - beta)*(Mo_ptl**m))
+
+        return Mo
 
     def _not_implemented_msg(self, msg=""):
         import inspect
@@ -426,9 +497,11 @@ class Incompressible(Model):
         # Initialize constant coefficients from parameters
         prm = self.parameters
         # -- model parameters
-        cc["M0"] = Constant(prm["M0"], cell=cell, name="M0")
         cc["eps"] = Constant(prm["eps"], cell=cell, name="eps")
         cc["omega_2"] = Constant(prm["omega_2"], cell=cell, name="omega_2")
+        cc["M0"] = Constant(prm["mobility"]["M0"], cell=cell, name="M0")
+        cc["m"] = Constant(prm["mobility"]["m"], cell=cell, name="m")
+        cc["beta"] = Constant(prm["mobility"]["beta"], cell=cell, name="beta")
         # -- matrices built from surface tensions
         cc["S"], cc["LA"], cc["iLA"] = self.build_stension_matrices()
         # -- free energy coefficients (depend on the choice of double-well)
@@ -488,6 +561,11 @@ class Incompressible(Model):
         cc = self.const_coeffs
         dw = self.doublewell
 
+        # Get truncation toggles
+        cut_rho = self.parameters["cut"]["density"]
+        cut_Mo  = self.parameters["cut"]["mobility"]
+        cut_nu  = self.parameters["cut"]["viscosity"]
+
         # Primitive variables
         pv, pv0 = self._pv_ctl, self._pv_ptl[0]
         phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
@@ -520,8 +598,10 @@ class Incompressible(Model):
         # Reciprocal time step
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
+        # Mobility
+        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"], cut_Mo)
+
         # System of CH eqns
-        Mo = cc["M0"] # FIXME: degenerate mobility
         def G_phi(phi, v, g_src):
             G = (
                   #inner(div(outer(phi, v)), test["chi"])
@@ -558,8 +638,8 @@ class Incompressible(Model):
         nu_mat = self.collect_material_params("nu")
         def G_v(phi, v, p, f_src):
             # Homogenized quantities
-            rho = self.homogenized_quantity(rho_mat, phi)
-            nu = self.homogenized_quantity(nu_mat, phi)
+            rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
+            nu = self.homogenized_quantity(nu_mat, phi, cut_nu)
             # Variable coefficients
             J = total_flux(Mo, rho_mat, chi)
             f_cap = capillary_force(phi, chi, cc["LA"])
@@ -576,7 +656,7 @@ class Incompressible(Model):
             )*dx
             return G
 
-        rho = self.homogenized_quantity(rho_mat, phi)
+        rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
         dvdt = idt*rho*inner(v - v0, test["v"])*dx
         G_v_ctl = G_v(phi, v, p, f_src[0])
         G_v_ptl = G_v(phi0, v0, p, f_src[-1]) # NOTE: intentionally not p0
@@ -641,6 +721,11 @@ class Incompressible(Model):
         cc = self.const_coeffs
         dw = self.doublewell
 
+        # Get truncation toggles
+        cut_rho = self.parameters["cut"]["density"]
+        cut_Mo  = self.parameters["cut"]["mobility"]
+        cut_nu  = self.parameters["cut"]["viscosity"]
+
         # Primitive variables
         pv, pv0 = self._pv_ctl, self._pv_ptl[0]
         phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
@@ -685,16 +770,18 @@ class Incompressible(Model):
 
         # Density and viscosity
         rho_mat = self.collect_material_params("rho")
-        rho = self.homogenized_quantity(rho_mat, phi)
+        rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
         rho0 = self.homogenized_quantity(rho_mat, phi0)
         nu_mat = self.collect_material_params("nu")
-        nu = self.homogenized_quantity(nu_mat, phi)
+        nu = self.homogenized_quantity(nu_mat, phi, cut_nu)
 
         # Explicit convective velocity
         v_star = v0 + self._dt*f_cap/rho0
 
+        # Mobility
+        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"], cut_Mo)
+
         # System of CH eqns
-        Mo = cc["M0"] # FIXME: degenerate mobility
         g_src_star = fact_ctl*g_src[0] + fact_ptl*g_src[-1]
         eqn_phi = (
               idt*inner(phi - phi0, test["chi"])
@@ -790,6 +877,11 @@ class Incompressible(Model):
         cc = self.const_coeffs
         dw = self.doublewell
 
+        # Get truncation toggles
+        cut_rho = self.parameters["cut"]["density"]
+        cut_Mo  = self.parameters["cut"]["mobility"]
+        cut_nu  = self.parameters["cut"]["viscosity"]
+
         # Arguments of the system
         test = self._test
         trial = self._trial
@@ -835,10 +927,12 @@ class Incompressible(Model):
         # Reciprocal time step
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
+        # Mobility
+        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"], cut_Mo)
+
         # --- Forms for Advance-Phase procedure ---
 
         # 1. Vectors Q and R
-        Mo = cc["M0"] # FIXME: degenerate mobility
         s_bar = sqrt(2.0*a*eps*gamma0*idt/Mo)
         s_fac = cc["factor_s"]
         #s = s_fac*s_bar*(eps**2.0)
@@ -887,8 +981,8 @@ class Incompressible(Model):
             f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*chi - alpha*phi))
 
         # 6. Density and viscosity
-        rho = self.homogenized_quantity(rho_mat, phi)
-        nu = self.homogenized_quantity(nu_mat, phi)
+        rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
+        nu = self.homogenized_quantity(nu_mat, phi, cut_nu)
 
         cell = self._DS.mesh().ufl_cell()
         cc["rho0"] = Constant(min(rho_mat), cell=cell, name="rho0")

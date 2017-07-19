@@ -14,6 +14,10 @@ def test_mpset():
     # Check that assignment out of range raises
     with pytest.raises(RuntimeError):
         mpset["discretization"]["N"] = 1
+    with pytest.raises(RuntimeError):
+        mpset["model"]["mobility"]["beta"] = 2.0
+    with pytest.raises(RuntimeError):
+        mpset["model"]["mobility"]["m"] = 0.0
 
     # Try to add parameter
     mpset.add("foo", "bar")
