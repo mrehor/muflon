@@ -236,7 +236,7 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
     #g_src = diff(phi, t) + dot(grad(phi), v) - div(Mo*grad(chi))
 
     # Source term for NS part
-    f_src = (
+    f_src = (1.0/rho)*(
           rho*diff(v, t)
         + dot(grad(v), rho*v + omega_2*J)
         + grad(p)

@@ -682,7 +682,7 @@ class Incompressible(Model):
                 + 2.0*nu*inner(Dv, Dv_)
                 - p*div(test["v"])
                 - inner(f_cap, test["v"])
-                - inner(f_src, test["v"])
+                - rho*inner(f_src, test["v"])
             )*dx
             return G
 
@@ -848,7 +848,7 @@ class Incompressible(Model):
         rhs = (
               idt*rho0*inner(v0, test["v"])
             + inner(f_cap, test["v"])
-            + inner(f_src, test["v"])
+            + rho*inner(f_src, test["v"])
         )*dx
 
         system_ns = {
@@ -1039,7 +1039,7 @@ class Incompressible(Model):
         w0, w_star = curl(v0), curl(v_star) # FIXME: Does it work in 2D?
         Dv0, Dv_star = sym(grad(v0)), sym(grad(v_star))
         G = (
-              irho*f_src
+              f_src
             - dot(grad(v_star), v_star + omega_2*irho*J)
             + idt*v_hat
             + (irho0 - irho)*grad(p_star)
