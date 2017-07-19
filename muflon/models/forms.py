@@ -30,7 +30,7 @@ from collections import OrderedDict
 from dolfin import Parameters
 from dolfin import Constant, Function, Measure, assemble
 from dolfin import as_matrix, as_vector, variable
-from dolfin import conditional, lt, gt, Min, Max
+from dolfin import conditional, lt, gt, Min, Max, sin, pi
 from dolfin import dot, inner, outer, dx, ds, sym
 from dolfin import derivative, diff, div, grad, curl, sqrt
 
@@ -354,11 +354,29 @@ class Model(object):
         q_max = max(q)
         q = list(map(Constant, q))
         q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
-        homogq = inner(q_diff, phi) + Constant(q[-1])
+        homogq = inner(q_diff, phi) + q[-1]
         if trunc:
             A = conditional(lt(homogq, q_min), 1.0, 0.0)
             B = conditional(gt(homogq, q_max), 1.0, 0.0)
             return A*Constant(q_min) + B*Constant(q_max) + (1.0 - A - B)*homogq
+
+        # TODO: Add homogenization using Heaviside approximation
+        # N = len(q)
+        # q = list(map(Constant, q))
+        # q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
+        # kappa = 0.5
+        # ones = as_vector((N-1)*[1.0,])
+
+        # def _Heaviside_approx(z):
+        #     A = conditional(lt(z, -kappa), 1.0, 0.0)
+        #     B = conditional(gt(z,  kappa), 1.0, 0.0)
+        #     approx = 0.5*((1.0 + z/kappa + (1.0/pi)*sin(pi*z/kappa)))
+        #     return B*Constant(1.0) + (1.0 - A - B)*approx
+
+        # H_phi = as_vector([_Heaviside_approx(phi[i] - 0.5)
+        #                        for i in range(len(phi))])
+        # homogq = inner(q_diff, H_phi) + q[-1]
+
         return homogq
 
     @staticmethod
