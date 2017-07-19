@@ -139,7 +139,7 @@ class MuflonParameterSet(Parameters, Singleton):
         # Model parameters
         mobility_prm = Parameters("mobility")
         mobility_prm.add("M0", 1.0)
-        mobility_prm.add("m", 2)
+        mobility_prm.add("m", 0)
         mobility_prm.add("beta", 0.0, 0.0, 1.0)
         cut_prm = Parameters("cut")
         cut_prm.add("density", False)
