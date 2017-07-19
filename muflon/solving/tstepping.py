@@ -157,6 +157,7 @@ class TimeStepping(object):
            \                     .folder        name of the folder for XDMF files
            \                     .flush         flush output of XDMF files
            \                     .modulo        modulo for saving results
+           \                     .iconds        whether to save initial conditions
            ====================  =============  ===================================
         """
         prm = Parameters("time-stepping")
@@ -165,6 +166,7 @@ class TimeStepping(object):
         nested_prm.add("folder", "XDMFdata")
         nested_prm.add("flush", False)
         nested_prm.add("modulo", 1)
+        nested_prm.add("iconds", False)
 
         prm.add(nested_prm)
         return prm
@@ -224,6 +226,8 @@ class TimeStepping(object):
             xflush = self.parameters["xdmf"]["flush"]
             self._xdmf_writer = XDMFWriter(self._comm, xfolder,
                                            self._xfields, xflush)
+            if self.parameters["xdmf"]["iconds"]:
+                self._xdmf_writer.write(t_beg)
         return self._tstepping_loop(t_beg, t_end, dt, OTD, it)
 
     def _tstepping_loop(self, *args, **kwargs):
