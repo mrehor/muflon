@@ -37,7 +37,7 @@ class SimpleCppIC(object):
     @staticmethod
     def _process_input_args(value):
         """
-        Check if value represent a valid input argument.
+        Check if ``value`` represents a valid input argument.
 
         :param value: either a C++ code snippet or a real number
         :type value: str, float, int, (long)

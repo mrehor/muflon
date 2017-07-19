@@ -734,12 +734,12 @@ class Monolithic(Discretization):
 
         # Create solution variable at ctl
         w_ctl = (Function(W),)
-        w_ctl[0].rename("mono-ctl", "solution-mono-ctl")
+        w_ctl[0].rename("mono_ctl", "solution_mono_ctl")
 
         # Create solution variables at ptl
         w_ptl = [(Function(W),) for i in range(self.parameters["PTL"])]
         for (i, f) in enumerate(w_ptl):
-            f[0].rename("mono-ptl%i" % i, "solution-mono-ptl%i" % i)
+            f[0].rename("mono_ptl%i" % i, "solution_mono_ptl%i" % i)
 
         return (w_ctl, w_ptl)
 
@@ -871,15 +871,15 @@ class SemiDecoupled(Discretization):
 
         # Create solution variables at ctl
         w_ctl = (Function(W_ch), Function(W_ns))
-        w_ctl[0].rename("semi-ctl-ch", "solution-semi-ch-ctl")
-        w_ctl[1].rename("semi-ctl-ns", "solution-semi-ns-ctl")
+        w_ctl[0].rename("semi_ctl_ch", "solution_semi_ch_ctl")
+        w_ctl[1].rename("semi_ctl_ns", "solution_semi_ns_ctl")
 
         # Create solution variables at ptl
         w_ptl = [(Function(W_ch), Function(W_ns)) \
                      for i in range(self.parameters["PTL"])]
         for i, f in enumerate(w_ptl):
-            f[0].rename("semi-ptl%i-ch" % i, "solution-semi-ch-ptl%i" % i)
-            f[1].rename("semi-ptl%i-ns" % i, "solution-semi-ns-ptl%i" % i)
+            f[0].rename("semi_ptl%i_ch" % i, "solution_semi_ch_ptl%i" % i)
+            f[1].rename("semi_ptl%i_ns" % i, "solution_semi_ns_ptl%i" % i)
 
         return (w_ctl, w_ptl)
 
@@ -1023,15 +1023,15 @@ class FullyDecoupled(Discretization):
         # Create solution variables at ctl
         w_ctl = tuple(map(lambda FS: Function(FS), spaces))
         for i, f in enumerate(w_ctl):
-            f.rename("full-ctl-{}".format(i), "solution-full-{}-ctl".format(i))
+            f.rename("full_ctl_{}".format(i), "solution_full_{}_ctl".format(i))
 
         # Create solution variables at ptl
         w_ptl = [tuple(map(lambda FS: Function(FS), spaces)) \
                      for i in range(self.parameters["PTL"])]
         for i, f in enumerate(w_ptl):
             for j in range(len(f)):
-                f[j].rename("full-ptl{}-{}".format(i, j),
-                            "solution-full-{}-ptl{}".format(j, i))
+                f[j].rename("full_ptl{}_{}".format(i, j),
+                            "solution_full_{}_ptl{}".format(j, i))
 
         return (w_ctl, w_ptl)
 

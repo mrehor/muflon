@@ -299,7 +299,7 @@ class SemiDecoupled(Solver):
         A = assemble(self.data["forms"]["lin"]["lhs"])
         b = assemble(self.data["forms"]["lin"]["rhs"])
         for bc in self.data["bcs_ns"]:
-                bc.apply(A, b)
+            bc.apply(A, b)
 
         if self._flags["fix_p"]:
             # Attach null space to PETSc matrix
