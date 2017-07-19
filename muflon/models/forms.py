@@ -609,6 +609,18 @@ class Incompressible(Model):
                 + Mo*inner(grad(chi), grad(test["chi"]))
                 - inner(g_src, test["chi"])
             )*dx
+            # FIXME:
+            #   Degenerate mobility is given as a product of order parameters.
+            #   UFL algorithm for determination of quadrature degree provides
+            #   some number which yields a huge number of integration points,
+            #   especially if the number of components N is greater than 3.
+            #   Therefore we need to come up with some reasonable quad degree
+            #   for the terms containing 'Mo' and we need to tell this to
+            #   form compiler. One possible way follows:
+            # qd = ? # some reasonable number
+            # G += (
+            #       Mo*inner(grad(chi), grad(test["chi"]))
+            # )*dx(None, form_compiler_parameters={'quadrature_degree': qd})
             return G
         # NOTE: A special quirk of Python is that -- if no global statement is
         #       in effect – assignments to names always go into the innermost
