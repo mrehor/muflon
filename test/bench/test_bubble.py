@@ -19,7 +19,17 @@
 
 """
 This file implements the benchmark computation for two-component rising
-bubble.
+bubble following [1]_.
+
+Note that the values of :math:`\gamma` and :math:`\epsilon`, introduced in [1]_
+as the notation for the constant mobility and characteristic length scale of
+the interface thickness respectively, must be recomputed using the relations
+:math:`M_0 = 8 \gamma \sigma_{12}` and :math:`\varepsilon = 2\sqrt{2}\epsilon`
+respectively.
+
+.. [1] Aland, S., Voigt, A.: Benchmark computations of diffuse interface models
+       for two-dimensional bubble dynamics. International Journal for Numerical
+       Methods in Fluids 69(3), 747–761 (2012).
 """
 
 from __future__ import print_function
@@ -161,11 +171,12 @@ def prepare_hook(DS, functionals):
                 conditional(lt(self.phi[0], Constant(0.5)),
                             self.v[-1], Constant(0.0)
             )*dx(domain=mesh))/funs["bubble_vol"][-1])
+            funs["mean_p"].append(assemble(self.p*dx(domain=mesh)))
 
             # Logging and reporting
             info("")
             begin("Reported functionals:")
-            for key in ["bubble_vol", "mass", "rise_vel"]:
+            for key in ["bubble_vol", "mass", "rise_vel", "mean_p"]:
                 desc = "{:10s} = %g".format(key)
                 logger.info(desc, (funs[key][-1],), (key,), t)
             end()
@@ -175,12 +186,13 @@ def prepare_hook(DS, functionals):
     pv = DS.primitive_vars_ctl()
     phi = pv["phi"].split()
     v = pv["v"].split()
+    p = pv["p"].dolfin_repr()
 
-    return TailoredHook(mesh=mesh, phi=phi, v=v, functionals=functionals)
+    return TailoredHook(mesh=mesh, phi=phi, v=v, p=p, functionals=functionals)
 
 @pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["Monolithic",]) #"FullyDecoupled", "SemiDecoupled",
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "Monolithic"]) #"FullyDecoupled",
 def test_bubble(scheme, matching_p, case, postprocessor):
     #set_log_level(WARNING)
 
@@ -194,101 +206,109 @@ def test_bubble(scheme, matching_p, case, postprocessor):
         mpset["model"]["nu"]["2"] = 0.1
         mpset["model"]["rho"]["2"] = 1.0
         mpset["model"]["sigma"]["12"] = 1.96
-    # FIXME: Check the following manipulations
-    mpset["model"]["eps"] *= 2.0*(2.0**0.5)
-    mpset["model"]["mobility"]["M0"] *= 8.0*mpset["model"]["sigma"]["12"]
 
     # Fixed parameters
-    level = postprocessor.level
-    dt = postprocessor.dt
     t_end = postprocessor.t_end
     OTD = postprocessor.OTD
     k = postprocessor.OPA
 
     # Names and directories
     basename = postprocessor.basename
-    label = "case{}_{}_{}".format(case, basename, scheme)
     outdir = postprocessor.outdir
 
-    with Timer("Prepare") as tmr_prepare:
-        # Prepare space discretization
-        mesh, boundary_markers = create_domain(level)
-        DS = create_discretization(scheme, mesh, k)
-        DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
-        DS.setup()
+    for level in range(2): # FIXME: set to 3 (direct) or 4 (iterative)
+        dividing_factor = 0.5**level
+        eps = dividing_factor*0.04
+        gamma = dividing_factor*4e-5
+        dt = dividing_factor*0.008
+        label = "case_{}_dt_{}_level_{}_{}_{}".format(
+                    case, dt, level, basename, scheme)
+        with Timer("Prepare") as tmr_prepare:
+            # Prepare space discretization
+            mesh, boundary_markers = create_domain(level)
+            DS = create_discretization(scheme, mesh, k)
+            DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
+            DS.setup()
 
-        # Prepare initial conditions
-        load_initial_conditions(DS, mpset["model"]["eps"]/(2.0*(2.0**0.5)))
+            # Prepare initial conditions
+            load_initial_conditions(DS, eps)
 
-        # Prepare boundary conditions
-        bcs = create_bcs(DS, boundary_markers)
+            # Prepare boundary conditions
+            bcs = create_bcs(DS, boundary_markers)
 
-        # Prepare model
-        model = ModelFactory.create("Incompressible", DS, bcs)
-        #model.parameters["omega_2"] = 0.0
-        f_src = Constant((0.0, -0.98), cell=mesh.ufl_cell(), name="f_src")
-        model.load_sources(f_src)
-        forms = model.create_forms(matching_p)
-        prm = model.parameters
+            # Set up variable model parameters
+            mpset["model"]["eps"] = 2.0*(2.0**0.5)*eps
+            mpset["model"]["mobility"]["M0"] = \
+              8.0*mpset["model"]["sigma"]["12"]*gamma
 
-        # Prepare solver
-        solver = SolverFactory.create(model, forms, fix_p=True)
+            # Prepare model
+            model = ModelFactory.create("Incompressible", DS, bcs)
+            #model.parameters["omega_2"] = 0.0
+            f_src = Constant((0.0, -0.98), cell=mesh.ufl_cell(), name="f_src")
+            model.load_sources(f_src)
+            forms = model.create_forms(matching_p)
+            prm = model.parameters
 
-        # Prepare time-stepping algorithm
-        comm = mesh.mpi_comm()
-        pv = DS.primitive_vars_ctl()
-        xfields = list(pv["phi"].split()) + [pv["p"].dolfin_repr(),]
-        if scheme == "FullyDecoupled":
-            xfields += list(pv["v"].split())
-        else:
-            xfields += [pv["v"].dolfin_repr(),]
-        functionals = {"t": [], "bubble_vol": [], "mass": [], "rise_vel": []}
-        hook = prepare_hook(DS, functionals)
-        logfile = "log_{}.dat".format(label)
-        TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
-               hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
-        TS.parameters["xdmf"]["folder"] = "XDMF_{}".format(label)
-        TS.parameters["xdmf"]["modulo"] = 1
-        TS.parameters["xdmf"]["flush"]  = True
-        TS.parameters["xdmf"]["iconds"] = True
+            # Prepare solver
+            solver = SolverFactory.create(model, forms, fix_p=True)
 
-    # Time-stepping
-    t_beg = 0.0
-    with Timer("Time stepping") as tmr_tstepping:
-        if OTD == 2:
+            # Prepare time-stepping algorithm
+            comm = mesh.mpi_comm()
+            pv = DS.primitive_vars_ctl()
+            xfields = list(pv["phi"].split()) + [pv["p"].dolfin_repr(),]
             if scheme == "FullyDecoupled":
-                dt0 = dt
-                result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
-                t_beg = dt
-            # elif scheme == "Monolithic":
-            #     dt0 = 1.0e-4*dt
-            #     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
-            #     if dt - dt0 > 0.0:
-            #         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
-            #     t_beg = dt
-        result = TS.run(t_beg, t_end, dt, OTD)
+                xfields += list(pv["v"].split())
+            else:
+                xfields += [pv["v"].dolfin_repr(),]
+            functionals = {"t": [], "mean_p": [],
+                           "bubble_vol": [], "mass": [], "rise_vel": []}
+            hook = prepare_hook(DS, functionals)
+            logfile = "log_{}.dat".format(label)
+            TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
+                   hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
+            TS.parameters["xdmf"]["folder"] = "XDMF_{}".format(label)
+            TS.parameters["xdmf"]["modulo"] = 2*(2**level)
+            TS.parameters["xdmf"]["flush"]  = True
+            TS.parameters["xdmf"]["iconds"] = True
 
-    # Prepare results
-    result.update(
-        ndofs=DS.num_dofs(),
-        scheme=scheme,
-        case=case,
-        level=level,
-        OTD=OTD,
-        k=k,
-        t=hook.functionals["t"],
-        bubble_vol=hook.functionals["bubble_vol"],
-        mass=hook.functionals["mass"],
-        rise_vel=hook.functionals["rise_vel"],
-        tmr_prepare=tmr_prepare.elapsed()[0],
-        tmr_tstepping=tmr_tstepping.elapsed()[0]
-    )
-    print(label, result["ndofs"], result["tmr_prepare"],
-          result["tmr_solve"], result["it"], result["tmr_tstepping"])
+        # Time-stepping
+        t_beg = 0.0
+        with Timer("Time stepping") as tmr_tstepping:
+            if OTD == 2:
+                if scheme == "FullyDecoupled":
+                    dt0 = dt
+                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                    t_beg = dt
+                # elif scheme == "Monolithic":
+                #     dt0 = 1.0e-4*dt
+                #     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                #     if dt - dt0 > 0.0:
+                #         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
+                #     t_beg = dt
+            result = TS.run(t_beg, t_end, dt, OTD)
 
-    # Send to posprocessor
-    rank = MPI.rank(comm)
-    postprocessor.add_result(rank, result)
+        # Prepare results
+        result.update(
+            ndofs=DS.num_dofs(),
+            scheme=scheme,
+            case=case,
+            level=level,
+            h_min=mesh.hmin(),
+            OTD=OTD,
+            k=k,
+            t=hook.functionals["t"],
+            bubble_vol=hook.functionals["bubble_vol"],
+            mass=hook.functionals["mass"],
+            rise_vel=hook.functionals["rise_vel"],
+            tmr_prepare=tmr_prepare.elapsed()[0],
+            tmr_tstepping=tmr_tstepping.elapsed()[0]
+        )
+        print(label, result["ndofs"], result["h_min"], result["tmr_prepare"],
+              result["tmr_solve"], result["it"], result["tmr_tstepping"])
+
+        # Send to posprocessor
+        rank = MPI.rank(comm)
+        postprocessor.add_result(rank, result)
 
     # Save results into a binary file
     filename = "results_{}.pickle".format(label)
@@ -296,7 +316,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
     # Pop results that we do not want to report at the moment
     postprocessor.pop_items([
-        "ndofs", "tmr_prepare", "tmr_solve", "tmr_tstepping", "it"])
+        "ndofs", "tmr_prepare", "tmr_solve", "tmr_tstepping", "it", "h_min"])
 
     # Flush plots as we now have data for all level values
     postprocessor.flush_plots()
@@ -313,19 +333,19 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    dt = 0.008
-    t_end = 0.8 # FIXME: Set to 3.
-    level = 0   # NOTE: set to ? for direct solvers
+    t_end = 0.4 # FIXME: Set to 3.
     OTD = 1     # Order of Time Discretization
     OPA = 1     # Order of Polynomial Approximation
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(dt, t_end, level, OTD, OPA, outdir)
+    proc = Postprocessor(t_end, OTD, OPA, outdir)
 
     # Decide what should be plotted
     proc.register_fixed_variables(
-        (("dt", dt), ("t_end", t_end), ("level", level), ("OTD", OTD), ("k", OPA)))
+        (("t_end", t_end), ("OTD", OTD), ("k", OPA)))
+    proc.register_fixed_variables(
+        (("t_end", t_end), ("OTD", OTD), ("k", OPA), ("level", 1)))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -343,13 +363,11 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericBenchPostprocessor):
-    def __init__(self, dt, t_end, level, OTD, OPA, outdir):
+    def __init__(self, t_end, OTD, OPA, outdir):
         super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
-        self.dt = dt
         self.t_end = t_end
-        self.level = level
         self.OTD = OTD
         self.OPA = OPA
 
@@ -360,8 +378,7 @@ class Postprocessor(GenericBenchPostprocessor):
         self.y_var2 = "rise_vel"
 
         # Store names
-        self.basename = "dt_{}_t_end_{}_level_{}_OTD_{}_k_{}".format(
-                                                    dt, t_end, level, OTD, OPA)
+        self.basename = "t_end_{}_OTD_{}_k_{}".format(t_end, OTD, OPA)
 
     def flush_plots(self):
         if not self.plots:
@@ -395,6 +412,7 @@ class Postprocessor(GenericBenchPostprocessor):
                 xs = datapoints["xs"]
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
+                ys2 = datapoints["ys2"]
                 self._plot(fig, xs, ys0, ys1, ys2, free_vars, style)
             self._save_plot(fig, fixed_vars, self.outdir)
         self.results = []
@@ -404,16 +422,16 @@ class Postprocessor(GenericBenchPostprocessor):
         (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for i in range(len(xs)):
-            ax1.plot(xs[i], ys0[i], style, linewidth=0.2, label=label)
-            ax2.plot(xs[i], ys1[i], style, linewidth=0.2, label=label)
-            ax3.plot(xs[i], ys2[i], style, linewidth=0.2, label=label)
+            ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
+            ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
+            ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
 
         ax1.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-                   fontsize='x-small', ncol=3)
+                   fontsize='x-small', ncol=1)
         ax2.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-                   fontsize='x-small', ncol=3)
+                   fontsize='x-small', ncol=1)
         ax3.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-                   fontsize='x-small', ncol=3)
+                   fontsize='x-small', ncol=1)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):
@@ -428,7 +446,7 @@ class Postprocessor(GenericBenchPostprocessor):
 
     def _create_figure(self):
         fig1, fig2, fig3 = pyplot.figure(), pyplot.figure(), pyplot.figure()
-        gs = gridspec.GridSpec(2, 1, height_ratios=[4, 1], hspace=0.05)
+        gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.05)
         # Set subplots
         ax1 = fig1.add_subplot(gs[0, 0])
         ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
@@ -441,7 +459,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.set_ylabel("bubble volume")
         ax2.set_ylabel("center of mass")
         ax3.set_ylabel("rise velocity")
-        ax1.set_ylim(0, None, auto=True)
+        ax1.set_ylim(0.17, 0.22, auto=False)
         ax2.set_ylim(0, None, auto=True)
         ax3.set_ylim(0, None, auto=True)
 
