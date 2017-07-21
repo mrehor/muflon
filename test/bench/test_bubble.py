@@ -213,20 +213,22 @@ def test_bubble(scheme, matching_p, case, postprocessor):
     # Fixed parameters
     t_end = postprocessor.t_end
     OTD = postprocessor.OTD
-    k = postprocessor.OPA
 
     # Names and directories
     basename = postprocessor.basename
     outdir = postprocessor.outdir
 
+    # Scheme-dependent variables
+    k = 2 if scheme == "FullyDecoupled" else 1
+
     for level in range(2): # FIXME: set to 3 (direct) or 4 (iterative)
         dividing_factor = 0.5**level
-        modulo_factor = 2*(2**level)
+        modulo_factor = 1 if level == 0 else 2*(2**(level-1))
         eps = dividing_factor*0.04
         gamma = dividing_factor*4e-5
         dt = dividing_factor*0.008
-        label = "case_{}_dt_{}_level_{}_{}_{}".format(
-                    case, dt, level, basename, scheme)
+        label = "case_{}_{}_level_{}_k_{}_dt_{}_{}".format(
+                    case, scheme, level, k, dt, basename)
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers = create_domain(level)
@@ -352,17 +354,16 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 def postprocessor(request):
     t_end = 0.4 # FIXME: Set to 3.
     OTD = 1     # Order of Time Discretization
-    OPA = 1     # Order of Polynomial Approximation
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(t_end, OTD, OPA, outdir)
+    proc = Postprocessor(t_end, OTD, outdir)
 
     # Decide what should be plotted
     proc.register_fixed_variables(
-        (("t_end", t_end), ("OTD", OTD), ("k", OPA)))
+        (("t_end", t_end), ("OTD", OTD)))
     proc.register_fixed_variables(
-        (("t_end", t_end), ("OTD", OTD), ("k", OPA), ("level", 1)))
+        (("t_end", t_end), ("OTD", OTD), ("level", 1)))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -380,13 +381,12 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericBenchPostprocessor):
-    def __init__(self, t_end, OTD, OPA, outdir):
+    def __init__(self, t_end, OTD, outdir):
         super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
         self.t_end = t_end
         self.OTD = OTD
-        self.OPA = OPA
 
         # So far hardcoded values
         self.x_var = "t"
@@ -395,7 +395,7 @@ class Postprocessor(GenericBenchPostprocessor):
         self.y_var2 = "bubble_vol"
 
         # Store names
-        self.basename = "t_end_{}_OTD_{}_k_{}".format(t_end, OTD, OPA)
+        self.basename = "t_end_{}_OTD_{}".format(t_end, OTD)
 
     def flush_plots(self):
         if not self.plots:
