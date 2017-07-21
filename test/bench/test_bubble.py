@@ -389,9 +389,9 @@ class Postprocessor(GenericBenchPostprocessor):
 
         # So far hardcoded values
         self.x_var = "t"
-        self.y_var0 = "bubble_vol"
+        self.y_var0 = "rise_vel"
         self.y_var1 = "mass"
-        self.y_var2 = "rise_vel"
+        self.y_var2 = "bubble_vol"
 
         # Store names
         self.basename = "t_end_{}_OTD_{}_k_{}".format(t_end, OTD, OPA)
@@ -442,12 +442,9 @@ class Postprocessor(GenericBenchPostprocessor):
             ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
             ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
 
-        ax1.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-                   fontsize='x-small', ncol=1)
-        ax2.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-                   fontsize='x-small', ncol=1)
-        ax3.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-                   fontsize='x-small', ncol=1)
+        for ax in (ax1, ax2, ax3):
+            ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
+                      fontsize='x-small', ncol=1)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):
@@ -472,11 +469,11 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.set_xlabel("time $t$")
         ax2.set_xlabel(ax1.get_xlabel())
         ax3.set_xlabel(ax1.get_xlabel())
-        ax1.set_ylabel("bubble volume")
+        ax1.set_ylabel("rise velocity")
         ax2.set_ylabel("center of mass")
-        ax3.set_ylabel("rise velocity")
-        ax1.set_ylim(0.17, 0.22, auto=False)
+        ax3.set_ylabel("bubble volume")
+        ax1.set_ylim(0, None, auto=True)
         ax2.set_ylim(0, None, auto=True)
-        ax3.set_ylim(0, None, auto=True)
+        ax3.set_ylim(0.15, 0.21, auto=False)
 
         return (fig1, fig2, fig3), (ax1, ax2, ax3)
