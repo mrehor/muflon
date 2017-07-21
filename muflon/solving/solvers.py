@@ -193,8 +193,10 @@ class Monolithic(Solver):
         # Adjust bcs
         bcs = []
         _bcs = self.data["model"].bcs()
-        for bc in _bcs.get("v", []):
-            bcs += list(bc)
+        for bc_v in _bcs.get("v", []):
+            assert isinstance(bc_v, tuple)
+            assert len(bc_v) == len(w.sub(1))
+            bcs += [bc for bc in bc_v if bc is not None]
         bcs += [bc for bc in _bcs.get("p", [])]
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
 
@@ -257,8 +259,10 @@ class SemiDecoupled(Solver):
         bcs_ch = []
         bcs_ns = []
         _bcs = self.data["model"].bcs()
-        for bc in _bcs.get("v", []):
-            bcs_ns += list(bc)
+        for bc_v in _bcs.get("v", []):
+            assert isinstance(bc_v, tuple)
+            assert len(bc_v) == len(w_ns.sub(0))
+            bcs_ns += [bc for bc in bc_v if bc is not None]
         bcs_ns += [bc for bc in _bcs.get("p", [])]
         # FIXME: Deal with possible bcs for ``phi`` and ``th``
 
@@ -375,7 +379,8 @@ class FullyDecoupled(Solver):
             _rhs["v"].append(eqn["rhs"][2*n+i])
             _sol["v"].append(w[2*n+i])
             for bc in _bcs.get("v", []):
-                bc[i].apply(_A["v"][-1])
+                if bc[i] is not None:
+                    bc[i].apply(_A["v"][-1])
         _A["p"] = assemble(eqn["lhs"][2*n+gdim])
         for bc in _bcs.get("p", []):
             bc.apply(_A["p"])
@@ -438,7 +443,8 @@ class FullyDecoupled(Solver):
             b = assemble(self.data["rhs"]["v"][i])
             # FIXME: How to apply bcs in a symmetric fashion?
             for bc in self.data["bcs"].get("v", []):
-                bc[i].apply(b)
+                if bc[i] is not None:
+                    bc[i].apply(b)
             solver["v"].solve(A, self.data["sol"]["v"][i].vector(), b)
         end()
 

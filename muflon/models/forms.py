@@ -1056,29 +1056,52 @@ class Incompressible(Model):
         # FIXME: check origin of the following terms
         rhs_p -= irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
 
+        # NOTE:
+        #   The last term that needs to be added to 'rhs_p' is the surface
+        #   integral that arises as a consequence of integration by parts that
+        #   is applied to the term inner(v_aux, grad(test["p"]))*dx, where
+        #   'v_aux' is an auxiliary velocity that approximates 'v', see
+        #   Dong (2017, Eq. (176a)). Dong's assumption is that the normal
+        #   velocity component is specified on the whole boundary, that is
+        #   inner(n, v_aux) == inner(n, v_dbc).
         bcs_velocity = self._bcs.get("v", [])
-        # FIXME: Works only if full vector v is specified on the boundary.
-        #        What about partial slip and other conditions?
         for bc_v in bcs_velocity:
             assert isinstance(bc_v, tuple)
             assert len(bc_v) == len(v)
-            v_dbc = []
+            v_aux = []
+            _checked_markers = False
             for i, bc in enumerate(bc_v):
-                v_dbc.append(bc.function_arg)
-                markers, label = bc.domain_args
-                if i == 0: # check that we have only one set of markers/labels
-                    markers_ref = markers
-                    label_ref = label
-                assert id(markers) == id(markers_ref)
-                assert label == label_ref
-            v_dbc = as_vector(v_dbc)
+                if bc is None:
+                    # If one of the velocity components is not specified on the
+                    # boundary, then we use velocity from the previous time
+                    # step as an approximation of 'v'.
+                    #
+                    # FIXME: Any better idea?
+                    v_aux.append(v0[i])
+                else:
+                    v_aux.append(bc.function_arg)
+                    markers, label = bc.domain_args
+                    if not _checked_markers:
+                        # Check that we have only one set of markers/labels
+                        markers_ref = markers
+                        label_ref = label
+                        _checked_markers = True
+                    assert id(markers) == id(markers_ref)
+                    assert label == label_ref
+            v_aux = as_vector(v_aux)
             ds_dbc = Measure("ds", subdomain_data=markers)
-            rhs_p -= idt*rho0*gamma0*inner(n, v_dbc)*test["p"]*ds_dbc(label)
+            rhs_p -= idt*rho0*gamma0*inner(n, v_aux)*test["p"]*ds_dbc(label)
+        # QUESTION:
+        #   What to do if there is an outflow on the domain boundary?
+        # IDEA:
+        #   If there is an outflow on part of the boundary then the user should
+        #   mark this boundary and he or she should pass in the vector of 'None'
+        #   objects. In such a case, the above algorithm will replace this
+        #   vector with 'v0'.
 
         lhs_p, rhs_p = [lhs_p,], [rhs_p,]
 
         # Equations for v
-        # FIXME: Works only for v specified on the whole boundary
         lhs_v, rhs_v = [], []
         for i in range(len(test["v"])):
             lhs_v.append((
@@ -1086,9 +1109,11 @@ class Incompressible(Model):
                 + inu0*gamma0*idt*(trial["v"][i]*test["v"][i])
             )*dx)
             rhs_v.append((
-                + inu0*(G[i] - irho0*p.dx(i))*test["v"][i]
+                  inu0*(G[i] - irho0*p.dx(i))*test["v"][i]
                 + (inu0*irho*nu - 1.0)*crosscurl(grad(test["v"][i]), w_star)[i]
-            )*dx)
+              )*dx
+                - (inu0*irho*nu - 1.0)*crosscurl(n, w_star)[i]*test["v"][i]*ds
+            )
 
         forms = {
             "lhs" : lhs_phi + lhs_chi + lhs_v + lhs_p,
