@@ -91,7 +91,7 @@ def create_bcs(DS, boundary_markers):
     bcs_nslip_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 1)
     bcs_fslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 2)
     bcs = {}
-    bcs["v"] = [(bcs_nslip_v1, bcs_nslip_v2), (bcs_fslip_v1,)]
+    bcs["v"] = [(bcs_nslip_v1, bcs_nslip_v2), (bcs_fslip_v1, None)]
 
     return bcs
 
@@ -148,7 +148,7 @@ def load_initial_conditions(DS, eps):
     for i, w in enumerate(DS.solution_ptl(0)):
         DS.solution_ctl()[i].assign(w)
 
-def prepare_hook(DS, functionals):
+def prepare_hook(DS, functionals, modulo_factor):
 
     class TailoredHook(TSHook):
 
@@ -157,28 +157,30 @@ def prepare_hook(DS, functionals):
             x = SpatialCoordinate(mesh)
 
             # Compute required functionals
-            funs = self.functionals
-            funs["t"].append(t)
-            funs["bubble_vol"].append(assemble(
+            vals = {}
+            vals["t"] = t
+            vals["bubble_vol"] = assemble(
                 conditional(lt(self.phi[0], Constant(0.5)),
                             Constant(1.0), Constant(0.0)
-            )*dx(domain=mesh)))
-            funs["mass"].append(assemble(
+            )*dx(domain=mesh))
+            vals["mass"] = assemble(
                 conditional(lt(self.phi[0], Constant(0.5)),
                             x[-1], Constant(0.0)
-            )*dx(domain=mesh))/funs["bubble_vol"][-1])
-            funs["rise_vel"].append(assemble(
+            )*dx(domain=mesh))/vals["bubble_vol"]
+            vals["rise_vel"] = assemble(
                 conditional(lt(self.phi[0], Constant(0.5)),
                             self.v[-1], Constant(0.0)
-            )*dx(domain=mesh))/funs["bubble_vol"][-1])
-            funs["mean_p"].append(assemble(self.p*dx(domain=mesh)))
-
+            )*dx(domain=mesh))/vals["bubble_vol"]
+            vals["mean_p"] = assemble(self.p*dx(domain=mesh))
+            if it % self.mod == 0:
+                for key in ["t", "bubble_vol", "mass", "rise_vel"]: # "mean_p"
+                    self.functionals[key].append(vals[key])
             # Logging and reporting
             info("")
             begin("Reported functionals:")
             for key in ["bubble_vol", "mass", "rise_vel", "mean_p"]:
                 desc = "{:10s} = %g".format(key)
-                logger.info(desc, (funs[key][-1],), (key,), t)
+                logger.info(desc, (vals[key],), (key,), t)
             end()
             info("")
 
@@ -188,11 +190,12 @@ def prepare_hook(DS, functionals):
     v = pv["v"].split()
     p = pv["p"].dolfin_repr()
 
-    return TailoredHook(mesh=mesh, phi=phi, v=v, p=p, functionals=functionals)
+    return TailoredHook(mesh=mesh, phi=phi, v=v, p=p,
+                            functionals=functionals, mod=modulo_factor)
 
 @pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["SemiDecoupled", "Monolithic"]) #"FullyDecoupled",
+@pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
 def test_bubble(scheme, matching_p, case, postprocessor):
     #set_log_level(WARNING)
 
@@ -218,6 +221,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
     for level in range(2): # FIXME: set to 3 (direct) or 4 (iterative)
         dividing_factor = 0.5**level
+        modulo_factor = 2*(2**level)
         eps = dividing_factor*0.04
         gamma = dividing_factor*4e-5
         dt = dividing_factor*0.008
@@ -244,10 +248,22 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
             #model.parameters["omega_2"] = 0.0
+            model.parameters["cut"]["density"] = True
+            model.parameters["cut"]["viscosity"] = True
+            #model.parameters["cut"]["mobility"] = True
+            if scheme == "FullyDecoupled":
+                # FIXME: Is it possible to use degenerate mobility here?
+                model.parameters["mobility"]["m"] = 0
+                #model.parameters["full"]["factor_s"] = 1.
+                #model.parameters["full"]["factor_rho0"] = 0.5
+                #model.parameters["full"]["factor_nu0"] = 5.
+
+            # Prepare external source term
             f_src = Constant((0.0, -0.98), cell=mesh.ufl_cell(), name="f_src")
             model.load_sources(f_src)
+
+            # Create forms
             forms = model.create_forms(matching_p)
-            prm = model.parameters
 
             # Prepare solver
             solver = SolverFactory.create(model, forms, fix_p=True)
@@ -262,12 +278,12 @@ def test_bubble(scheme, matching_p, case, postprocessor):
                 xfields += [pv["v"].dolfin_repr(),]
             functionals = {"t": [], "mean_p": [],
                            "bubble_vol": [], "mass": [], "rise_vel": []}
-            hook = prepare_hook(DS, functionals)
+            hook = prepare_hook(DS, functionals, modulo_factor)
             logfile = "log_{}.dat".format(label)
             TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
             TS.parameters["xdmf"]["folder"] = "XDMF_{}".format(label)
-            TS.parameters["xdmf"]["modulo"] = 2*(2**level)
+            TS.parameters["xdmf"]["modulo"] = modulo_factor
             TS.parameters["xdmf"]["flush"]  = True
             TS.parameters["xdmf"]["iconds"] = True
 
