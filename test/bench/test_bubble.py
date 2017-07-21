@@ -271,11 +271,12 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
             pv = DS.primitive_vars_ctl()
-            xfields = list(pv["phi"].split()) + [pv["p"].dolfin_repr(),]
+            xfields = list(zip(pv["phi"].split(), ("phi",)))
+            xfields.append((pv["p"].dolfin_repr(), "p"))
             if scheme == "FullyDecoupled":
-                xfields += list(pv["v"].split())
+                xfields += list(zip(pv["v"].split(), ("v1", "v2")))
             else:
-                xfields += [pv["v"].dolfin_repr(),]
+                xfields.append((pv["v"].dolfin_repr(), "v"))
             functionals = {"t": [], "mean_p": [],
                            "bubble_vol": [], "mass": [], "rise_vel": []}
             hook = prepare_hook(DS, functionals, modulo_factor)

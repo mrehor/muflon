@@ -36,19 +36,25 @@ class XDMFWriter(object):
 
     def __init__(self, comm, outdir, fields=[], flush_output=False):
         """
-        Register list of fields for output. Output goes into outdir.
-        Parameter flush_output, when ``True``, ensures that XDMF output
+        Register fields for output which goes into a directory ``outdir``.
+        Parameter ``flush_output``, when ``True``, ensures that XDMF output
         is unbuffered at some performance cost.
 
         :param comm: MPI communicator
         :type comm: :py:class:`dolfin.MPI_Comm`
         :param outdir: output directory
         :type outdir: str
-        :param fields: list of functions to be saved in separate files
-        :type fields: list
+        :param fields: list of ``(<field>, <name>)`` pairs that will
+                       be saved in separate files
+        :type fields: tuple
         :param flush_output: if ``True`` unbuffer XDMF output
         :type flush_output: bool
         """
+        # Check input
+        assert isinstance(fields, list)
+        assert all(len(var)==2 and isinstance(var[1], (str, type(None)))
+                   for var in fields)
+        # Prepare directory for output and register fields
         prefix = prepare_output_directory(outdir)
         self._comm = comm
         self._prefix = prefix
@@ -67,7 +73,8 @@ class XDMFWriter(object):
         :type field: :py:class:`dolfin.Function`
         """
         self._fields.append(field)
-        f = XDMFFile(self._comm, self._prefix + field.name() + '.xdmf')
+        field_name = field[1] or field[0].name()
+        f = XDMFFile(self._comm, self._prefix + field_name + '.xdmf')
         f.parameters['rewrite_function_mesh'] = False
         f.parameters['flush_output'] = self._flush
         self._xdmfs.append(f)
@@ -80,7 +87,7 @@ class XDMFWriter(object):
         :type t: float
         """
         for (i, field) in enumerate(self._fields):
-            self._xdmfs[i].write(field, t)
+            self._xdmfs[i].write(field[0], t)
 
 
 class HDF5Writer(object):

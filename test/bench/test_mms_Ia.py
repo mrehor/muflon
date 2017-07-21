@@ -366,10 +366,14 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
+            xfields = None
+            # NOTE: Uncomment the following block of code to get XDMF output
             # pv = DS.primitive_vars_ctl()
             # phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
             # phi_, chi_, v_ = phi.split(), chi.split(), v.split()
-            xfields = None #list(phi_) + list(v_) + [p.dolfin_repr(),]
+            # xfields = list(zip(phi_, len(phi_)*[None,])) \
+            #         + list(zip(v_, len(v_)*[None,])) \
+            #         + [(p.dolfin_repr(), None),]
             hook = prepare_hook(t_src, model, esol, degrise, {})
             logfile = "log_{}_level_{}_k_{}_{}.dat".format(basename, level, k, scheme)
             #info("BREAK POINT %ia" % level)
