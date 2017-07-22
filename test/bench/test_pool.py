@@ -18,18 +18,9 @@
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
 """
-This file implements the benchmark computation for two-component rising
-bubble following [1]_.
-
-Note that the values of :math:`\gamma` and :math:`\epsilon`, introduced in [1]_
-as the notation for the constant mobility and characteristic length scale of
-the interface thickness respectively, must be recomputed using the relations
-:math:`M_0 = 8 \gamma \sigma_{12}` and :math:`\varepsilon = 2\sqrt{2}\epsilon`
-respectively.
-
-.. [1] Aland, S., Voigt, A.: Benchmark computations of diffuse interface models
-       for two-dimensional bubble dynamics. International Journal for Numerical
-       Methods in Fluids 69(3), 747–761 (2012).
+This file implements the computation for a two-phase "no-flow" system enclosed
+inside a box with horizontal (possibly slightly perturbed) interface between
+the components that is supposed to stay at rest.
 """
 
 from __future__ import print_function
@@ -59,17 +50,29 @@ parameters["form_compiler"]["optimize"] = True
 #parameters["form_compiler"]["quadrature_degree"] = 4
 parameters["plotting_backend"] = "matplotlib"
 
-def create_domain(refinement_level):
+def create_domain(level):
     # Prepare mesh
-    p1 = Point(0., 0.)
-    p2 = Point(1., 2.)
-    nx = 16*(2**(refinement_level)) # element size: 2^{-(LEVEL+4)}
-    mesh = RectangleMesh(p1, p2, nx, 2*nx, 'crossed')
+    p1 = Point(-1., 0.)
+    p2 = Point(1., 1.)
+    ny = 16*(2**(level)) # element size: 2^{-(LEVEL+4)}
+    mesh = RectangleMesh(p1, p2, 2*ny, ny, 'crossed')
+
+    # Refine mesh locally close to the interface
+    for i in range(0):
+        cell_markers = CellFunction("bool", mesh)
+        cell_markers.set_all(False)
+        for cell in cells(mesh):
+            mp = cell.midpoint()
+            d = abs(mp[1] - 0.5)
+            if d <= 0.1:
+                cell_markers[cell] = True
+        mesh = refine(mesh, cell_markers)
+
     # Prepare facet markers
     bndry = CompiledSubDomain("on_boundary")
     freeslip = CompiledSubDomain(
         "on_boundary && (near(x[0], x0) || near(x[0], x1))",
-        x0=0.0, x1=1.0)
+        x0=-1.0, x1=1.0)
     boundary_markers = FacetFunction('size_t', mesh)
     boundary_markers.set_all(0)              # interior facets
     bndry.mark(boundary_markers, 1)          # boundary facets (no-slip)
@@ -90,8 +93,9 @@ def create_bcs(DS, boundary_markers):
     bcs_nslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 1)
     bcs_nslip_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 1)
     bcs_fslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 2)
-    bcs = {}
-    bcs["v"] = [(bcs_nslip_v1, bcs_nslip_v2), (bcs_fslip_v1, None)]
+    bcs = {"v": []}
+    bcs["v"].append((bcs_nslip_v1, bcs_nslip_v2))
+    bcs["v"].append((bcs_fslip_v1, None))
 
     return bcs
 
@@ -101,32 +105,32 @@ def load_initial_conditions(DS, eps):
     class Expression_phi : public Expression
     {
     public:
-      double radius, eps, width_factor;
-      Point center;
+      double depth, eps, width_factor;
+      double A, L; // amplitude and half-length of the perturbation
 
       Expression_phi()
-        : Expression(), center(Point(0.5, 0.5)),
-          radius(0.25), eps(0.04), width_factor(4.6875) {}
+        : Expression(), depth(0.5), eps(0.04), width_factor(4.6875),
+          A(0.05), L(0.1) {}
 
       void eval(Array<double>& value, const Array<double>& x) const
       {
-         Point p(x.size(), x.data());
-         double r = p.distance(center) - radius;
+         double r = x[1] - depth;
+         if (x[0] <= L && x[0] >= -L)
+           r -= 0.5*A*(cos(pi*x[0]/L) + 1.0);
          if (r <= -0.5*width_factor*eps)
-           value[0] = 0.0;
-         else if (r >= 0.5*width_factor*eps)
            value[0] = 1.0;
+         else if (r >= 0.5*width_factor*eps)
+           value[0] = 0.0;
          else
-           value[0] = 0.5*(1.0 + tanh(r/(sqrt(2.0)*eps)));
+           value[0] = 0.5*(1.0 - tanh(r/(sqrt(2.0)*eps)));
       }
     };
     """
     phi_prm = dict(
-        center=Point(0.5, 0.5),
         eps=eps,
-        radius=0.25,
-        #width_factor=4.6875 # 3*h_int/eps [Aland & Voigt (2011), Table 1]
-        width_factor=2.*4.6875
+        width_factor=2.*4.6875,
+        A=0.05,
+        L=0.1
     )
 
     # Load ic for phi_0
@@ -148,54 +152,47 @@ def load_initial_conditions(DS, eps):
     for i, w in enumerate(DS.solution_ptl(0)):
         DS.solution_ctl()[i].assign(w)
 
-def prepare_hook(DS, functionals, modulo_factor):
+def prepare_hook(model, functionals, modulo_factor):
 
     class TailoredHook(TSHook):
 
         def tail(self, t, it, logger):
             mesh = self.mesh
             x = SpatialCoordinate(mesh)
+            rho = self.rho
+            v = self.v
+            p = self.p
 
             # Compute required functionals
+            keys = ["t", "E_kin", "mean_p"] # TODO: Add free energy "F"
             vals = {}
-            vals["t"] = t
-            vals["bubble_vol"] = assemble(
-                conditional(lt(self.phi[0], Constant(0.5)),
-                            Constant(1.0), Constant(0.0)
-            )*dx(domain=mesh))
-            vals["mass"] = assemble(
-                conditional(lt(self.phi[0], Constant(0.5)),
-                            x[-1], Constant(0.0)
-            )*dx(domain=mesh))/vals["bubble_vol"]
-            vals["rise_vel"] = assemble(
-                conditional(lt(self.phi[0], Constant(0.5)),
-                            self.v[-1], Constant(0.0)
-            )*dx(domain=mesh))/vals["bubble_vol"]
-            vals["mean_p"] = assemble(self.p*dx(domain=mesh))
+            vals[keys[0]] = t
+            vals[keys[1]] = assemble(Constant(0.5)*rho*inner(v, v)*dx)
+            vals[keys[2]] = assemble(p*dx)
             if it % self.mod == 0:
-                for key in ["t", "bubble_vol", "mass", "rise_vel"]: # "mean_p"
+                for key in keys:
                     self.functionals[key].append(vals[key])
             # Logging and reporting
             info("")
             begin("Reported functionals:")
-            for key in ["bubble_vol", "mass", "rise_vel", "mean_p"]:
-                desc = "{:10s} = %g".format(key)
+            for key in keys[1:]:
+                desc = "{:6s} = %g".format(key)
                 logger.info(desc, (vals[key],), (key,), t)
             end()
             info("")
 
+    DS = model.discretization_scheme()
     mesh = DS.mesh()
-    pv = DS.primitive_vars_ctl()
-    phi = pv["phi"].split()
-    v = pv["v"].split()
-    p = pv["p"].dolfin_repr()
+    pv = DS.primitive_vars_ctl(indexed=True)
+    rho_mat = model.collect_material_params("rho")
+    rho = model.homogenized_quantity(rho_mat, pv["phi"])
 
-    return TailoredHook(mesh=mesh, phi=phi, v=v, p=p,
+    return TailoredHook(mesh=mesh, rho=rho, v=pv["v"], p=pv["p"],
                             functionals=functionals, mod=modulo_factor)
 
 @pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled", "Monolithic"])
 def test_bubble(scheme, matching_p, case, postprocessor):
     #set_log_level(WARNING)
 
@@ -206,6 +203,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
     # Adjust parameters
     if case == 2:
+        # TODO: Set up parameters corresponding to air and water
         mpset["model"]["nu"]["2"] = 0.1
         mpset["model"]["rho"]["2"] = 1.0
         mpset["model"]["sigma"]["12"] = 1.96
@@ -221,7 +219,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
     # Scheme-dependent variables
     k = 2 if scheme == "FullyDecoupled" else 1
 
-    for level in range(2): # FIXME: set to 3 (direct) or 4 (iterative)
+    for level in range(1, 2):
         dividing_factor = 0.5**level
         modulo_factor = 1 if level == 0 else 2*(2**(level-1))
         eps = dividing_factor*0.04
@@ -242,7 +240,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             # Prepare boundary conditions
             bcs = create_bcs(DS, boundary_markers)
 
-            # Set up variable model parameters
+            # FIXME: Avoid this confusing manipulation
             mpset["model"]["eps"] = 2.0*(2.0**0.5)*eps
             mpset["model"]["mobility"]["M0"] = \
               8.0*mpset["model"]["sigma"]["12"]*gamma
@@ -260,7 +258,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
                 #model.parameters["full"]["factor_nu0"] = 5.
 
             # Prepare external source term
-            f_src = Constant((0.0, -0.98), cell=mesh.ufl_cell(), name="f_src")
+            f_src = Constant((0.0, -9.8), cell=mesh.ufl_cell(), name="f_src")
             model.load_sources(f_src)
 
             # Create forms
@@ -278,9 +276,8 @@ def test_bubble(scheme, matching_p, case, postprocessor):
                 xfields += list(zip(pv["v"].split(), ("v1", "v2")))
             else:
                 xfields.append((pv["v"].dolfin_repr(), "v"))
-            functionals = {"t": [], "mean_p": [],
-                           "bubble_vol": [], "mass": [], "rise_vel": []}
-            hook = prepare_hook(DS, functionals, modulo_factor)
+            functionals = {"t": [], "E_kin": [], "mean_p": []}
+            hook = prepare_hook(model, functionals, modulo_factor)
             logfile = "log_{}.dat".format(label)
             TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
@@ -315,9 +312,8 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             OTD=OTD,
             k=k,
             t=hook.functionals["t"],
-            bubble_vol=hook.functionals["bubble_vol"],
-            mass=hook.functionals["mass"],
-            rise_vel=hook.functionals["rise_vel"],
+            E_kin=hook.functionals["E_kin"],
+            mean_p=hook.functionals["mean_p"],
             tmr_prepare=tmr_prepare.elapsed()[0],
             tmr_tstepping=tmr_tstepping.elapsed()[0]
         )
@@ -351,8 +347,8 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 0.4 # FIXME: Set to 3.
-    OTD = 1     # Order of Time Discretization
+    t_end = 0.4
+    OTD = 1
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
@@ -361,8 +357,6 @@ def postprocessor(request):
     # Decide what should be plotted
     proc.register_fixed_variables(
         (("t_end", t_end), ("OTD", OTD)))
-    proc.register_fixed_variables(
-        (("t_end", t_end), ("OTD", OTD), ("level", 1)))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -389,9 +383,9 @@ class Postprocessor(GenericBenchPostprocessor):
 
         # So far hardcoded values
         self.x_var = "t"
-        self.y_var0 = "rise_vel"
-        self.y_var1 = "mass"
-        self.y_var2 = "bubble_vol"
+        self.y_var0 = "E_kin"
+        self.y_var1 = "mean_p"
+        #self.y_var2 =
 
         # Store names
         self.basename = "t_end_{}_OTD_{}".format(t_end, OTD)
@@ -400,7 +394,7 @@ class Postprocessor(GenericBenchPostprocessor):
         if not self.plots:
             self.results = []
             return
-        coord_vars = (self.x_var, self.y_var0, self.y_var1, self.y_var2)
+        coord_vars = (self.x_var, self.y_var0, self.y_var1) #, self.y_var2)
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
@@ -418,37 +412,38 @@ class Postprocessor(GenericBenchPostprocessor):
                 xs = datapoints.setdefault("xs", [])
                 ys0 = datapoints.setdefault("ys0", [])
                 ys1 = datapoints.setdefault("ys1", [])
-                ys2 = datapoints.setdefault("ys2", [])
+                #ys2 = datapoints.setdefault("ys2", [])
                 xs.append(result[self.x_var])
                 ys0.append(result[self.y_var0])
                 ys1.append(result[self.y_var1])
-                ys2.append(result[self.y_var2])
+                #ys2.append(result[self.y_var2])
 
             for free_vars, datapoints in six.iteritems(data):
                 xs = datapoints["xs"]
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
-                ys2 = datapoints["ys2"]
-                self._plot(fig, xs, ys0, ys1, ys2, free_vars, style)
+                #ys2 = datapoints["ys2"]
+                self._plot(fig, xs, ys0, ys1, free_vars, style) #, ys2
             self._save_plot(fig, fixed_vars, self.outdir)
         self.results = []
 
     @staticmethod
-    def _plot(fig, xs, ys0, ys1, ys2, free_vars, style):
-        (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
+    def _plot(fig, xs, ys0, ys1, free_vars, style): #, ys2
+        #(fig1, fig2, fig3), (ax1, ax2, ax3) = fig
+        (fig1, fig2), (ax1, ax2) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for i in range(len(xs)):
             ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
             ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
-            ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
+            #ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
 
-        for ax in (ax1, ax2, ax3):
+        for ax in (ax1, ax2): #, ax3
             ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
                       fontsize='x-small', ncol=1)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):
-        subfigs, (ax1, ax2, ax3) = fig
+        subfigs, (ax1, ax2) = fig #, ax3
         filename = "_".join(map(str, itertools.chain(*fixed_vars)))
         import matplotlib.backends.backend_pdf
         pdf = matplotlib.backends.backend_pdf.PdfPages(
@@ -458,22 +453,24 @@ class Postprocessor(GenericBenchPostprocessor):
         pdf.close()
 
     def _create_figure(self):
-        fig1, fig2, fig3 = pyplot.figure(), pyplot.figure(), pyplot.figure()
+        #fig1, fig2, fig3 = pyplot.figure(), pyplot.figure(), pyplot.figure()
+        fig1, fig2 = pyplot.figure(), pyplot.figure()
         gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.05)
         # Set subplots
         ax1 = fig1.add_subplot(gs[0, 0])
         ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
-        ax3 = fig3.add_subplot(gs[0, 0], sharex=ax1)
+        #ax3 = fig3.add_subplot(gs[0, 0], sharex=ax1)
 
         # Set labels
         ax1.set_xlabel("time $t$")
         ax2.set_xlabel(ax1.get_xlabel())
-        ax3.set_xlabel(ax1.get_xlabel())
-        ax1.set_ylabel("rise velocity")
-        ax2.set_ylabel("center of mass")
-        ax3.set_ylabel("bubble volume")
+        #ax3.set_xlabel(ax1.get_xlabel())
+        ax1.set_ylabel(r"$E_{\mathrm{kin}}$")
+        ax2.set_ylabel(r"$\int p \: dx$")
+        #ax3.set_ylabel("")
         ax1.set_ylim(0, None, auto=True)
         ax2.set_ylim(0, None, auto=True)
-        ax3.set_ylim(0.15, 0.21, auto=False)
+        #ax3.set_ylim(0, None, auto=True)
 
-        return (fig1, fig2, fig3), (ax1, ax2, ax3)
+        #return (fig1, fig2, fig3), (ax1, ax2, ax3)
+        return (fig1, fig2), (ax1, ax2)

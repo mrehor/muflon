@@ -958,6 +958,12 @@ class Incompressible(Model):
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
         # Mobility
+        if not float(cc["m"]) == 0.0:
+            # FIXME: Is it possible to use degenerate mobility here?
+            msg = "'%s' scheme was derived under the assumtion"\
+                  " assumption of constant mobility."\
+                  " Set mpset['model']['mobility']['m'] = 0" % self._DS.name()
+            raise RuntimeError(msg)
         Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"], cut_Mo)
 
         # --- Forms for Advance-Phase procedure ---
