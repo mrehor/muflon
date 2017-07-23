@@ -109,7 +109,7 @@ def load_initial_conditions(DS, eps):
       double A, L; // amplitude and half-length of the perturbation
 
       Expression_phi()
-        : Expression(), depth(0.5), eps(0.04), width_factor(4.6875),
+        : Expression(), depth(0.5), eps(0.125), width_factor(1.0),
           A(0.05), L(0.1) {}
 
       void eval(Array<double>& value, const Array<double>& x) const
@@ -122,13 +122,14 @@ def load_initial_conditions(DS, eps):
          else if (r >= 0.5*width_factor*eps)
            value[0] = 0.0;
          else
-           value[0] = 0.5*(1.0 - tanh(r/(sqrt(2.0)*eps)));
+           value[0] = 0.5*(1.0 - tanh(2.*r/eps));
       }
     };
     """
+    print(eps)
     phi_prm = dict(
         eps=eps,
-        width_factor=2.*4.6875,
+        width_factor=3.0,
         A=0.05,
         L=0.1
     )
@@ -198,15 +199,17 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
     # Read parameters
     scriptdir = os.path.dirname(os.path.realpath(__file__))
-    prm_file = os.path.join(scriptdir, "bubble-parameters.xml")
+    prm_file = os.path.join(scriptdir, "pool-parameters.xml")
     mpset.read(prm_file)
 
     # Adjust parameters
     if case == 2:
-        # TODO: Set up parameters corresponding to air and water
-        mpset["model"]["nu"]["2"] = 0.1
-        mpset["model"]["rho"]["2"] = 1.0
-        mpset["model"]["sigma"]["12"] = 1.96
+        # Parameters corresponding to air and water, see Dong (2015, Table 6)
+        mpset["model"]["nu"]["1"] = 1.002e-3
+        mpset["model"]["nu"]["2"] = 1.78e-5
+        mpset["model"]["rho"]["1"] = 998.207
+        mpset["model"]["rho"]["2"] = 1.2041
+        mpset["model"]["sigma"]["12"] = 0.0728
 
     # Fixed parameters
     t_end = postprocessor.t_end
@@ -217,13 +220,17 @@ def test_bubble(scheme, matching_p, case, postprocessor):
     outdir = postprocessor.outdir
 
     # Scheme-dependent variables
-    k = 2 if scheme == "FullyDecoupled" else 1
+    k = 1
+    if scheme == "FullyDecoupled":
+        k = 2
+        mpset["model"]["mobility"]["M0"] = 8e-3
+        mpset["model"]["mobility"]["m"]  = 0
 
     for level in range(1, 2):
         dividing_factor = 0.5**level
-        modulo_factor = 1 if level == 0 else 2*(2**(level-1))
-        eps = dividing_factor*0.04
-        gamma = dividing_factor*4e-5
+        modulo_factor = 1 if level == 0 else 2**(level-1)
+        mpset["model"]["eps"] *= dividing_factor
+        mpset["model"]["mobility"]["M0"] *= dividing_factor
         dt = dividing_factor*0.008
         label = "case_{}_{}_level_{}_k_{}_dt_{}_{}".format(
                     case, scheme, level, k, dt, basename)
@@ -235,15 +242,10 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             DS.setup()
 
             # Prepare initial conditions
-            load_initial_conditions(DS, eps)
+            load_initial_conditions(DS, mpset["model"]["eps"])
 
             # Prepare boundary conditions
             bcs = create_bcs(DS, boundary_markers)
-
-            # FIXME: Avoid this confusing manipulation
-            mpset["model"]["eps"] = 2.0*(2.0**0.5)*eps
-            mpset["model"]["mobility"]["M0"] = \
-              8.0*mpset["model"]["sigma"]["12"]*gamma
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
@@ -252,8 +254,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             model.parameters["cut"]["viscosity"] = True
             #model.parameters["cut"]["mobility"] = True
             if scheme == "FullyDecoupled":
-                model.parameters["mobility"]["m"] = 0
-                #model.parameters["full"]["factor_s"] = 1.
+                model.parameters["full"]["factor_s"] = 1.
                 #model.parameters["full"]["factor_rho0"] = 0.5
                 #model.parameters["full"]["factor_nu0"] = 5.
 
