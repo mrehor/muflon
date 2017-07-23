@@ -223,7 +223,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
     for level in range(2): # FIXME: set to 3 (direct) or 4 (iterative)
         dividing_factor = 0.5**level
-        modulo_factor = 1 if level == 0 else 2*(2**(level-1))
+        modulo_factor = 1 if level == 0 else 2**(level-1)
         eps = dividing_factor*0.04
         gamma = dividing_factor*4e-5
         dt = dividing_factor*0.008

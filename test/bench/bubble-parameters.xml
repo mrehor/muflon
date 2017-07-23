@@ -9,7 +9,7 @@
       <!-- eps = eta*2.0*sqrt(2.0), where eta = 0.04 -->
       <parameter key="eps" type="double" value="0.11313708498984762"/>
       <parameters name="mobility">
-        <!-- eps = gamma*8.0*sigma, where gamma = 4e-5, sigma=24.5 -->
+        <!-- M0 = gamma*8.0*sigma, where gamma = 4e-5, sigma=24.5 -->
         <parameter key="M0" type="double" value="0.00784" />
         <parameter key="m"  type="int" value="2" />
       </parameters>
