@@ -34,7 +34,7 @@ import itertools
 from dolfin import *
 from matplotlib import pyplot, gridspec
 
-from muflon import mpset
+from muflon import mpset, multiwell
 from muflon import DiscretizationFactory
 from muflon import ModelFactory
 from muflon import SolverFactory
@@ -184,20 +184,28 @@ def prepare_hook(model, functionals, modulo_factor, div_v=None):
             mesh = self.mesh
             x = SpatialCoordinate(mesh)
             rho = self.rho
-            v = self.v
-            p = self.p
+            v = self.pv["v"]
+            p = self.pv["p"]
+            phi = self.pv["phi"]
             div_v = self.div_v
+            a, b, eps = self.cc["a"], self.cc["b"], self.cc["eps"]
+            LA = self.cc["LA"]
+            F = self.F
 
             # Get div(v) locally
             if div_v is not None:
                 div_v.assign(project(div(v), div_v.function_space()))
 
             # Compute required functionals
-            keys = ["t", "E_kin", "mean_p"] # TODO: Add free energy "F"
+            keys = ["t", "E_kin", "Psi", "mean_p"]
             vals = {}
             vals[keys[0]] = t
             vals[keys[1]] = assemble(Constant(0.5)*rho*inner(v, v)*dx)
-            vals[keys[2]] = assemble(p*dx)
+            vals[keys[2]] = assemble((
+                  0.25*a*eps*inner(dot(LA, grad(phi)), grad(phi))
+                + (b/eps)*F
+            )*dx)
+            vals[keys[3]] = assemble(p*dx)
             if it % self.mod == 0:
                 for key in keys:
                     self.functionals[key].append(vals[key])
@@ -211,13 +219,15 @@ def prepare_hook(model, functionals, modulo_factor, div_v=None):
             info("")
 
     DS = model.discretization_scheme()
+    cc = model.const_coeffs
     mesh = DS.mesh()
     pv = DS.primitive_vars_ctl(indexed=True)
     rho_mat = model.collect_material_params("rho")
     rho = model.homogenized_quantity(rho_mat, pv["phi"])
+    F = multiwell(model.doublewell, pv["phi"], cc["S"])
 
-    return TailoredHook(mesh=mesh, rho=rho, v=pv["v"], p=pv["p"], div_v=div_v,
-                        functionals=functionals, mod=modulo_factor)
+    return TailoredHook(mesh=mesh, rho=rho, pv=pv, div_v=div_v,
+                        functionals=functionals, mod=modulo_factor, cc=cc, F=F)
 
 @pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("div_projection", [False,])
@@ -309,7 +319,7 @@ def test_bubble(scheme, matching_p, div_projection, case, postprocessor):
                 xfields.append((pv["v"].dolfin_repr(), "v"))
             if div_v is not None:
                 xfields.append((div_v, "div_v"))
-            functionals = {"t": [], "E_kin": [], "mean_p": []}
+            functionals = {"t": [], "E_kin": [], "Psi": [], "mean_p": []}
             hook = prepare_hook(model, functionals, modulo_factor, div_v)
             logfile = "log_{}.dat".format(label)
             TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
@@ -346,6 +356,7 @@ def test_bubble(scheme, matching_p, div_projection, case, postprocessor):
             k=k,
             t=hook.functionals["t"],
             E_kin=hook.functionals["E_kin"],
+            Psi=hook.functionals["Psi"],
             mean_p=hook.functionals["mean_p"],
             tmr_prepare=tmr_prepare.elapsed()[0],
             tmr_tstepping=tmr_tstepping.elapsed()[0]
@@ -417,8 +428,8 @@ class Postprocessor(GenericBenchPostprocessor):
         # So far hardcoded values
         self.x_var = "t"
         self.y_var0 = "E_kin"
-        self.y_var1 = "mean_p"
-        #self.y_var2 =
+        self.y_var1 = "Psi"
+        self.y_var2 = "mean_p"
 
         # Store names
         self.basename = "t_end_{}_OTD_{}".format(t_end, OTD)
@@ -427,7 +438,7 @@ class Postprocessor(GenericBenchPostprocessor):
         if not self.plots:
             self.results = []
             return
-        coord_vars = (self.x_var, self.y_var0, self.y_var1) #, self.y_var2)
+        coord_vars = (self.x_var, self.y_var0, self.y_var1, self.y_var2)
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
@@ -445,38 +456,37 @@ class Postprocessor(GenericBenchPostprocessor):
                 xs = datapoints.setdefault("xs", [])
                 ys0 = datapoints.setdefault("ys0", [])
                 ys1 = datapoints.setdefault("ys1", [])
-                #ys2 = datapoints.setdefault("ys2", [])
+                ys2 = datapoints.setdefault("ys2", [])
                 xs.append(result[self.x_var])
                 ys0.append(result[self.y_var0])
                 ys1.append(result[self.y_var1])
-                #ys2.append(result[self.y_var2])
+                ys2.append(result[self.y_var2])
 
             for free_vars, datapoints in six.iteritems(data):
                 xs = datapoints["xs"]
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
-                #ys2 = datapoints["ys2"]
-                self._plot(fig, xs, ys0, ys1, free_vars, style) #, ys2
+                ys2 = datapoints["ys2"]
+                self._plot(fig, xs, ys0, ys1, ys2, free_vars, style)
             self._save_plot(fig, fixed_vars, self.outdir)
         self.results = []
 
     @staticmethod
-    def _plot(fig, xs, ys0, ys1, free_vars, style): #, ys2
-        #(fig1, fig2, fig3), (ax1, ax2, ax3) = fig
-        (fig1, fig2), (ax1, ax2) = fig
+    def _plot(fig, xs, ys0, ys1, ys2, free_vars, style):
+        (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for i in range(len(xs)):
             ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
             ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
-            #ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
+            ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
 
-        for ax in (ax1, ax2): #, ax3
+        for ax in (ax1, ax2, ax3):
             ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
                       fontsize='x-small', ncol=1)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):
-        subfigs, (ax1, ax2) = fig #, ax3
+        subfigs, (ax1, ax2, ax3) = fig
         filename = "_".join(map(str, itertools.chain(*fixed_vars)))
         import matplotlib.backends.backend_pdf
         pdf = matplotlib.backends.backend_pdf.PdfPages(
@@ -486,24 +496,22 @@ class Postprocessor(GenericBenchPostprocessor):
         pdf.close()
 
     def _create_figure(self):
-        #fig1, fig2, fig3 = pyplot.figure(), pyplot.figure(), pyplot.figure()
-        fig1, fig2 = pyplot.figure(), pyplot.figure()
+        fig1, fig2, fig3 = pyplot.figure(), pyplot.figure(), pyplot.figure()
         gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.05)
         # Set subplots
         ax1 = fig1.add_subplot(gs[0, 0])
         ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
-        #ax3 = fig3.add_subplot(gs[0, 0], sharex=ax1)
+        ax3 = fig3.add_subplot(gs[0, 0], sharex=ax1)
 
         # Set labels
         ax1.set_xlabel("time $t$")
         ax2.set_xlabel(ax1.get_xlabel())
-        #ax3.set_xlabel(ax1.get_xlabel())
+        ax3.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel(r"$E_{\mathrm{kin}}$")
-        ax2.set_ylabel(r"$\int p \: dx$")
-        #ax3.set_ylabel("")
+        ax2.set_ylabel(r"$\Psi$")
+        ax3.set_ylabel("$\int p \: dx$")
         ax1.set_ylim(0, None, auto=True)
         ax2.set_ylim(0, None, auto=True)
-        #ax3.set_ylim(0, None, auto=True)
+        ax3.set_ylim(0, None, auto=True)
 
-        #return (fig1, fig2, fig3), (ax1, ax2, ax3)
-        return (fig1, fig2), (ax1, ax2)
+        return (fig1, fig2, fig3), (ax1, ax2, ax3)
