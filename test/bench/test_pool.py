@@ -69,33 +69,47 @@ def create_domain(level):
         mesh = refine(mesh, cell_markers)
 
     # Prepare facet markers
-    bndry = CompiledSubDomain("on_boundary")
-    freeslip = CompiledSubDomain(
-        "on_boundary && (near(x[0], x0) || near(x[0], x1))",
-        x0=-1.0, x1=1.0)
+    noslip = CompiledSubDomain(
+        "on_boundary && (near(x[1], x0) || near(x[1], x1))",
+        x0=0.0, x1=1.0)
+    # freeslip = CompiledSubDomain(
+    #     "on_boundary && (near(x[0], x0) || near(x[0], x1))",
+    #     x0=-1.0, x1=1.0)
     boundary_markers = FacetFunction('size_t', mesh)
-    boundary_markers.set_all(0)              # interior facets
-    bndry.mark(boundary_markers, 1)          # boundary facets (no-slip)
-    freeslip.mark(boundary_markers, 2)       # boundary facets (free-slip)
-    # NOTE: bndry.mark must be first, freeslip.mark then overwrites it
+    boundary_markers.set_all(0)               # interior facets
+    noslip.mark(boundary_markers, 1)          # boundary facets (no-slip)
+    #freeslip.mark(boundary_markers, 2)       # boundary facets (free-slip)
 
-    return mesh, boundary_markers
+    # Sub domain for Periodic boundary condition
+    class PeriodicBoundary(SubDomain):
+        # Left boundary is "target domain" G
+        def inside(self, x, on_boundary):
+            return bool(on_boundary and (near(x[0], -1.0)))
+        # Map right boundary (H) to left boundary (G)
+        def map(self, x, y):
+            y[0] = x[0] - 2.0
+            y[1] = x[1]
+    # Create periodic boundary condition
+    periodic_boundary = PeriodicBoundary()
 
-def create_discretization(scheme, mesh, k=1):
+    return mesh, boundary_markers, periodic_boundary
+
+def create_discretization(scheme, mesh, k=1, periodic_boundary=None):
     # Prepare finite elements
     Pk = FiniteElement("Lagrange", mesh.ufl_cell(), k)
     Pk1 = FiniteElement("Lagrange", mesh.ufl_cell(), k+1)
 
-    return DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk)
+    return DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk,
+                                        constrained_domain=periodic_boundary)
 
 def create_bcs(DS, boundary_markers):
     zero = Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
     bcs_nslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 1)
     bcs_nslip_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 1)
-    bcs_fslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 2)
+    #bcs_fslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 2)
     bcs = {"v": []}
     bcs["v"].append((bcs_nslip_v1, bcs_nslip_v2))
-    bcs["v"].append((bcs_fslip_v1, None))
+    #bcs["v"].append((bcs_fslip_v1, None))
 
     return bcs
 
@@ -236,8 +250,8 @@ def test_bubble(scheme, matching_p, case, postprocessor):
                     case, scheme, level, k, dt, basename)
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
-            mesh, boundary_markers = create_domain(level)
-            DS = create_discretization(scheme, mesh, k)
+            mesh, boundary_markers, periodic_boundary = create_domain(level)
+            DS = create_discretization(scheme, mesh, k, periodic_boundary)
             DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
             DS.setup()
 

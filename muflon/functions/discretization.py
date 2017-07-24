@@ -216,7 +216,8 @@ class Discretization(object):
             not_implemented_msg(self, msg)
 
     def __init__(self, mesh,
-                 FE_phi, FE_chi, FE_v, FE_p, FE_th=None):
+                 FE_phi, FE_chi, FE_v, FE_p, FE_th=None,
+                 constrained_domain=None):
         """
         Initialize :py:data:`Discretization.parameters` and store given
         arguments for later setup.
@@ -233,6 +234,9 @@ class Discretization(object):
         :type FE_p: :py:class:`dolfin.FiniteElement`
         :param FE_th: finite element for discretization of temperature
         :type FE_th: :py:class:`dolfin.FiniteElement`
+        :param constrained_domain: constrained subdomain with map function
+                                   (for specification of periodic boundaries)
+        :type constrained_domain: :py:class:`dolfin.SubDomain`
         """
         # Initialize parameters
         self.parameters = Parameters(mpset["discretization"])
@@ -250,6 +254,7 @@ class Discretization(object):
         self._ndofs = {}
         self._test_fcns = {}
         self._trial_fcns = {}
+        self._constrained_domain = constrained_domain
 
     def name(self):
         # FIXME: Isn't it too hacky?
@@ -706,7 +711,8 @@ class Monolithic(Discretization):
             elements.append(self._FE["th"])
 
         # Build function spaces
-        W = FunctionSpace(self._mesh, MixedElement(elements))
+        W = FunctionSpace(self._mesh, MixedElement(elements),
+                          constrained_domain=self._constrained_domain)
         self._ndofs["total"] = W.dim()
         self._subspace["phi"] = [W.sub(0).sub(i) for i in range(N-1)]
         self._subspace["chi"] = [W.sub(0).sub(i) for i in range(N-1, 2*(N-1))]
@@ -840,8 +846,10 @@ class SemiDecoupled(Discretization):
             elements_ns.append(self._FE["th"])
 
         # Build function spaces
-        W_ch = FunctionSpace(self._mesh, MixedElement(elements_ch))
-        W_ns = FunctionSpace(self._mesh, MixedElement(elements_ns))
+        W_ch = FunctionSpace(self._mesh, MixedElement(elements_ch),
+                             constrained_domain=self._constrained_domain)
+        W_ns = FunctionSpace(self._mesh, MixedElement(elements_ns),
+                             constrained_domain=self._constrained_domain)
         self._ndofs["CH"] = W_ch.dim()
         self._ndofs["NS"] = W_ns.dim()
         self._ndofs["total"] = W_ch.dim() + W_ns.dim()
@@ -999,7 +1007,10 @@ class FullyDecoupled(Discretization):
             elements.append(self._FE["th"])
 
         # Build function spaces
-        spaces = list(map(lambda FE: FunctionSpace(self._mesh, FE), elements))
+        cd = self._constrained_domain
+        spaces = list(map(lambda FE:
+                              FunctionSpace(self._mesh, FE,
+                                            constrained_domain=cd), elements))
         self._subspace["phi"] = [spaces[i] for i in range(N-1)]
         self._ndofs["phi"] = spaces[0].dim()
         self._subspace["chi"] = [spaces[i] for i in range(N-1, 2*(N-1))]
