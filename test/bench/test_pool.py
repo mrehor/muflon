@@ -94,13 +94,22 @@ def create_domain(level):
 
     return mesh, boundary_markers, periodic_boundary
 
-def create_discretization(scheme, mesh, k=1,
+def create_discretization(scheme, mesh, k=1, augmentedTH=False,
                           periodic_boundary=None, div_projection=False):
     # Prepare finite elements for discretization of primitive variables
     Pk = FiniteElement("Lagrange", mesh.ufl_cell(), k)
     Pk1 = FiniteElement("Lagrange", mesh.ufl_cell(), k+1)
 
-    DS = DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk,
+    # Define finite element for pressure
+    FE_p = Pk
+    if augmentedTH and scheme != "FullyDecoupled":
+        # Use enriched element for p -> augmented TH, see Boffi et al. (2011)
+        P0 = FiniteElement("DG", mesh.ufl_cell(), 0)
+        gdim = mesh.geometry().dim()
+        assert k >= gdim - 1 # see Boffi et al. (2011, Eq. (3.1))
+        FE_p = EnrichedElement(Pk, P0)
+
+    DS = DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, FE_p,
                                       constrained_domain=periodic_boundary)
 
     # Function for projecting div(v)
@@ -149,7 +158,6 @@ def load_initial_conditions(DS, eps):
       }
     };
     """
-    print(eps)
     phi_prm = dict(
         eps=eps,
         width_factor=3.0,
@@ -230,10 +238,12 @@ def prepare_hook(model, functionals, modulo_factor, div_v=None):
                         functionals=functionals, mod=modulo_factor, cc=cc, F=F)
 
 @pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
-@pytest.mark.parametrize("div_projection", [False,])
 @pytest.mark.parametrize("matching_p", [False,])
+@pytest.mark.parametrize("div_projection", [True,])
+@pytest.mark.parametrize("augmentedTH", [True,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled", "Monolithic"])
-def test_bubble(scheme, matching_p, div_projection, case, postprocessor):
+def test_bubble(scheme, augmentedTH, div_projection,
+                matching_p, case, postprocessor):
     #set_log_level(WARNING)
 
     # Read parameters
@@ -276,8 +286,8 @@ def test_bubble(scheme, matching_p, div_projection, case, postprocessor):
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers, periodic_boundary = create_domain(level)
-            DS, div_v = create_discretization(
-                            scheme, mesh, k, periodic_boundary, div_projection)
+            DS, div_v = create_discretization(scheme, mesh, k, augmentedTH,
+                                              periodic_boundary, div_projection)
             DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
             DS.setup()
 

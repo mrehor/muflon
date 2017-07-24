@@ -53,7 +53,7 @@ from ufl.tensors import ListTensor
 from dolfin import as_vector, split, FacetNormal
 from dolfin import Parameters, VectorElement, MixedElement, FunctionSpace
 from dolfin import Function, TrialFunction, TestFunction, Expression, Constant
-from dolfin import assemble, dx
+from dolfin import assemble, assemble_system, dx, inner, LUSolver
 from dolfin import Vector, VectorSpaceBasis
 
 from muflon.common.boilerplate import not_implemented_msg
@@ -625,6 +625,17 @@ class Discretization(object):
         """
         not_implemented_msg(self)
 
+    def _get_constant_pressure(self, W):
+        w = TrialFunction(W)
+        w_ = TestFunction(W)
+        p_ = self.test_functions()["p"]
+        A, b = assemble_system(inner(w, w_)*dx, p_*dx)
+        null_fcn = Function(W)
+        solver = LUSolver("mumps")
+        solver.solve(A, null_fcn.vector(), b)
+
+        return null_fcn
+
     def build_pressure_null_space(self):
         """
         An abstract method.
@@ -780,12 +791,15 @@ class Monolithic(Discretization):
     def build_pressure_null_space(self):
         # Prepare function used to correct pressure values
         W = self.function_spaces()[0]
-        null_fcn = Function(W)
-        W.sub(2).dofmap().set(null_fcn.vector(), 1.0)
+        # NOTE: The following works only for nodal elements
+        # null_fcn = Function(W)
+        # W.sub(2).dofmap().set(null_fcn.vector(), 1.0)
+        null_fcn = self._get_constant_pressure(W)
 
         # Create vector that spans the null space and normalize
         null_vec = Vector(null_fcn.vector())
         null_vec *= 1.0/null_vec.norm("l2")
+        # FIXME: Check what are relevant norms for different Krylov methods
 
         # Create null space basis object
         null_space = VectorSpaceBasis([null_vec])
@@ -935,12 +949,15 @@ class SemiDecoupled(Discretization):
     def build_pressure_null_space(self):
         # Prepare function used to correct pressure values
         W_ns = self.function_spaces()[1]
-        null_fcn = Function(W_ns)
-        W_ns.sub(1).dofmap().set(null_fcn.vector(), 1.0)
+        # NOTE: The following works only for nodal elements
+        # null_fcn = Function(W_ns)
+        # W_ns.sub(1).dofmap().set(null_fcn.vector(), 1.0)
+        null_fcn = self._get_constant_pressure(W_ns)
 
         # Create vector that spans the null space and normalize
         null_vec = Vector(null_fcn.vector())
         null_vec *= 1.0/null_vec.norm("l2")
+        # FIXME: Check what are relevant norms for different Krylov methods
 
         # Create null space basis object
         null_space = VectorSpaceBasis([null_vec])
@@ -1082,6 +1099,7 @@ class FullyDecoupled(Discretization):
         # Create vector that spans the null space and normalize
         null_vec = Vector(null_fcn.vector())
         null_vec *= 1.0/null_vec.norm("l2")
+        # FIXME: Check what are relevant norms for different Krylov methods
 
         # Create null space basis object
         null_space = VectorSpaceBasis([null_vec])
