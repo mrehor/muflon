@@ -94,13 +94,22 @@ def create_domain(level):
 
     return mesh, boundary_markers, periodic_boundary
 
-def create_discretization(scheme, mesh, k=1, periodic_boundary=None):
-    # Prepare finite elements
+def create_discretization(scheme, mesh, k=1,
+                          periodic_boundary=None, div_projection=False):
+    # Prepare finite elements for discretization of primitive variables
     Pk = FiniteElement("Lagrange", mesh.ufl_cell(), k)
     Pk1 = FiniteElement("Lagrange", mesh.ufl_cell(), k+1)
 
-    return DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk,
-                                        constrained_domain=periodic_boundary)
+    DS = DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk,
+                                      constrained_domain=periodic_boundary)
+
+    # Function for projecting div(v)
+    div_v = None
+    if div_projection:
+        div_v = Function(FunctionSpace(mesh, "DG", k))
+        div_v.rename("div_v", "divergence_v")
+
+    return DS, div_v
 
 def create_bcs(DS, boundary_markers):
     zero = Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
@@ -167,7 +176,7 @@ def load_initial_conditions(DS, eps):
     for i, w in enumerate(DS.solution_ptl(0)):
         DS.solution_ctl()[i].assign(w)
 
-def prepare_hook(model, functionals, modulo_factor):
+def prepare_hook(model, functionals, modulo_factor, div_v=None):
 
     class TailoredHook(TSHook):
 
@@ -177,6 +186,11 @@ def prepare_hook(model, functionals, modulo_factor):
             rho = self.rho
             v = self.v
             p = self.p
+            div_v = self.div_v
+
+            # Get div(v) locally
+            if div_v is not None:
+                div_v.assign(project(div(v), div_v.function_space()))
 
             # Compute required functionals
             keys = ["t", "E_kin", "mean_p"] # TODO: Add free energy "F"
@@ -202,13 +216,14 @@ def prepare_hook(model, functionals, modulo_factor):
     rho_mat = model.collect_material_params("rho")
     rho = model.homogenized_quantity(rho_mat, pv["phi"])
 
-    return TailoredHook(mesh=mesh, rho=rho, v=pv["v"], p=pv["p"],
-                            functionals=functionals, mod=modulo_factor)
+    return TailoredHook(mesh=mesh, rho=rho, v=pv["v"], p=pv["p"], div_v=div_v,
+                        functionals=functionals, mod=modulo_factor)
 
 @pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
+@pytest.mark.parametrize("div_projection", [False,])
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled", "Monolithic"])
-def test_bubble(scheme, matching_p, case, postprocessor):
+def test_bubble(scheme, matching_p, div_projection, case, postprocessor):
     #set_log_level(WARNING)
 
     # Read parameters
@@ -251,7 +266,8 @@ def test_bubble(scheme, matching_p, case, postprocessor):
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers, periodic_boundary = create_domain(level)
-            DS = create_discretization(scheme, mesh, k, periodic_boundary)
+            DS, div_v = create_discretization(
+                            scheme, mesh, k, periodic_boundary, div_projection)
             DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
             DS.setup()
 
@@ -291,8 +307,10 @@ def test_bubble(scheme, matching_p, case, postprocessor):
                 xfields += list(zip(pv["v"].split(), ("v1", "v2")))
             else:
                 xfields.append((pv["v"].dolfin_repr(), "v"))
+            if div_v is not None:
+                xfields.append((div_v, "div_v"))
             functionals = {"t": [], "E_kin": [], "mean_p": []}
-            hook = prepare_hook(model, functionals, modulo_factor)
+            hook = prepare_hook(model, functionals, modulo_factor, div_v)
             logfile = "log_{}.dat".format(label)
             TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
