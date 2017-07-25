@@ -360,20 +360,28 @@ class Model(object):
             B = conditional(gt(homogq, q_max), 1.0, 0.0)
             return A*Constant(q_min) + B*Constant(q_max) + (1.0 - A - B)*homogq
 
-        # TODO: Add homogenization using Heaviside approximation
+        # TODO: Consider homogenization by logarithmic interpolation
+        # N = len(q)
+        # homogq = q[-1]
+        # for i in range(N-1):
+        #     homogq *= pow(q[i]/q[-1], phi[i])
+
+        # NOTE:
+        #   Homogenization using the following Heaviside approximation of jumps
+        #   in order parameters performs poorly in situations with high density
+        #   ratios and small viscosities.
         # N = len(q)
         # q = list(map(Constant, q))
         # q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
-        # kappa = 0.5
         # ones = as_vector((N-1)*[1.0,])
-
+        #
         # def _Heaviside_approx(z):
-        #     A = conditional(lt(z, -kappa), 1.0, 0.0)
-        #     B = conditional(gt(z,  kappa), 1.0, 0.0)
-        #     approx = 0.5*((1.0 + z/kappa + (1.0/pi)*sin(pi*z/kappa)))
+        #     A = conditional(lt(z, 0.0), 1.0, 0.0)
+        #     B = conditional(gt(z, 1.0), 1.0, 0.0)
+        #     approx = z - (0.5/pi)*sin(2.0*pi*z)
         #     return B*Constant(1.0) + (1.0 - A - B)*approx
-
-        # H_phi = as_vector([_Heaviside_approx(phi[i] - 0.5)
+        #
+        # H_phi = as_vector([_Heaviside_approx(phi[i])
         #                        for i in range(len(phi))])
         # homogq = inner(q_diff, H_phi) + q[-1]
 
@@ -801,7 +809,7 @@ class Incompressible(Model):
         # Density and viscosity
         rho_mat = self.collect_material_params("rho")
         rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
-        rho0 = self.homogenized_quantity(rho_mat, phi0)
+        rho0 = self.homogenized_quantity(rho_mat, phi0, cut_rho)
         nu_mat = self.collect_material_params("nu")
         nu = self.homogenized_quantity(nu_mat, phi, cut_nu)
 
