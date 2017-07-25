@@ -21,6 +21,20 @@
 This file implements the computation for a two-phase "no-flow" system enclosed
 inside a box with horizontal (possibly slightly perturbed) interface between
 the components that is supposed to stay at rest.
+
+For the incompressible model some parasitic non-physical velocities occur close
+to the interface in the vertical direction if the density contrast is high and
+dynamic viscosities of both fluids occupying the domain are small. These
+spurious velocities can be suppressed by
+
+* increasing the order of finite element approximation ``k``
+* using augmented TH elements for ``SemiDecoupled`` and ``Monolithic`` schemes
+  (these elements should improve local mass conversation, see [1]_)
+* increasing ``model.parameters["full"]["factor_nu0"]`` for ``FullyDecoupled``
+  scheme
+
+.. [1] D. Boffi, N. Cavallini, F. Gardini, L. Gastaldi: Local Mass Conservation
+       of Stokes Finite Elements (2011). DOI: 10.1007/s10915-011-9549-4
 """
 
 from __future__ import print_function
@@ -161,7 +175,7 @@ def load_initial_conditions(DS, eps):
     phi_prm = dict(
         eps=eps,
         width_factor=3.0,
-        A=0.05,
+        A=0.0, #0.025, # adds perturbation
         L=0.1
     )
 
@@ -231,15 +245,16 @@ def prepare_hook(model, functionals, modulo_factor, div_v=None):
     mesh = DS.mesh()
     pv = DS.primitive_vars_ctl(indexed=True)
     rho_mat = model.collect_material_params("rho")
-    rho = model.homogenized_quantity(rho_mat, pv["phi"])
+    trunc = model.parameters["cut"]["density"]
+    rho = model.homogenized_quantity(rho_mat, pv["phi"], trunc)
     F = multiwell(model.doublewell, pv["phi"], cc["S"])
 
     return TailoredHook(mesh=mesh, rho=rho, pv=pv, div_v=div_v,
                         functionals=functionals, mod=modulo_factor, cc=cc, F=F)
 
-@pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
+@pytest.mark.parametrize("case", [2,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("div_projection", [True,])
+@pytest.mark.parametrize("div_projection", [False,])
 @pytest.mark.parametrize("augmentedTH", [True,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled", "Monolithic"])
 def test_bubble(scheme, augmentedTH, div_projection,
@@ -272,8 +287,7 @@ def test_bubble(scheme, augmentedTH, div_projection,
     k = 1
     if scheme == "FullyDecoupled":
         k = 2
-        mpset["model"]["mobility"]["M0"] = 8e-3
-        mpset["model"]["mobility"]["m"]  = 0
+    # NOTE: Increase k to suppress parasitic velocities close to the interface
 
     for level in range(1, 2):
         dividing_factor = 0.5**level
@@ -304,9 +318,9 @@ def test_bubble(scheme, augmentedTH, div_projection,
             model.parameters["cut"]["viscosity"] = True
             #model.parameters["cut"]["mobility"] = True
             if scheme == "FullyDecoupled":
-                model.parameters["full"]["factor_s"] = 1.
+                #model.parameters["full"]["factor_s"] = 1.
                 #model.parameters["full"]["factor_rho0"] = 0.5
-                #model.parameters["full"]["factor_nu0"] = 5.
+                model.parameters["full"]["factor_nu0"] = 5.
 
             # Prepare external source term
             f_src = Constant((0.0, -9.8), cell=mesh.ufl_cell(), name="f_src")
@@ -401,7 +415,7 @@ def test_bubble(scheme, augmentedTH, div_projection,
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 0.4
+    t_end = 0.2
     OTD = 1
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
