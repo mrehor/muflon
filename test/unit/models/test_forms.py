@@ -2,6 +2,8 @@ import pytest
 import dolfin
 import six
 
+from matplotlib import pyplot
+
 from muflon.functions.discretization import DiscretizationFactory
 from muflon.functions.iconds import SimpleCppIC
 from muflon.models.forms import ModelFactory
@@ -9,7 +11,8 @@ from muflon.models.forms import ModelFactory
 from unit.functions.test_discretization import get_arguments
 
 def prepare_model_and_bcs(scheme, N, dim, th):
-    args = get_arguments(dim, th)
+    nx = 16 if dim == 2 else 2
+    args = get_arguments(dim, th, nx)
     # Prepare discretization
     DS = DiscretizationFactory.create(scheme, *args)
     DS.parameters["N"] = N
@@ -44,12 +47,59 @@ def prepare_model_and_bcs(scheme, N, dim, th):
 
     return model, DS, bcs
 
+def prepare_initial_condition(DS):
+    phi_cpp = """
+    class Expression_phi : public Expression
+    {
+    public:
+      double depth, eps, width_factor;
+
+      Expression_phi()
+        : Expression(), depth(0.5), eps(0.125), width_factor(1.0) {}
+
+      void eval(Array<double>& value, const Array<double>& x) const
+      {
+         double r = x[1] - depth;
+         if (r <= -0.5*width_factor*eps)
+           value[0] = 1.0;
+         else if (r >= 0.5*width_factor*eps)
+           value[0] = 0.0;
+         else
+           value[0] = 0.5*(1.0 - tanh(2.*r/eps));
+      }
+    };
+    """
+    phi_prm = dict(
+        eps=0.125,
+        width_factor=3.0
+    )
+
+    # Load ic for phi_0
+    if DS.name() == "FullyDecoupled":
+        _phi = dolfin.Function(DS.subspace("phi", 0))
+    else:
+        _phi = dolfin.Function(DS.subspace("phi", 0).collapse())
+    expr = dolfin.Expression(phi_cpp, element=_phi.ufl_element())
+    for key, val in six.iteritems(phi_prm):
+        setattr(expr, key, val)
+    _phi.interpolate(expr)
+
+    pv0 = DS.primitive_vars_ptl(0)
+    phi = pv0["phi"].split()[0]
+    dolfin.assign(phi, _phi) # with uncached dofmaps
+
+    # Copy interpolated initial condition also to CTL
+    for i, w in enumerate(DS.solution_ptl(0)):
+        DS.solution_ctl()[i].assign(w)
+
+    return _phi
+
 # FIXME: does not work with the temperature yet
 @pytest.mark.parametrize("th", [False,]) # True
 @pytest.mark.parametrize("scheme", ["Monolithic", "SemiDecoupled", "FullyDecoupled"])
 @pytest.mark.parametrize("N", [2, 3])
 @pytest.mark.parametrize("dim", [2,])
-def test_forms(scheme, N, dim, th):
+def test_forms(scheme, N, dim, th, plotter):
     model, DS, bcs = prepare_model_and_bcs(scheme, N, dim, th)
     prm = model.parameters["sigma"]
     prm.add("12", 4.0)
@@ -58,7 +108,7 @@ def test_forms(scheme, N, dim, th):
         prm.add("23", 1.0)
     for key in ["rho", "nu"]:
         prm = model.parameters[key]
-        prm.add("1", 42)
+        prm.add("1", 42.)
         prm.add("2", 4.0)
         if N == 3:
             prm.add("3", 1.0)
@@ -72,6 +122,29 @@ def test_forms(scheme, N, dim, th):
     with pytest.raises(RuntimeError):
         model.update_TD_factors(1)
     forms = model.create_forms()
+
+    # Check interpolated quantities
+    itype = {"Monolithic": "lin",
+             #"SemiDecoupled": "sin",
+             "SemiDecoupled": "odd",
+             "FullyDecoupled": "log"}
+    if N == 2:
+        pv = DS.primitive_vars_ctl(indexed=True)
+        rho_mat = model.collect_material_params("rho")
+        rho = model.density(rho_mat, pv["phi"], itype=itype[scheme])
+        phi_ic = prepare_initial_condition(DS)
+        r = dolfin.project(rho, phi_ic.function_space())
+        prm = model.parameters
+        tol = 1e-3
+        p1, p2 = dolfin.Point(0.5, 0.01), dolfin.Point(0.5, 0.99)
+        BBT = DS.mesh().bounding_box_tree()
+        if BBT.collides(p1):
+            assert dolfin.near(r(0.5, 0.01), prm["rho"]["1"], tol)
+        if BBT.collides(p2):
+            assert dolfin.near(r(0.5, 0.99), prm["rho"]["2"], tol)
+        del prm, tol
+        # Visual check (uncomment also 'pyplot.show()' in the finalizer below)
+        #pyplot.figure(); dolfin.plot(r, mode="warp", title=itype[scheme])
 
     # Update order of time discretization
     if scheme in ["Monolithic", "SemiDecoupled"]:
@@ -117,3 +190,10 @@ def test_forms(scheme, N, dim, th):
                 assert dt == a(0) # Constant can be evaluated anywhere,
                                   # independently of the mesh
         assert flag
+
+@pytest.fixture(scope='module')
+def plotter(request):
+    def fin():
+        #pyplot.show()
+        pass
+    request.addfinalizer(fin)

@@ -213,11 +213,11 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
     b = Constant(b, cell=cell, name="MS_b")
     # -- define chemical potential
     chi = (b/eps)*dot(iLA, dF) - 0.5*a*eps*div(grad(phi))
-    # -- define homogenized density and viscosity
+    # -- define interpolated density and viscosity
     rho_mat = model.collect_material_params("rho")
     nu_mat = model.collect_material_params("nu")
-    rho = model.homogenized_quantity(rho_mat, phi, False)
-    nu = model.homogenized_quantity(nu_mat, phi, False)
+    rho = model.density(rho_mat, phi)
+    nu = model.viscosity(nu_mat, phi)
     # -- define total flux
     J = total_flux(Mo, rho_mat, chi)
     # -- define capillary force

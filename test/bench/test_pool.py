@@ -245,8 +245,7 @@ def prepare_hook(model, functionals, modulo_factor, div_v=None):
     mesh = DS.mesh()
     pv = DS.primitive_vars_ctl(indexed=True)
     rho_mat = model.collect_material_params("rho")
-    trunc = model.parameters["cut"]["density"]
-    rho = model.homogenized_quantity(rho_mat, pv["phi"], trunc)
+    rho = model.density(rho_mat, pv["phi"])
     F = multiwell(model.doublewell, pv["phi"], cc["S"])
 
     return TailoredHook(mesh=mesh, rho=rho, pv=pv, div_v=div_v,

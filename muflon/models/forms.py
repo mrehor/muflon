@@ -334,61 +334,116 @@ class Model(object):
         return q
 
     @staticmethod
-    def homogenized_quantity(q, phi, trunc=False):
+    def _interpolated_quantity(q, phi, itype, trunc):
         """
         From given material parameters (density, viscosity, conductivity)
-        builds homogenized quantity and returns the result.
+        builds interpolated quantity and returns the result.
 
-        :param q: list of material parameters to be homogenized
+        :param q: list of constant material parameters to be interpolated
         :type q: list
         :param phi: vector of volume fractions
         :type phi: :py:class:`ufl.tensors.ListTensor`
-        :param trunc: whether to truncate values above the maximum value and
-                      below the minimum value respectively
+        :param itype: type of interpolation: ``'lin'``, ``'log'``, ``'sin'``
+        :type itype: str
+        :param trunc: whether to truncate values above the maximum and
+                      below the minimum for ``'lin'`` type of interpolation
         :type trunc: bool
-        :returns: single homogenized quantity
+        :returns: single interpolated quantity
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
         N = len(q)
-        q_min = min(q)
-        q_max = max(q)
-        q = list(map(Constant, q))
-        q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
-        homogq = inner(q_diff, phi) + q[-1]
-        if trunc:
-            A = conditional(lt(homogq, q_min), 1.0, 0.0)
-            B = conditional(gt(homogq, q_max), 1.0, 0.0)
-            return A*Constant(q_min) + B*Constant(q_max) + (1.0 - A - B)*homogq
+        min_idx = q.index(min(q)) # index of minimal value
+        max_idx = q.index(max(q)) # index of maximal value
+        cell = phi.ufl_domain().ufl_cell()
+        q = [Constant(q_i, cell=cell) for q_i in q]
+        if itype == "lin":
+            q_min = q[min_idx]
+            q_max = q[max_idx]
+            q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
+            interpolant = inner(q_diff, phi) + q[-1]
+            if trunc:
+                A = conditional(lt(interpolant, q_min), 1.0, 0.0)
+                B = conditional(gt(interpolant, q_max), 1.0, 0.0)
+                interpolant = A*q_min + B*q_max + (1.0 - A - B)*interpolant
+        elif itype == "log":
+            # NOTE:
+            #   This interpolation is only experimental. It is asymmetric so
+            #   it prefers to keep one of the values (which one depends on the
+            #   ordering of phases) in a larger portion of the interface.
+            interpolant = q[-1]
+            for i in range(N-1):
+                interpolant *= pow(q[i]/q[-1], phi[i])
+        elif itype in ["sin", "odd"]:
+            # NOTE:
+            #   These approximations are only experimental:
+            #   * "sin" type of interpolation shrinks the region in which
+            #     the quantity is supposed to switch from one value to another
+            #     and usually leads to overshoots.
+            #   * "odd" type of interpolation prefers to keep the averaged
+            #     value of given quantity in the middle of the interface.
+            q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
 
-        # TODO: Consider homogenization by logarithmic interpolation
-        # N = len(q)
-        # homogq = q[-1]
-        # for i in range(N-1):
-        #     homogq *= pow(q[i]/q[-1], phi[i])
+            def _sin_interpolation_function(z):
+                A = conditional(lt(z, 0.0), 1.0, 0.0)
+                B = conditional(gt(z, 1.0), 1.0, 0.0)
+                approx = z - (0.5/pi)*sin(2.0*pi*z)
+                return B + (1.0 - A - B)*approx
 
-        # NOTE:
-        #   Homogenization using the following Heaviside approximation of jumps
-        #   in order parameters performs poorly in situations with high density
-        #   ratios and small viscosities.
-        # N = len(q)
-        # q = list(map(Constant, q))
-        # q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
-        # ones = as_vector((N-1)*[1.0,])
-        #
-        # def _Heaviside_approx(z):
-        #     A = conditional(lt(z, 0.0), 1.0, 0.0)
-        #     B = conditional(gt(z, 1.0), 1.0, 0.0)
-        #     approx = z - (0.5/pi)*sin(2.0*pi*z)
-        #     return B*Constant(1.0) + (1.0 - A - B)*approx
-        #
-        # H_phi = as_vector([_Heaviside_approx(phi[i])
-        #                        for i in range(len(phi))])
-        # homogq = inner(q_diff, H_phi) + q[-1]
+            def _odd_interpolation_function(z):
+                A = conditional(lt(z, 0.0), 1.0, 0.0)
+                B = conditional(gt(z, 1.0), 1.0, 0.0)
+                odd_a = Constant(5.0, cell=cell, name="odd_a")
+                approx = 0.5*(pow(2.0*(z - 0.5), odd_a) + 1.0)
+                return B + (1.0 - A - B)*approx
 
-        return homogq
+            if itype == "sin":
+                _interpolation_function = _sin_interpolation_function
+            else:
+                _interpolation_function = _odd_interpolation_function
+            I_phi = as_vector([_interpolation_function(phi[i])
+                                   for i in range(len(phi))])
+            interpolant = inner(q_diff, I_phi) + q[-1]
+        else:
+            msg = "'%s' is not a valid type of interpolation" % itype
+            raise RuntimeError(msg)
 
-    @staticmethod
-    def mobility(M0, phi, phi0, m=2, beta=0.0, trunc=False):
+        return interpolant
+
+    def density(self, rho_mat, phi, itype="lin"):
+        """
+        From given material densities builds interpolated (total) density and
+        returns the result.
+
+        :param rho_mat: list of constant material densities
+        :type rho_mat: list
+        :param phi: vector of volume fractions
+        :type phi: :py:class:`ufl.tensors.ListTensor`
+        :param itype: type of interpolation: ``'lin'``, ``'log'``, ``'sin'``
+        :type itype: str
+        :returns: total density
+        :rtype: :py:class:`ufl.core.expr.Expr`
+        """
+        trunc = self.parameters["cut"]["density"]
+        return self._interpolated_quantity(rho_mat, phi, itype, trunc)
+
+    def viscosity(self, nu_mat, phi, itype="lin"):
+        """
+        From given dynamic viscosities builds interpolated (averaged) viscosity
+        and returns the result.
+
+        :param nu_mat: list of constant dynamic viscosities
+        :type nu_mat: list
+        :param phi: vector of volume fractions
+        :type phi: :py:class:`ufl.tensors.ListTensor`
+        :param itype: type of interpolation: ``'lin'``, ``'log'``, ``'sin'``
+        :type itype: str
+        :returns: averaged viscosity
+        :rtype: :py:class:`ufl.core.expr.Expr`
+        """
+        trunc = self.parameters["cut"]["viscosity"]
+        return self._interpolated_quantity(nu_mat, phi, itype, trunc)
+
+    def mobility(self, M0, phi, phi0, m, beta):
         """
         Returns degenerate (and possibly truncated) mobility coefficient that
         can be used in the definition of forms.
@@ -424,12 +479,12 @@ class Model(object):
         :param beta: a factor used to weight contributions of order parameters
                      from current and previous time levels respectively
         :type beta: :py:class:`dolfin.Coefficient` (float)
-        :param trunc: whether to truncate values of ``phi`` and ``phi0``
-        :type trunc: bool
         :returns: [degenerate [truncated]] mobility coefficient
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
-        M0 = Constant(M0) if not isinstance(M0, Constant) else M0
+        trunc = self.parameters["cut"]["mobility"]
+        cell = phi.ufl_domain().ufl_cell()
+        M0 = Constant(M0, cell=cell) if not isinstance(M0, Constant) else M0
         if float(m) == 0.0:
             # Constant mobility
             Mo = M0
@@ -451,8 +506,9 @@ class Model(object):
                 Mo_ptl *= (1.0 - phi0_[i])
                 Mo_ctl *= inner(ones, phi_)
                 Mo_ptl *= inner(ones, phi0_)
-            m = Constant(m) if not isinstance(m, Constant) else m
-            beta = Constant(beta) if not isinstance(beta, Constant) else beta
+            m = Constant(m, cell=cell) if not isinstance(m, Constant) else m
+            beta = Constant(beta, cell=cell) \
+                       if not isinstance(beta, Constant) else beta
             Mo = M0*(beta*(Mo_ctl**m) + (1.0 - beta)*(Mo_ptl**m))
 
         return Mo
@@ -587,11 +643,6 @@ class Incompressible(Model):
         cc = self.const_coeffs
         dw = self.doublewell
 
-        # Get truncation toggles
-        cut_rho = self.parameters["cut"]["density"]
-        cut_Mo  = self.parameters["cut"]["mobility"]
-        cut_nu  = self.parameters["cut"]["viscosity"]
-
         # Primitive variables
         pv, pv0 = self._pv_ctl, self._pv_ptl[0]
         phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
@@ -625,7 +676,7 @@ class Incompressible(Model):
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
         # Mobility
-        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"], cut_Mo)
+        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
 
         # System of CH eqns
         def G_phi(phi, v, g_src):
@@ -675,9 +726,9 @@ class Incompressible(Model):
         rho_mat = self.collect_material_params("rho")
         nu_mat = self.collect_material_params("nu")
         def G_v(phi, v, p, f_src):
-            # Homogenized quantities
-            rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
-            nu = self.homogenized_quantity(nu_mat, phi, cut_nu)
+            # Interpolated quantities
+            rho = self.density(rho_mat, phi)
+            nu = self.viscosity(nu_mat, phi)
             # Variable coefficients
             J = total_flux(Mo, rho_mat, chi)
             f_cap = capillary_force(phi, chi, cc["LA"])
@@ -694,7 +745,7 @@ class Incompressible(Model):
             )*dx
             return G
 
-        rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
+        rho = self.density(rho_mat, phi)
         dvdt = idt*rho*inner(v - v0, test["v"])*dx
         G_v_ctl = G_v(phi, v, p, f_src[0])
         G_v_ptl = G_v(phi0, v0, p, f_src[-1]) # NOTE: intentionally not p0
@@ -759,11 +810,6 @@ class Incompressible(Model):
         cc = self.const_coeffs
         dw = self.doublewell
 
-        # Get truncation toggles
-        cut_rho = self.parameters["cut"]["density"]
-        cut_Mo  = self.parameters["cut"]["mobility"]
-        cut_nu  = self.parameters["cut"]["viscosity"]
-
         # Primitive variables
         pv, pv0 = self._pv_ctl, self._pv_ptl[0]
         phi, chi, v, p = pv["phi"], pv["chi"], pv["v"], pv["p"]
@@ -808,16 +854,16 @@ class Incompressible(Model):
 
         # Density and viscosity
         rho_mat = self.collect_material_params("rho")
-        rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
-        rho0 = self.homogenized_quantity(rho_mat, phi0, cut_rho)
+        rho = self.density(rho_mat, phi)
+        rho0 = self.density(rho_mat, phi0)
         nu_mat = self.collect_material_params("nu")
-        nu = self.homogenized_quantity(nu_mat, phi, cut_nu)
+        nu = self.viscosity(nu_mat, phi)
 
         # Explicit convective velocity
         v_star = v0 + self._dt*f_cap/rho0
 
         # Mobility
-        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"], cut_Mo)
+        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
 
         # System of CH eqns
         g_src_star = fact_ctl*g_src[0] + fact_ptl*g_src[-1]
@@ -915,11 +961,6 @@ class Incompressible(Model):
         cc = self.const_coeffs
         dw = self.doublewell
 
-        # Get truncation toggles
-        cut_rho = self.parameters["cut"]["density"]
-        cut_Mo  = self.parameters["cut"]["mobility"]
-        cut_nu  = self.parameters["cut"]["viscosity"]
-
         # Arguments of the system
         test = self._test
         trial = self._trial
@@ -972,7 +1013,7 @@ class Incompressible(Model):
                   " assumption of constant mobility."\
                   " Set mpset['model']['mobility']['m'] = 0" % self._DS.name()
             raise RuntimeError(msg)
-        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"], cut_Mo)
+        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
 
         # --- Forms for Advance-Phase procedure ---
 
@@ -1025,8 +1066,8 @@ class Incompressible(Model):
             f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*chi - alpha*phi))
 
         # 6. Density and viscosity
-        rho = self.homogenized_quantity(rho_mat, phi, cut_rho)
-        nu = self.homogenized_quantity(nu_mat, phi, cut_nu)
+        rho = self.density(rho_mat, phi)
+        nu = self.viscosity(nu_mat, phi)
 
         cell = self._DS.mesh().ufl_cell()
         cc["rho0"] = Constant(min(rho_mat), cell=cell, name="rho0")
