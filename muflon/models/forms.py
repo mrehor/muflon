@@ -899,7 +899,7 @@ class Incompressible(Model):
         a_01 = - trial["p"]*div(test["v"])*dx
         a_10 = Constant(-1.0)*div(trial["v"])*test["p"]*dx # FIXME: + or -
 
-        rhs = (
+        L = (
               idt*rho0*inner(v0, test["v"])
             + inner(f_cap, test["v"])
             + rho*inner(f_src, test["v"])
@@ -907,7 +907,7 @@ class Incompressible(Model):
 
         system_ns = {
             "lhs" : a_00 + a_01 + a_10,
-            "rhs" : rhs
+            "rhs" : L
         }
 
         return dict(nln=system_ch, lin=system_ns)
