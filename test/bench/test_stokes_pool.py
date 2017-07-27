@@ -110,6 +110,11 @@ def create_functions(mesh, k=1, augmentedTH=False,
     A, b = assemble_system(inner(z, z_)*dx, p_*dx)
     null_fcn = Function(W)
     solver = LUSolver("mumps")
+    # solver = PETScKrylovSolver("cg", "jacobi")
+    # prm = solver.parameters
+    # prm["relative_tolerance"] = 1e-10
+    # #prm["monitor_convergence"] = True
+    # #info(prm, True)
     solver.solve(A, null_fcn.vector(), b)
 
     # Create null space basis object
@@ -180,7 +185,12 @@ def create_forms(dt, w0, rho, nu, f_src):
         + rho*inner(f_src, v_)
     )*dx
 
-    return a_00 + a_01 + a_10, L
+    # Form for use in constructing preconditioner matrix
+    # FIXME: The following PC form doesn't work
+    inu = 1.0/nu
+    a_pc = idt*rho*inner(v, v_)*dx + 2.0*nu*inner(Dv, grad(v_))*dx - inu*p*p_*dx
+
+    return a_00 + a_01 + a_10, L, a_pc
 
 def prepare_hook(mesh, rho, v, p, functionals, modulo_factor, div_v=None):
 
@@ -255,6 +265,7 @@ class CustomizedTimeStepping(TimeStepping):
                 # for bc in self.bcs:
                 #     bc.apply(A, b)
                 A, b = assemble_system(self.a, self.L, self.bcs)
+                #P, d = assemble_system(self.a_pc, self.L, self.bcs); del d
 
                 # Attach null space to PETSc matrix
                 as_backend_type(A).set_nullspace(self.null_space)
@@ -262,7 +273,9 @@ class CustomizedTimeStepping(TimeStepping):
                 self.null_space.orthogonalize(b)
 
                 # Solve the problem
-                solver.solve(A, self.w.vector(), b)
+                solver.set_operator(A)
+                #solver.set_operators(A, P)
+                solver.solve(self.w.vector(), b)
 
                 # Calibrate pressure
                 v, p = split(self.w)
@@ -314,7 +327,7 @@ def test_bubble(augmentedTH, div_projection, postprocessor):
     # Order of finite elements
     k = 1
 
-    for level in range(1, 2):
+    for level in range(2, 3):
         dividing_factor = 0.5**level
         modulo_factor = 1 if level == 0 else 2**(level-1)
         dt = dividing_factor*0.008
@@ -350,10 +363,16 @@ def test_bubble(augmentedTH, div_projection, postprocessor):
             f_src = Constant((0.0, -9.8), name="f_src")
 
             # Create forms
-            a, L = create_forms(dt, w0, rho, nu, f_src)
+            a, L, a_pc = create_forms(dt, w0, rho, nu, f_src)
 
             # Prepare solver
             solver = LUSolver("mumps")
+            # solver = PETScKrylovSolver("minres", "hypre_amg")
+            # prm = solver.parameters
+            # prm["monitor_convergence"] = True
+            # #prm["relative_tolerance"] = 1e-8
+            # prm["maximum_iterations"] = 100
+            # info(prm, True)
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
@@ -366,7 +385,7 @@ def test_bubble(augmentedTH, div_projection, postprocessor):
             logfile = "log_{}.dat".format(label)
             TS = CustomizedTimeStepping(comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir,
-                   a=a, L=L, bcs=bcs, w=w, w0=w0,
+                   a=a, a_pc=a_pc, L=L, bcs=bcs, w=w, w0=w0,
                    null_fcn=null_fcn, null_space=null_space,
                    domain_size=assemble(Constant(1.0)*dx(mesh)))
             TS.parameters["xdmf"]["folder"] = "XDMF_{}".format(label)
