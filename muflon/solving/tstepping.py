@@ -26,6 +26,7 @@ import six
 import collections
 
 from dolfin import info, begin, end, near, Timer, Parameters
+from dolfin import GenericLinearSolver
 
 from muflon.common.boilerplate import not_implemented_msg
 from muflon.log.loggers import MuflonLogger
@@ -122,7 +123,7 @@ class TimeStepping(object):
         :type outdir: str
         """
         # Check input
-        assert isinstance(solver, Solver)
+        assert isinstance(solver, (Solver, GenericLinearSolver))
         assert isinstance(hook, (TSHook, type(None)))
         assert isinstance(logfile, (str, type(None)))
         assert isinstance(xfields, (list, type(None)))
