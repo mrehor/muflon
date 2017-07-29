@@ -229,7 +229,7 @@ def create_bcs(W, boundary_markers, p_ex, calibrate):
 
     return bcs
 
-def create_forms(dt, w0, rho, nu, f_src):
+def create_forms(dt, w, w0, rho, nu, f_src):
     W = w0.function_space()
     v, p = TrialFunctions(W)
     v_, p_ = TestFunctions(W)
@@ -252,12 +252,18 @@ def create_forms(dt, w0, rho, nu, f_src):
         + rho*inner(f_src, v_)
     )*dx
 
+    # Forms for identification of artificial forces (numerical discrepancy)
+    _v, _p = split(w)
+    discrepancy = - inner(grad(_p), v_)*dx + rho*inner(f_src, v_)*dx
+    #n = FacetNormal(w.function_space().mesh())
+    #discrepancy = - _p*inner(n, v_)*ds + _p*div(v_)*dx + rho*inner(f_src, v_)*dx
+
     # Form for use in constructing preconditioner matrix
     # FIXME: The following PC form doesn't work
     inu = 1.0/nu
     a_pc = idt*rho*inner(v, v_)*dx + 2.0*nu*inner(Dv, grad(v_))*dx - inu*p*p_*dx
 
-    return a_00 + a_01 + a_10, L, a_pc
+    return a_00 + a_01 + a_10, L, a_pc, discrepancy
 
 def prepare_hook(mesh, rho, v, p, p_ex, p_err, functionals,
                      modulo_factor, degrise, div_v=None):
@@ -319,6 +325,17 @@ class CustomizedTimeStepping(TimeStepping):
         for key, val in six.iteritems(kwargs):
             setattr(self, key, val)
 
+        # Interface needed for identification of numerical discrepancy
+        W = self.w.function_space()
+        self._art_tr = TrialFunction(W)
+        self._art_te = TestFunction(W)
+        self._art_A = assemble(inner(self._art_tr, self._art_te)*dx)
+        self._art_solver = LUSolver("mumps")
+
+    def _compute_artificial_forces(self):
+        b = assemble(self.discrepancy)
+        self._art_solver.solve(self._art_A, self.f_art.vector(), b)
+
     def _tstepping_loop(self, t_beg, t_end, dt, OTD=1, it=0):
         prm = self.parameters
         logger = self._logger
@@ -337,12 +354,13 @@ class CustomizedTimeStepping(TimeStepping):
             # Solve
             info("t = %g, step = %g, dt = %g" % (t, it, dt))
             with Timer("Solve (per time step)") as tmr_solve:
+                begin("Prediction step")
                 # Assemble matrices
-                # A = assemble(self.a)
-                # b = assemble(self.L)
-                # for bc in self.bcs:
-                #     bc.apply(A, b)
-                A, b = assemble_system(self.a, self.L, self.bcs)
+                A = assemble(self.a)
+                b = assemble(self.L)
+                for bc in self.bcs:
+                    bc.apply(A, b)
+                #A, b = assemble_system(self.a, self.L, self.bcs)
                 #P, d = assemble_system(self.a_pc, self.L, self.bcs); del d
 
                 if self.null_space:
@@ -355,6 +373,21 @@ class CustomizedTimeStepping(TimeStepping):
                 solver.set_operator(A)
                 #solver.set_operators(A, P)
                 solver.solve(self.w.vector(), b)
+                end()
+
+                # Identify numerical discrepancy and get rid of it
+                begin("Identification of numerical discrepancy")
+                self._compute_artificial_forces()
+                f_art = self.f_art
+                b_art = assemble(self.L - inner(f_art, self._art_te)*dx)
+                for bc in self.bcs:
+                    bc.apply(b_art)
+                if self.null_space:
+                    self.null_space.orthogonalize(b_art)
+                end()
+                begin("Correction step")
+                solver.solve(self.w.vector(), b_art)
+                end()
 
                 # Calibrate pressure
                 if self.null_fcn:
@@ -439,9 +472,10 @@ def test_stokes_pool(augmentedTH, div_projection, calibrate, postprocessor):
             # pyplot.figure(); plot(rho, mode="warp", title="density")
             # pyplot.show(); exit()
 
-            # Prepare external source term
+            # Prepare source terms
             g0 = 9.8
             f_src = Constant((0.0, -g0), name="f_src")
+            f_art = Function(w.function_space(), name="f_art")
 
             # Prepare exact pressure for error computations
             v, p = w.split()
@@ -454,7 +488,7 @@ def test_stokes_pool(augmentedTH, div_projection, calibrate, postprocessor):
             bcs = create_bcs(w.function_space(), boundary_markers, p_ex, calibrate)
 
             # Create forms
-            a, L, a_pc = create_forms(dt, w0, rho, nu, f_src)
+            a, L, a_pc, discrepancy = create_forms(dt, w, w0, rho, nu, f_src)
 
             # Prepare solver
             solver = LUSolver("mumps")
@@ -467,16 +501,17 @@ def test_stokes_pool(augmentedTH, div_projection, calibrate, postprocessor):
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
-            xfields = [(v, "v"), (p, "p"), (rho, "rho"), (p_err, "p_err")]
+            xfields = [(v, "v"), (p, "p"), (rho, "rho"), (p_err, "p_err"), (f_art, "f_art")]
             if div_v is not None:
                 xfields.append((div_v, "div_v"))
             functionals = {"t": [], "E_kin": [], "err_p": [], "mean_p": []}
-            hook = prepare_hook(mesh, rho, v, p, p_ex, p_err, functionals,
-                                    modulo_factor, degrise, div_v)
+            hook = prepare_hook(mesh, rho, v, p, p_ex, p_err,
+                                functionals, modulo_factor, degrise, div_v)
             logfile = "log_{}.dat".format(label)
             TS = CustomizedTimeStepping(comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir,
                    a=a, a_pc=a_pc, L=L, bcs=bcs, w=w, w0=w0,
+                   discrepancy=discrepancy, f_art=f_art,
                    null_fcn=null_fcn, null_space=null_space,
                    domain_size=assemble(Constant(1.0)*dx(mesh)))
             TS.parameters["xdmf"]["folder"] = "XDMF_{}".format(label)
