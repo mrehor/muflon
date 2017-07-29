@@ -72,11 +72,12 @@ def create_domain(level):
 
     return mesh, boundary_markers, periodic_boundary
 
-def create_functions(mesh, k=1, augmentedTH=False,
+def create_functions(mesh, k=1, augmentedTH=False, calibrate=True,
                      periodic_boundary=None, div_projection=False):
     # Prepare finite elements for discretization of primitive variables
     Pk = FiniteElement("CG", mesh.ufl_cell(), k)
     Pk1 = FiniteElement("CG", mesh.ufl_cell(), k+1)
+    Pk2 = FiniteElement("CG", mesh.ufl_cell(), k+2)
 
     # Define finite element for pressure
     FE_p = Pk
@@ -103,25 +104,28 @@ def create_functions(mesh, k=1, augmentedTH=False,
     V = FunctionSpace(mesh, Pk)
     phi = Function(V, name="phi")
 
-    # Get vector with zero velocity and constant pressure
-    z = TrialFunction(W)
-    z_ = TestFunction(W)
-    p_ = split(z_)[1]
-    A, b = assemble_system(inner(z, z_)*dx, p_*dx)
-    null_fcn = Function(W)
-    solver = LUSolver("mumps")
-    # solver = PETScKrylovSolver("cg", "jacobi")
-    # prm = solver.parameters
-    # prm["relative_tolerance"] = 1e-10
-    # #prm["monitor_convergence"] = True
-    # #info(prm, True)
-    solver.solve(A, null_fcn.vector(), b)
+    null_fcn = None
+    null_space = None
+    if calibrate:
+        # Get vector with zero velocity and constant pressure
+        z = TrialFunction(W)
+        z_ = TestFunction(W)
+        p_ = split(z_)[1]
+        A, b = assemble_system(inner(z, z_)*dx, p_*dx)
+        null_fcn = Function(W)
+        solver = LUSolver("mumps")
+        # solver = PETScKrylovSolver("cg", "jacobi")
+        # prm = solver.parameters
+        # prm["relative_tolerance"] = 1e-10
+        # #prm["monitor_convergence"] = True
+        # #info(prm, True)
+        solver.solve(A, null_fcn.vector(), b)
 
-    # Create null space basis object
-    null_vec = Vector(null_fcn.vector())
-    null_vec *= 1.0/null_vec.norm("l2")
-    # FIXME: Check what are relevant norms for different Krylov methods
-    null_space = VectorSpaceBasis([null_vec])
+        # Create null space basis object
+        null_vec = Vector(null_fcn.vector())
+        null_vec *= 1.0/null_vec.norm("l2")
+        # FIXME: Check what are relevant norms for different Krylov methods
+        null_space = VectorSpaceBasis([null_vec])
 
     return w, w0, div_v, phi, null_fcn, null_space
 
@@ -156,9 +160,72 @@ def initialize_phi(phi, eps):
         setattr(expr, key, val)
     phi.interpolate(expr)
 
-def create_bcs(W, boundary_markers):
+def create_exact_solution(eps, rho1, rho2, g0, calibrate, degrise, FE):
+    p_cpp = """
+    class Expression_p : public Expression
+    {
+    public:
+      double depth, eps, rho1, rho2, g0;
+      bool calibrate;
+
+      Expression_p()
+        : Expression(), depth(0.5), eps(0.125),
+          rho1(1000.0), rho2(1.0), g0(9.8), calibrate(false) {}
+
+      void eval(Array<double>& value, const Array<double>& x) const
+      {
+         double r = x[1] - depth;
+         if (r <= -0.5*eps)
+           value[0] = rho1*(r + depth);
+         else if (r >= 0.5*eps)
+           value[0] = rho2*r + rho1*depth;
+         else
+         {
+           value[0]  = rho2*pow(-1.0 + 2.0*depth + 2.0*r + eps, 2);
+           value[0] -= rho1*(pow(eps, 2) - 2.0*(1.0 + 2.0*depth + 2.0*r)*eps
+                         + pow(2.0*r + 2.0*depth - 1.0, 2));
+           value[0] *= pow(pi, 2);
+           value[0] += 2.0*pow(eps, 2)*(rho1 - rho2)*(1.0
+                         + cos((2.0*r + 2.0*depth - 1.0)*pi/eps));
+           value[0] /= 8.0*pow(pi, 2)*eps;
+         }
+         value[0] *= -g0;
+
+         // Calibration to zero mean
+         if (calibrate)
+         {
+           double C;
+           C  = 6.0*pow(eps, 2)*(rho2 - rho1);
+           C += pow(pi, 2)*(rho1*(pow(eps, 2) - 9.0) - rho2*(pow(eps, 3) + 3.0));
+           C *= g0/(24.0*pow(pi, 2));
+           value[0] -= C;
+         }
+      }
+    };
+    """
+    p_prm = dict(
+        eps=eps,
+        rho1=rho1,
+        rho2=rho2,
+        g0=g0,
+        calibrate=calibrate
+    )
+
+    p_ex = Expression(p_cpp, degree=FE.degree()+degrise, cell=FE.cell())
+    for key, val in six.iteritems(p_prm):
+        setattr(p_ex, key, val)
+
+    return p_ex
+
+def create_bcs(W, boundary_markers, p_ex, calibrate):
     nslip = Constant((0.0, 0.0), name="nslip")
     bcs = [DirichletBC(W.sub(0), nslip, boundary_markers, 1),]
+
+    if not calibrate:
+        bcs.append(DirichletBC(W.sub(1), p_ex, boundary_markers, 1))
+        #corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=0.0)
+        #p_val = Constant(p_ex(0.0, 0.0))
+        #bcs.append(DirichletBC(W.sub(1), p_val, corner, method="pointwise"))
 
     return bcs
 
@@ -192,7 +259,8 @@ def create_forms(dt, w0, rho, nu, f_src):
 
     return a_00 + a_01 + a_10, L, a_pc
 
-def prepare_hook(mesh, rho, v, p, functionals, modulo_factor, div_v=None):
+def prepare_hook(mesh, rho, v, p, p_ex, p_err, functionals,
+                     modulo_factor, degrise, div_v=None):
 
     class TailoredHook(TSHook):
 
@@ -202,18 +270,27 @@ def prepare_hook(mesh, rho, v, p, functionals, modulo_factor, div_v=None):
             rho = self.rho
             v = self.v
             p = self.p
+            p_ex = self.p_ex
+            p_ex_norm = assemble(p_ex*p_ex*dx(mesh))**0.5
             div_v = self.div_v
+            degrise=self.degrise
+
+            # Update error
+            self.p_err.assign(project((p - p_ex)/Constant(p_ex_norm),
+                              p_err.function_space()))
 
             # Get div(v) locally
             if div_v is not None:
                 div_v.assign(project(div(v), div_v.function_space()))
 
             # Compute required functionals
-            keys = ["t", "E_kin", "mean_p"]
+            keys = ["t", "E_kin", "err_p", "mean_p"]
             vals = {}
             vals[keys[0]] = t
             vals[keys[1]] = assemble(Constant(0.5)*rho*inner(v, v)*dx)
-            vals[keys[2]] = assemble(p*dx)
+            vals[keys[2]] = errornorm(p_ex, p, norm_type="L2",
+                                      degree_rise=degrise)/p_ex_norm
+            vals[keys[3]] = assemble(p*dx)
             if it % self.mod == 0:
                 for key in keys:
                     self.functionals[key].append(vals[key])
@@ -226,8 +303,9 @@ def prepare_hook(mesh, rho, v, p, functionals, modulo_factor, div_v=None):
             end()
             info("")
 
-    return TailoredHook(mesh=mesh, rho=rho, v=v, p=p, div_v=div_v,
-                        functionals=functionals, mod=modulo_factor)
+    return TailoredHook(mesh=mesh, rho=rho, v=v, p=p, p_ex=p_ex, p_err=p_err,
+                        div_v=div_v, degrise=degrise, functionals=functionals,
+                        mod=modulo_factor)
 
 class CustomizedTimeStepping(TimeStepping):
     class Factory(object):
@@ -267,10 +345,11 @@ class CustomizedTimeStepping(TimeStepping):
                 A, b = assemble_system(self.a, self.L, self.bcs)
                 #P, d = assemble_system(self.a_pc, self.L, self.bcs); del d
 
-                # Attach null space to PETSc matrix
-                as_backend_type(A).set_nullspace(self.null_space)
-                # Orthogonalize RHS vector b with respect to the null space
-                self.null_space.orthogonalize(b)
+                if self.null_space:
+                    # Attach null space to PETSc matrix
+                    as_backend_type(A).set_nullspace(self.null_space)
+                    # Orthogonalize RHS vector b with respect to the null space
+                    self.null_space.orthogonalize(b)
 
                 # Solve the problem
                 solver.set_operator(A)
@@ -278,9 +357,10 @@ class CustomizedTimeStepping(TimeStepping):
                 solver.solve(self.w.vector(), b)
 
                 # Calibrate pressure
-                v, p = split(self.w)
-                p_corr = assemble(p*dx)/self.domain_size
-                self.w.vector().axpy(-p_corr, self.null_fcn.vector())
+                if self.null_fcn:
+                    v, p = split(self.w)
+                    p_corr = assemble(p*dx)/self.domain_size
+                    self.w.vector().axpy(-p_corr, self.null_fcn.vector())
 
             # User defined instructions
             if self._hook is not None:
@@ -306,10 +386,13 @@ class CustomizedTimeStepping(TimeStepping):
 
         return result
 
+@pytest.mark.parametrize("calibrate", [True,])
 @pytest.mark.parametrize("div_projection", [True,])
 @pytest.mark.parametrize("augmentedTH", [False,])
-def test_stokes_pool(augmentedTH, div_projection, postprocessor):
+def test_stokes_pool(augmentedTH, div_projection, calibrate, postprocessor):
     #set_log_level(WARNING)
+
+    degrise = 3 # degree rise for computation of errornorm
 
     # Set parameters
     nu1 = Constant(1.002e-3, name="nu1")
@@ -327,7 +410,7 @@ def test_stokes_pool(augmentedTH, div_projection, postprocessor):
     # Order of finite elements
     k = 1
 
-    for level in range(2, 3):
+    for level in range(1, 2):
         dividing_factor = 0.5**level
         modulo_factor = 1 if level == 0 else 2**(level-1)
         dt = dividing_factor*0.008
@@ -336,7 +419,7 @@ def test_stokes_pool(augmentedTH, div_projection, postprocessor):
             # Prepare space discretization
             mesh, boundary_markers, periodic_boundary = create_domain(level)
             w, w0, div_v, phi, null_fcn, null_space = create_functions(
-                mesh, k, augmentedTH, periodic_boundary, div_projection)
+                mesh, k, augmentedTH, calibrate, periodic_boundary, div_projection)
 
             # Prepare variable density and viscosity
             eps = 6.0*mesh.hmin()
@@ -356,11 +439,19 @@ def test_stokes_pool(augmentedTH, div_projection, postprocessor):
             # pyplot.figure(); plot(rho, mode="warp", title="density")
             # pyplot.show(); exit()
 
-            # Prepare boundary conditions
-            bcs = create_bcs(w.function_space(), boundary_markers)
-
             # Prepare external source term
-            f_src = Constant((0.0, -9.8), name="f_src")
+            g0 = 9.8
+            f_src = Constant((0.0, -g0), name="f_src")
+
+            # Prepare exact pressure for error computations
+            v, p = w.split()
+            p_ex = create_exact_solution(eps, float(rho1), float(rho2), g0,
+                     calibrate, degrise, rho.function_space().ufl_element())
+            p_err = Function(FunctionSpace(mesh, p.function_space().ufl_element()))
+            p_err.rename("p_err", "p_error")
+
+            # Prepare boundary conditions
+            bcs = create_bcs(w.function_space(), boundary_markers, p_ex, calibrate)
 
             # Create forms
             a, L, a_pc = create_forms(dt, w0, rho, nu, f_src)
@@ -376,12 +467,12 @@ def test_stokes_pool(augmentedTH, div_projection, postprocessor):
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
-            v, p = w.split()
-            xfields = [(v, "v"), (p, "p"), (rho, "rho")]
+            xfields = [(v, "v"), (p, "p"), (rho, "rho"), (p_err, "p_err")]
             if div_v is not None:
                 xfields.append((div_v, "div_v"))
-            functionals = {"t": [], "E_kin": [], "mean_p": []}
-            hook = prepare_hook(mesh, rho, v, p, functionals, modulo_factor, div_v)
+            functionals = {"t": [], "E_kin": [], "err_p": [], "mean_p": []}
+            hook = prepare_hook(mesh, rho, v, p, p_ex, p_err, functionals,
+                                    modulo_factor, degrise, div_v)
             logfile = "log_{}.dat".format(label)
             TS = CustomizedTimeStepping(comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir,
@@ -406,6 +497,7 @@ def test_stokes_pool(augmentedTH, div_projection, postprocessor):
             k=k,
             t=hook.functionals["t"],
             E_kin=hook.functionals["E_kin"],
+            err_p=hook.functionals["err_p"],
             mean_p=hook.functionals["mean_p"],
             tmr_prepare=tmr_prepare.elapsed()[0],
             tmr_tstepping=tmr_tstepping.elapsed()[0]
@@ -472,7 +564,8 @@ class Postprocessor(GenericBenchPostprocessor):
         # So far hardcoded values
         self.x_var = "t"
         self.y_var0 = "E_kin"
-        self.y_var1 = "mean_p"
+        self.y_var1 = "err_p"
+        self.y_var2 = "mean_p"
 
         # Store names
         self.basename = "t_end_{}".format(t_end)
@@ -481,7 +574,7 @@ class Postprocessor(GenericBenchPostprocessor):
         if not self.plots:
             self.results = []
             return
-        coord_vars = (self.x_var, self.y_var0, self.y_var1)
+        coord_vars = (self.x_var, self.y_var0, self.y_var1, self.y_var2)
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
@@ -498,33 +591,37 @@ class Postprocessor(GenericBenchPostprocessor):
                 xs = datapoints.setdefault("xs", [])
                 ys0 = datapoints.setdefault("ys0", [])
                 ys1 = datapoints.setdefault("ys1", [])
+                ys2 = datapoints.setdefault("ys2", [])
                 xs.append(result[self.x_var])
                 ys0.append(result[self.y_var0])
                 ys1.append(result[self.y_var1])
+                ys2.append(result[self.y_var2])
 
             for free_vars, datapoints in six.iteritems(data):
                 xs = datapoints["xs"]
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
-                self._plot(fig, xs, ys0, ys1, free_vars, style)
+                ys2 = datapoints["ys2"]
+                self._plot(fig, xs, ys0, ys1, ys2, free_vars, style)
             self._save_plot(fig, fixed_vars, self.outdir)
         self.results = []
 
     @staticmethod
-    def _plot(fig, xs, ys0, ys1, free_vars, style):
-        (fig1, fig2), (ax1, ax2) = fig
+    def _plot(fig, xs, ys0, ys1, ys2, free_vars, style):
+        (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for i in range(len(xs)):
             ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
             ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
+            ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
 
-        for ax in (ax1, ax2):
+        for ax in (ax1, ax2, ax3):
             ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
                       fontsize='x-small', ncol=1)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):
-        subfigs, (ax1, ax2) = fig
+        subfigs, (ax1, ax2, ax3) = fig
         filename = "_".join(map(str, itertools.chain(*fixed_vars)))
         import matplotlib.backends.backend_pdf
         pdf = matplotlib.backends.backend_pdf.PdfPages(
@@ -534,18 +631,22 @@ class Postprocessor(GenericBenchPostprocessor):
         pdf.close()
 
     def _create_figure(self):
-        fig1, fig2 = pyplot.figure(), pyplot.figure()
+        fig1, fig2, fig3 = pyplot.figure(), pyplot.figure(), pyplot.figure()
         gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.05)
         # Set subplots
         ax1 = fig1.add_subplot(gs[0, 0])
         ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
+        ax3 = fig3.add_subplot(gs[0, 0], sharex=ax1)
 
         # Set labels
         ax1.set_xlabel("time $t$")
         ax2.set_xlabel(ax1.get_xlabel())
+        ax3.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel(r"$E_{\mathrm{kin}}$")
-        ax2.set_ylabel(r"$\int p \: dx$")
+        ax2.set_ylabel(r"pressure error in $L^2$ norm")
+        ax3.set_ylabel(r"$\int p \: dx$")
         ax1.set_ylim(0, None, auto=True)
         ax2.set_ylim(0, None, auto=True)
+        ax3.set_ylim(0, None, auto=True)
 
-        return (fig1, fig2), (ax1, ax2)
+        return (fig1, fig2, fig3), (ax1, ax2, ax3)

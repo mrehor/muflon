@@ -529,7 +529,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax3.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel(r"$E_{\mathrm{kin}}$")
         ax2.set_ylabel(r"$\Psi$")
-        ax3.set_ylabel("$\int p \: dx$")
+        ax3.set_ylabel(r"$\int p \: dx$")
         ax1.set_ylim(0, None, auto=True)
         ax2.set_ylim(0, None, auto=True)
         ax3.set_ylim(0, None, auto=True)
