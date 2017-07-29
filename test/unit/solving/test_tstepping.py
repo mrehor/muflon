@@ -22,11 +22,6 @@ def test_ConstantTimeStep(scheme):
     phi = DS.primitive_vars_ctl()["phi"].split()
     fields = list(phi)
 
-    arbit_solver = dolfin.LinearSolver()
-    with pytest.raises(AssertionError):
-        TS = TimeSteppingFactory.create("ConstantTimeStep", comm, arbit_solver,
-                                        xfields=fields)
-
     TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
                                     xfields=fields)
     prm = TS.parameters
