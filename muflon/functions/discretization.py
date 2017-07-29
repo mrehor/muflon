@@ -394,7 +394,7 @@ class Discretization(object):
         spaces = [w.function_space() for w in self._solution_ctl]
         return tuple(spaces)
 
-    def subspace(self, var, i=None):
+    def subspace(self, var, i=None, deepcopy=False):
         """
         Get subspace of variable ``var[i]``, where ``i`` must be ``None`` for
         scalar variables.
@@ -405,6 +405,10 @@ class Discretization(object):
         :type var: str
         :param i: component number (``None`` for scalar variables)
         :type i: int
+        :param deepcopy: if True then the returned subspace is a newly created
+                         function space, otherwise it is extracted from a
+                         correponding mixed space
+        :type deepcopy: bool
         :returns: subspace on which requested variable lives
         :rtype: :py:class:`dolfin.FunctionSpace`
         """
@@ -414,9 +418,17 @@ class Discretization(object):
                 msg = "For vector quantities only subspaces for individual" \
                       " components can be extracted"
                 raise ValueError(msg)
-            return self._subspace[var]
+            if deepcopy:
+                FE = self._subspace[var].ufl_element()
+                return FunctionSpace(self._mesh, FE)
+            else:
+                return self._subspace[var]
         else:
-            return self._subspace[var][i]
+            if deepcopy:
+                FE = self._subspace[var][i].ufl_element()
+                return FunctionSpace(self._mesh, FE)
+            else:
+                return self._subspace[var][i]
 
     def num_dofs(self, key="total"):
         """

@@ -130,10 +130,7 @@ def load_initial_conditions(DS, eps):
     )
 
     # Load ic for phi_0
-    if DS.name() == "FullyDecoupled":
-        _phi = Function(DS.subspace("phi", 0))
-    else:
-        _phi = Function(DS.subspace("phi", 0).collapse())
+    _phi = dolfin.Function(DS.subspace("phi", 0, deepcopy=True))
     expr = Expression(phi_cpp, element=_phi.ufl_element())
     for key, val in six.iteritems(phi_prm):
         setattr(expr, key, val)
