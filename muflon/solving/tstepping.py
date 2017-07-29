@@ -285,14 +285,14 @@ class ConstantTimeStep(TimeStepping):
             with Timer("Solve (per time step)") as tmr_solve:
                 solver.solve()
 
+            # User defined instructions
+            if self._hook is not None:
+                self._hook.tail(t, it, logger)
+
             # Save results
             if it % prm["xdmf"]["modulo"] == 0:
                 if hasattr(self, "_xdmf_writer"):
                     self._xdmf_writer.write(t)
-
-            # User defined instructions
-            if self._hook is not None:
-                self._hook.tail(t, it, logger)
 
             # Update variables at previous time levels
             L = len(sol_ptl)

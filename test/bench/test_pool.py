@@ -61,7 +61,8 @@ from muflon.common.timer import Timer
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
-#parameters["form_compiler"]["quadrature_degree"] = 4
+#parameters["form_compiler"]["quadrature_degree"] = 4 # if k == 1
+#parameters["form_compiler"]["quadrature_degree"] = 6 # if k == 2
 parameters["plotting_backend"] = "matplotlib"
 
 def create_domain(level):
@@ -256,8 +257,7 @@ def prepare_hook(model, functionals, modulo_factor, div_v=None):
 @pytest.mark.parametrize("div_projection", [False,])
 @pytest.mark.parametrize("augmentedTH", [True,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled", "Monolithic"])
-def test_bubble(scheme, augmentedTH, div_projection,
-                matching_p, case, postprocessor):
+def test_pool(scheme, augmentedTH, div_projection, matching_p, case, postprocessor):
     #set_log_level(WARNING)
 
     # Read parameters

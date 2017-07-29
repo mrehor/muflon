@@ -176,7 +176,7 @@ def create_forms(dt, w0, rho, nu, f_src):
           idt*rho*inner(v, v_)
         + 2.0*nu*inner(Dv, grad(v_))
     )*dx
-    a_01 = - p*div(v_)*dx
+    a_01 = - p*div(v_)*dx # inner(grad(p), v_)*dx
     a_10 = - div(v)*p_*dx
     # a_10 = div(v)*p_*dx
 
@@ -282,14 +282,14 @@ class CustomizedTimeStepping(TimeStepping):
                 p_corr = assemble(p*dx)/self.domain_size
                 self.w.vector().axpy(-p_corr, self.null_fcn.vector())
 
+            # User defined instructions
+            if self._hook is not None:
+                self._hook.tail(t, it, logger)
+
             # Save results
             if it % prm["xdmf"]["modulo"] == 0:
                 if hasattr(self, "_xdmf_writer"):
                     self._xdmf_writer.write(t)
-
-            # User defined instructions
-            if self._hook is not None:
-                self._hook.tail(t, it, logger)
 
             # Update variables at previous time levels
             self.w0.assign(self.w) # t^(n-0) <-- t^(n+1)
@@ -307,8 +307,8 @@ class CustomizedTimeStepping(TimeStepping):
         return result
 
 @pytest.mark.parametrize("div_projection", [True,])
-@pytest.mark.parametrize("augmentedTH", [True,])
-def test_bubble(augmentedTH, div_projection, postprocessor):
+@pytest.mark.parametrize("augmentedTH", [False,])
+def test_stokes_pool(augmentedTH, div_projection, postprocessor):
     #set_log_level(WARNING)
 
     # Set parameters
