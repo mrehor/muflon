@@ -10,6 +10,12 @@ version = re.findall('__version__ = "(.*)"',
 packages = [
     "muflon",
     "muflon.common",
+    "muflon.functions",
+    "muflon.io",
+    "muflon.log",
+    "muflon.models",
+    "muflon.solving",
+    "muflon.utils",
     ]
 
 CLASSIFIERS = """
