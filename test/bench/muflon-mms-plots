@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2017 Martin Řehoř
@@ -40,8 +40,8 @@ def main(argv):
     proc.create_plots(rank)
     for arg in argv[1:]:
         proc.read_results(rank, arg)
-        proc.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
-        proc.flush_plots()
+    proc.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
+    proc.flush_plots()
 
 if __name__ == "__main__":
     if MPI.size(mpi_comm_world()) > 1:
