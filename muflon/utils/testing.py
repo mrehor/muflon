@@ -84,8 +84,8 @@ class GenericBenchPostprocessor(object):
     def read_results(self, rank, datafile):
         if rank > 0:
             return
-        if self.results:
-            self.results = []
+        # if self.results:
+        #     self.results = []
         with open(datafile, 'rb') as handle:
             while True:
                 try:

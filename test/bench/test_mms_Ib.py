@@ -91,6 +91,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
     # Iterate over time step
     for m in range(5): # FIXME: set to 7
         dt = 0.1*0.5**m
+        label = "{}_dt_{}_{}".format(scheme, dt, basename)
         with Timer("Prepare") as tmr_prepare:
             # Reset sol_ptl[0] back to initial conditions
             DS.load_ic_from_simple_cpp(ic)
@@ -129,7 +130,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
             #         + list(zip(v_, len(v_)*[None,])) \
             #         + [(p.dolfin_repr(), None),]
             hook = prepare_hook(t_src, model, esol, degrise, {})
-            logfile = "log_{}_dt_{}_{}.dat".format(basename, dt, scheme)
+            logfile = "log_{}.dat".format(label)
             TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
                    hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
 
@@ -170,9 +171,9 @@ def test_scaling_time(scheme, matching_p, postprocessor):
         rank = MPI.rank(comm)
         postprocessor.add_result(rank, result)
 
-    # Save results into a binary file
-    filename = "results_{}_{}.pickle".format(basename, scheme)
-    postprocessor.save_results(filename)
+        # Save results into a binary file
+        filename = "results_{}.pickle".format(label)
+        postprocessor.save_results(filename)
 
     # Pop results that we do not want to report at the moment
     postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])

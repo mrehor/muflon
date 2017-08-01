@@ -778,6 +778,8 @@ class Incompressible(Model):
             self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
         elif OTD == 2:
             self.const_coeffs["TD_theta"].assign(Constant(0.5))
+            # FIXME: Boyer and Minjeaud (2010) proved the convergence result
+            #        assuming TD_theta > 0.5 (for CH part only)
             self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
             self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
             self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
