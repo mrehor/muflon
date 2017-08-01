@@ -204,7 +204,7 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
     M0 = Constant(prm["mobility"]["M0"], cell=cell, name="MS_M0")
     m = Constant(prm["mobility"]["m"], cell=cell, name="MS_m")
     beta = Constant(1.0, cell=cell, name="MS_beta")
-    Mo = model.mobility(M0, phi, phi, m, beta, False)
+    Mo = model.mobility(M0, phi, phi, m, beta)
     # -- initialize constant coefficients
     omega_2 = Constant(prm["omega_2"], cell=cell, name="MS_omega_2")
     eps = Constant(prm["eps"], cell=cell, name="MS_eps")
@@ -243,6 +243,16 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
         - div(2*nu*sym(grad(v)))
         - f_cap
     )
+
+    if DS.name() == "Monolithic":
+        # NOTE:
+        #   This scheme takes into account the momentum balance in the
+        #   conservative form, while 'f_src' above is based on the
+        #   non-conservative form. Both forms are equivalent supposing that the
+        #   balance of mass holds. The manufactured solution defined above
+        #   however do not satisfy the mass balance, therefore we need to add
+        #   the following terms to 'f_src'.
+        f_src += (1.0/rho)*(v*diff(rho, t) + v*div(rho*v + omega_2*J))
 
     return f_src, g_src
 
@@ -390,12 +400,12 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
                     dt0 = dt
                     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
                     t_beg = dt
-                # elif scheme == "Monolithic":
-                #     dt0 = 1.0e-4*dt
-                #     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
-                #     if dt - dt0 > 0.0:
-                #         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
-                #     t_beg = dt
+                elif scheme == "Monolithic":
+                    dt0 = 1.0e-4*dt
+                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                    if dt - dt0 > 0.0:
+                        result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
+                    t_beg = dt
             result = TS.run(t_beg, t_end, dt, OTD)
 
         # Prepare results

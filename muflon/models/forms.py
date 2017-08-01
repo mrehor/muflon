@@ -737,7 +737,7 @@ class Incompressible(Model):
             Dv_ = sym(grad(test["v"]))
             # Form
             G = (
-                  inner(dot(grad(v), rho*v + cc["omega_2"]*J), test["v"])
+                  inner(div(outer(v, rho*v + cc["omega_2"]*J)), test["v"])
                 + 2.0*nu*inner(Dv, Dv_)
                 - p*div(test["v"])
                 - inner(f_cap, test["v"])
@@ -746,15 +746,22 @@ class Incompressible(Model):
             return G
 
         rho = self.density(rho_mat, phi)
-        dvdt = idt*rho*inner(v - v0, test["v"])*dx
+        rho0 = self.density(rho_mat, phi0)
+        dvdt = idt*inner(rho*v - rho0*v0, test["v"])*dx
         G_v_ctl = G_v(phi, v, p, f_src[0])
-        G_v_ptl = G_v(phi0, v0, p, f_src[-1]) # NOTE: intentionally not p0
+        G_v_ptl = G_v(phi0, v0, p0, f_src[-1])
+                        # NOTE: If we use p here instead of p0 we obtain only
+                        #       first order of convergence for pressure.
+                        #       To initialize p0 it is suggested to use first
+                        #       order method with a tiny time step.
         eqn_v = dvdt + fact_ctl*G_v_ctl + fact_ptl*G_v_ptl
 
         def G_p(v):
             return div(v)*test["p"]*dx
         G_p_ctl = G_p(v)
-        G_p_ptl = G_p(v) # NOTE: intentionally not v0
+        G_p_ptl = G_p(v0) # FIXME: What to use: v0 or v? What about stability?
+                          #        If we choose v, then we should probably not
+                          #        use p0 above.
         eqn_p = fact_ctl*G_p_ctl + fact_ptl*G_p_ptl
 
         system_ns = eqn_v + Constant(-1.0)*eqn_p # FIXME: + or -

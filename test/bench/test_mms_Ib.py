@@ -141,12 +141,12 @@ def test_scaling_time(scheme, matching_p, postprocessor):
                     dt0 = dt
                     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
                     t_beg = dt
-                # elif scheme == "Monolithic":
-                #     dt0 = 1.0e-4*dt
-                #     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
-                #     if dt - dt0 > 0.0:
-                #         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
-                #     t_beg = dt
+                elif scheme == "Monolithic":
+                    dt0 = 1.0e-4*dt
+                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                    if dt - dt0 > 0.0:
+                        result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
+                    t_beg = dt
             result = TS.run(t_beg, t_end, dt, OTD)
 
         # Prepare results
