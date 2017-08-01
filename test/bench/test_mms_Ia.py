@@ -253,6 +253,14 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
         #   however do not satisfy the mass balance, therefore we need to add
         #   the following terms to 'f_src'.
         f_src += (1.0/rho)*(v*diff(rho, t) + v*div(rho*v + omega_2*J))
+    elif DS.name() == "SemiDecoupled":
+        # NOTE:
+        #   This scheme takes into account the momentum balance in the
+        #   special form with square roots of rho. Again, 'f_src' above is
+        #   based on the non-conservative form. In spite of reasoning
+        #   mentioned in the previous comment, we need to add the following
+        #   terms to 'f_src'.
+        f_src += 0.5*(1.0/rho)*(v*diff(rho, t) + v*div(rho*v + omega_2*J))
 
     return f_src, g_src
 
