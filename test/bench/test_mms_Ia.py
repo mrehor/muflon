@@ -143,8 +143,9 @@ def create_bcs(DS, boundary_markers, esol):
     # -- 1. Dirichlet on the whole boundary
     # bcs["p"] = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
     # -- 2. Dirichlet in the corner
-    # corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=-1.0)
-    # bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0), corner, method="pointwise"),]
+    corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=-1.0)
+    bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0), corner, method="pointwise"),]
+    # FIXME: Ban this bc once iterative solvers are ready
     # NOTE:
     #   The above pressure bcs are not needed anymore as we can attach the null
     #   space to the system matrix and we can postprocess the pressure so its

@@ -92,6 +92,10 @@ def create_bcs(DS, boundary_markers):
     bcs_fslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 2)
     bcs = {}
     bcs["v"] = [(bcs_nslip_v1, bcs_nslip_v2), (bcs_fslip_v1, None)]
+    # Possible bcs fixing the pressure
+    # FIXME: Ban this bc once iterative solvers are ready
+    corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=2.0)
+    bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0), corner, method="pointwise"),]
 
     return bcs
 
@@ -194,7 +198,7 @@ def prepare_hook(DS, functionals, modulo_factor):
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
 def test_bubble(scheme, matching_p, case, postprocessor):
-    #set_log_level(WARNING)
+    set_log_level(WARNING)
 
     # Read parameters
     scriptdir = os.path.dirname(os.path.realpath(__file__))
@@ -294,12 +298,12 @@ def test_bubble(scheme, matching_p, case, postprocessor):
                     dt0 = dt
                     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
                     t_beg = dt
-                # elif scheme == "Monolithic":
-                #     dt0 = 1.0e-4*dt
-                #     result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
-                #     if dt - dt0 > 0.0:
-                #         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
-                #     t_beg = dt
+                elif scheme == "Monolithic":
+                    dt0 = 1.0e-4*dt
+                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                    if dt - dt0 > 0.0:
+                        result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
+                    t_beg = dt
             result = TS.run(t_beg, t_end, dt, OTD)
 
         # Prepare results
@@ -325,9 +329,9 @@ def test_bubble(scheme, matching_p, case, postprocessor):
         rank = MPI.rank(comm)
         postprocessor.add_result(rank, result)
 
-    # Save results into a binary file
-    filename = "results_{}.pickle".format(label)
-    postprocessor.save_results(filename)
+        # Save results into a binary file
+        filename = "results_{}.pickle".format(label)
+        postprocessor.save_results(filename)
 
     # Pop results that we do not want to report at the moment
     postprocessor.pop_items([
@@ -349,7 +353,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     t_end = 0.4 # FIXME: Set to 3.
-    OTD = 1     # Order of Time Discretization
+    OTD = 2     # Order of Time Discretization
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
