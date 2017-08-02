@@ -194,8 +194,8 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     t_end = 0.2 # FIXME: set t_end = 1.0
-    level = 1   # NOTE: set to 6 for direct solvers
-    OPA = 7     # Order of Polynomial Approximation
+    level = 2   # NOTE: set to 6 for direct solvers
+    OPA = 5     # Order of Polynomial Approximation
     OTD = 2
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))

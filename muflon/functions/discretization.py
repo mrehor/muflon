@@ -700,7 +700,9 @@ class Monolithic(Discretization):
             N = self.parameters["N"] # 'self' is visible from here
             if indexed:
                 ws = split(vec[0])
-                ws_ch = split(ws[0])
+                # FIXME: Remove the following hack
+                #ws_ch = split(ws[0]) # Not working with older versions of DOLFIN
+                ws_ch = tuple([ws[0][i] for i in range(len(ws[0]))])
             else:
                 ws = vec[0].split(deepcopy)
                 ws_ch = ws[0].split(deepcopy)
