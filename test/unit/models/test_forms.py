@@ -34,7 +34,7 @@ def prepare_model_and_bcs(scheme, N, dim, th):
     class Gamma0(dolfin.SubDomain):
         def inside(self, x, on_boundary):
             return on_boundary
-    bndry_markers = dolfin.FacetFunction("size_t", mesh)
+    bndry_markers = dolfin.MeshFunction("size_t", mesh, mesh.topology().dim()-1)
     bndry_markers.set_all(3)        # interior facets
     Gamma0().mark(bndry_markers, 0) # boundary facets
     bc_val = dolfin.Constant(42)

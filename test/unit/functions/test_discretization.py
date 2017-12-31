@@ -168,8 +168,8 @@ def test_discretization_schemes(scheme, N, dim, th):
     pv0 = DS.primitive_vars_ptl(0, deepcopy=True)
     v = pv["v"].split(deepcopy=True) # get components of v
     v0 = pv0["v"].split(deepcopy=True) # get components of v0
-    assert v[0].vector().array()[0] == 1.0
-    assert v0[0].vector().array()[0] == 1.0
+    assert v[0].vector().get_local()[0] == 1.0
+    assert v0[0].vector().get_local()[0] == 1.0
 
     # # Visual check
     # dolfin.info(pv0["phi"].split(deepcopy=True)[0].vector(), True)
