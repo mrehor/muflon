@@ -1,14 +1,14 @@
 ***********************************
-MUFLON - MUltiphase FLOw simulatioN
+MUFLON - MUltiphase FLow simulatiON
 ***********************************
 
-The MUFLON package implements diffuse interface models for computer
+The MUFLON library implements diffuse interface models for computer
 simulations of incompressible multiphase flows described in [1]_.
 
 MUFLON is based on the FEniCS project <https://www.fenicsproject.org>.
 
 .. [1] Řehoř M., *Diffuse interface models in theory of interacting continua*.
-       PhD Thesis, 2017.
+       PhD Thesis, 2018.
 
 Dependencies
 ============
