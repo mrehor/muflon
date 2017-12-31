@@ -184,30 +184,23 @@ class MuflonParameterSet(Parameters, Singleton):
         filename += ".xml" if filename[-4:] != ".xml" else ""
         if os.path.isfile(filename) and os.access(filename, os.R_OK):
             log(DEBUG, "Reading default values from '%s'" % filename)
-            xmlfile = File(filename)
-            xmlfile >> self
-            del xmlfile
+            with File(filename) as xmlfile:
+                xmlfile >> self
         else:
             log(DEBUG, "File '%s' is missing or not readable." % filename)
 
-    def write(self, comm, filename="muflon-parameters.xml"):
+    def write(self, filename="muflon-parameters.xml"):
         """
         Write parameters to XML file.
 
-        :param comm: MPI communicator
-        :type comm: :py:class:`dolfin.MPI_Comm`
         :param filename: name of the output XML file (can be relative or
                          absolute path)
         :type filename: str
         """
-        if MPI.rank(comm) == 0:
-            filename += ".xml" if filename[-4:] != ".xml" else ""
-            log(DEBUG, "Writing current parameter values into '%s'." % filename)
-            xmlfile = File(filename)
+        filename += ".xml" if filename[-4:] != ".xml" else ""
+        log(DEBUG, "Writing current parameter values into '%s'." % filename)
+        with File(filename) as xmlfile:
             xmlfile << self
-            del xmlfile
-        else:
-            return
 
     def refresh(self):
         """
