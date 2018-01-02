@@ -250,7 +250,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
-            #model.parameters["omega_2"] = 0.0
+            #model.parameters["THETA2"] = 0.0
             model.parameters["cut"]["density"] = True
             model.parameters["cut"]["viscosity"] = True
             #model.parameters["cut"]["mobility"] = True

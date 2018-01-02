@@ -207,7 +207,7 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
     beta = Constant(1.0, cell=cell, name="MS_beta")
     Mo = model.mobility(M0, phi, phi, m, beta)
     # -- initialize constant coefficients
-    omega_2 = Constant(prm["omega_2"], cell=cell, name="MS_omega_2")
+    THETA2 = Constant(prm["THETA2"], cell=cell, name="MS_THETA2")
     eps = Constant(prm["eps"], cell=cell, name="MS_eps")
     a, b = dw.free_energy_coefficents()
     a = Constant(a, cell=cell, name="MS_a")
@@ -239,7 +239,7 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
     # Source term for NS part
     f_src = (1.0/rho)*(
           rho*diff(v, t)
-        + dot(grad(v), rho*v + omega_2*J)
+        + dot(grad(v), rho*v + THETA2*J)
         + grad(p)
         - div(2*nu*sym(grad(v)))
         - f_cap
@@ -253,7 +253,7 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
         #   balance of mass holds. The manufactured solution defined above
         #   however do not satisfy the mass balance, therefore we need to add
         #   the following terms to 'f_src'.
-        f_src += (1.0/rho)*(v*diff(rho, t) + v*div(rho*v + omega_2*J))
+        f_src += (1.0/rho)*(v*diff(rho, t) + v*div(rho*v + THETA2*J))
     elif DS.name() == "SemiDecoupled":
         # NOTE:
         #   This scheme takes into account the momentum balance in the
@@ -261,7 +261,7 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
         #   based on the non-conservative form. In spite of reasoning
         #   mentioned in the previous comment, we need to add the following
         #   terms to 'f_src'.
-        f_src += 0.5*(1.0/rho)*(v*diff(rho, t) + v*div(rho*v + omega_2*J))
+        f_src += 0.5*(1.0/rho)*(v*diff(rho, t) + v*div(rho*v + THETA2*J))
 
     return f_src, g_src
 

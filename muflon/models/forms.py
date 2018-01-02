@@ -544,7 +544,7 @@ class Incompressible(Model):
         super(Incompressible, self).__init__(*args, **kwargs)
 
         # Add specific model parameters
-        self.parameters.add("omega_2", 1.0)
+        self.parameters.add("THETA2", 1.0)
 
     def _create_doublewell_and_coefficients(self, factors=()):
         """
@@ -580,7 +580,7 @@ class Incompressible(Model):
         prm = self.parameters
         # -- model parameters
         cc["eps"] = Constant(prm["eps"], cell=cell, name="eps")
-        cc["omega_2"] = Constant(prm["omega_2"], cell=cell, name="omega_2")
+        cc["THETA2"] = Constant(prm["THETA2"], cell=cell, name="THETA2")
         cc["M0"] = Constant(prm["mobility"]["M0"], cell=cell, name="M0")
         cc["m"] = Constant(prm["mobility"]["m"], cell=cell, name="m")
         cc["beta"] = Constant(prm["mobility"]["beta"], cell=cell, name="beta")
@@ -737,7 +737,7 @@ class Incompressible(Model):
             Dv_ = sym(grad(test["v"]))
             # Form
             G = (
-                  inner(div(outer(v, rho*v + cc["omega_2"]*J)), test["v"])
+                  inner(div(outer(v, rho*v + cc["THETA2"]*J)), test["v"])
                 + 2.0*nu*inner(Dv, Dv_)
                 - p*div(test["v"])
                 - inner(f_cap, test["v"])
@@ -901,8 +901,8 @@ class Incompressible(Model):
 
         a_00 = (
               idt*0.5*(rho + rho0)*inner(trial["v"], test["v"])
-            + 0.5*inner(dot(grad(trial["v"]), rho*v0 + cc["omega_2"]*J), test["v"])
-            - 0.5*inner(dot(grad(test["v"]), rho*v0 + cc["omega_2"]*J), trial["v"])
+            + 0.5*inner(dot(grad(trial["v"]), rho*v0 + cc["THETA2"]*J), test["v"])
+            - 0.5*inner(dot(grad(test["v"]), rho*v0 + cc["THETA2"]*J), trial["v"])
             + 2.0*nu*inner(Dv, Dv_)
         )*dx
         a_01 = - trial["p"]*div(test["v"])*dx
@@ -993,7 +993,7 @@ class Incompressible(Model):
         # Extract constant coefficients
         S, LA, iLA = cc["S"], cc["LA"], cc["iLA"]
         a, b = cc["a"], cc["b"]
-        eps, omega_2 = cc["eps"], cc["omega_2"]
+        eps, THETA2 = cc["eps"], cc["THETA2"]
         gamma0 = cc["TD_gamma0"]
 
         # Prepare non-linear potential term @ CTL
@@ -1104,7 +1104,7 @@ class Incompressible(Model):
         Dv0, Dv_star = sym(grad(v0)), sym(grad(v_star))
         G = (
               f_src
-            - dot(grad(v_star), v_star + omega_2*irho*J)
+            - dot(grad(v_star), v_star + THETA2*irho*J)
             + idt*v_hat
             + (irho0 - irho)*grad(p_star)
             + 2.0*irho*dot(Dv_star, grad(nu))
