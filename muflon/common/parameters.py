@@ -113,6 +113,9 @@ class MuflonParameterSet(Parameters, Singleton):
        \                     .nu.i            dynamic viscosity of phase i
        \                     .rho.i           density of phase i
        \                     .sigma.ij        surface tension between phases i,j
+       \                     .chq.L           characteristic length
+       \                     .chq.V           characteristic velocity
+       \                     .chq.rho         characteristic density
        \                     .cut.density     toggle for truncation of density
        \                     .cut.mobility    toggle for truncation of mobility
        \                     .cut.viscosity   toggle for truncation of viscosity
@@ -141,6 +144,10 @@ class MuflonParameterSet(Parameters, Singleton):
         mobility_prm.add("M0", 1.0)
         mobility_prm.add("m", 0)
         mobility_prm.add("beta", 0.0, 0.0, 1.0)
+        char_quants = Parameters("chq")
+        char_quants.add("L", 1.0)
+        char_quants.add("V", 1.0)
+        char_quants.add("rho", 1.0)
         cut_prm = Parameters("cut")
         cut_prm.add("density", False)
         cut_prm.add("mobility", False)
@@ -152,6 +159,7 @@ class MuflonParameterSet(Parameters, Singleton):
         nested_prm.add(Parameters("nu"))
         nested_prm.add(Parameters("rho"))
         nested_prm.add(Parameters("sigma"))
+        nested_prm.add(char_quants)
         nested_prm.add(cut_prm)
         self.add(nested_prm)
 

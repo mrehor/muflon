@@ -269,13 +269,15 @@ class Model(object):
                   and :math:`\\bf{\\Lambda^{-1}}`
         :rtype: tuple
         """
+        # Get characteristic quantities
+        chq = self.parameters["chq"]
         # Build N x N matrix S
         s = self.parameters["sigma"]
         i = 1
         j = 1
         S = [[0.0,],] # first row of the upper triangular matrix S
         while s.has_key("%i%i" % (i, j+1)):
-            S[i-1].append(s["%i%i" % (i, j+1)])
+            S[i-1].append(s["%i%i" % (i, j+1)]/(chq["rho"]*chq["L"]*(chq["V"]**2.0)))
             j += 1
         N = j
         assert N == len(self._test["phi"]) + 1
@@ -324,11 +326,17 @@ class Model(object):
         :returns: list of material parameters
         :rtype: list
         """
+        chq = self.parameters["chq"]
         prm = self.parameters[key]
         N = 0
         q = []
         while prm.has_key(str(N+1)):
-            q.append(prm[str(N+1)])
+            val = prm[str(N+1)]
+            if key == "rho":
+                val /= chq["rho"]
+            elif key == "nu":
+                val /= chq["rho"]*chq["V"]*chq["L"]
+            q.append(val)
             N += 1
         assert N == len(self._test["phi"]) + 1
         return q
@@ -351,6 +359,8 @@ class Model(object):
         :returns: single interpolated quantity
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
+        # FIXME: Take care of Dirac deltas when trunc is True and automated
+        #        differentiation is used to get Jacobian in Newton solver.
         N = len(q)
         min_idx = q.index(min(q)) # index of minimal value
         max_idx = q.index(max(q)) # index of maximal value
@@ -493,6 +503,8 @@ class Model(object):
             assert float(m) % 2 == 0
             ones = as_vector(len(phi)*[1.0,])
             if trunc:
+                # FIXME: Take care of Dirac deltas when using automated
+                #        differentiation to get Jacobian in Newton solver.
                 phi_  = as_vector([Max(Min(phi[i], 1.0), 0.0)
                                        for i in range(len(phi))])
                 phi0_ = as_vector([Max(Min(phi0[i], 1.0), 0.0)
@@ -548,7 +560,7 @@ class Incompressible(Model):
 
     def _create_doublewell_and_coefficients(self, factors=()):
         """
-        This methods sets attributes 'doublewell' and 'const_coeffs' to the
+        This method sets attributes 'doublewell' and 'const_coeffs' to the
         current class.
 
         The first attribute corresponds to
@@ -578,10 +590,11 @@ class Incompressible(Model):
 
         # Initialize constant coefficients from parameters
         prm = self.parameters
+        chq = prm["chq"]
         # -- model parameters
-        cc["eps"] = Constant(prm["eps"], cell=cell, name="eps")
+        cc["eps"] = Constant(prm["eps"]/chq["L"], cell=cell, name="eps")
         cc["THETA2"] = Constant(prm["THETA2"], cell=cell, name="THETA2")
-        cc["M0"] = Constant(prm["mobility"]["M0"], cell=cell, name="M0")
+        cc["M0"] = Constant(prm["mobility"]["M0"]/(chq["V"]*(chq["L"]**2.0)), cell=cell, name="M0")
         cc["m"] = Constant(prm["mobility"]["m"], cell=cell, name="m")
         cc["beta"] = Constant(prm["mobility"]["beta"], cell=cell, name="beta")
         # -- matrices built from surface tensions
