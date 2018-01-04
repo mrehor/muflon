@@ -905,7 +905,7 @@ class Incompressible(Model):
             - (cc["b"]/cc["eps"])*inner(dot(cc["iLA"], dF), test["phi"])
         )*dx
 
-        system_ch = eqn_phi + eqn_chi
+        system_ch = eqn_phi + eqn_chi#*idt # FIXME: Scale or not to scale?
 
         # System of NS eqns
         J = total_flux(Mo, rho_mat, chi)
