@@ -51,7 +51,7 @@ parameters["form_compiler"]["optimize"] = True
 def create_domain(refinement_level):
     # Prepare mesh
     nx = 2*(2**(refinement_level))
-    mesh = RectangleMesh(Point(0., -1.), Point(2., 1.), nx, nx, 'crossed')
+    mesh = RectangleMesh(Point(0., -1.), Point(2., 1.), nx, nx) #, 'crossed'
     del nx
 
     # Define and mark boundaries
@@ -76,7 +76,7 @@ def create_manufactured_solution():
     ms = {}
     ms["v1"] = {"expr": "A0*sin(a0*x[0])*cos(b0*x[1])*sin(w0*t)",
                 "prms": coeffs_NS}
-    ms["v2"] = {"expr": "-(A0*a0/pi)*cos(a0*x[0])*sin(b0*x[1])*sin(w0*t)",
+    ms["v2"] = {"expr": "-(A0*a0/b0)*cos(a0*x[0])*sin(b0*x[1])*sin(w0*t)",
                 "prms": coeffs_NS}
     ms["p"] = {"expr": "A0*sin(a0*x[0])*sin(b0*x[1])*cos(w0*t)",
                "prms": coeffs_NS}
@@ -226,10 +226,7 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
         if DS.name() == "FullyDecoupled":
             f_cap = - 0.5*a*eps*dot(grad(phi).T, dot(LA, div(grad(phi))))
         elif DS.name() == "SemiDecoupled":
-            domain_vol = assemble(Constant(1.0)*dx(DS.mesh()))
-            alpha = [assemble(phi[i]*dx)/domain_vol for i in range(len(phi))]
-            ca = as_vector([phi[i] - Constant(alpha[i]) for i in range(len(phi))])
-            f_cap = - dot(grad(chi).T, dot(LA.T, ca))
+            f_cap = - dot(grad(chi).T, dot(LA.T, phi))
 
     # Source term for CH part
     g_src = diff(phi, t) + div(outer(phi, v)) - div(Mo*grad(chi))
@@ -261,6 +258,21 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
         #   mentioned in the previous comment, we need to add the following
         #   terms to 'f_src'.
         f_src += 0.5*(1.0/rho)*(v*diff(rho, t) + v*div(rho*v + THETA2*J))
+        # NOTE:
+        #   Artificial modification of source terms due to stabilization
+        #   terms used in this specific time discretization scheme
+        # domain_vol = DS.compute_domain_size()
+        # alpha = as_vector([Constant(assemble(phi[i]*dx)/domain_vol) for i in range(len(phi))])
+        # f_src -= (1.0/rho)*dot(grad(chi).T, dot(LA.T, alpha))
+        # g_src -= div(outer(alpha, v))
+
+    # FIXME: Remove this ugly hack!
+    # Uncomment the following block of code to visualize balance of mass
+    # bm = diff(rho, t) + div(rho*v + THETA2*J)
+    # t_src.assign(Constant(0.1))
+    # pyplot.figure(); domain=plot(bm, DS.mesh(), mode="warp")
+    # pyplot.show()
+    # exit()
 
     return f_src, g_src
 
@@ -305,7 +317,7 @@ def prepare_hook(t_src, model, esol, degrise, err):
                         degrise=degrise, err=err)
 
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
+@pytest.mark.parametrize("scheme", ["SemiDecoupled",]) # "FullyDecoupled", "Monolithic"
 def test_scaling_mesh(scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed time step and gradually refined mesh or
@@ -335,7 +347,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
-    for it in range(1, 8): # NOTE: set max to 8 for direct solvers
+    for it in range(1, 5): # NOTE: set max to 8 for direct solvers
         # Decide which test to perform
         if test_type == "ref":
             level = it
@@ -343,15 +355,17 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
         elif test_type == "ord":
             level = 1
             k = it
-        if scheme == "SemiDecoupled" and level == 1 and k == 1:
-            warning("Newton solver do not converge for 'SemiDecoupled' scheme"
-                    " with k=1 and level=1. I am skipping this step!")
-            continue
+        # if scheme == "SemiDecoupled" and level == 1 and k == 1:
+        #     warning("Newton solver does not converge for 'SemiDecoupled' scheme"
+        #             " with k=1 and level=1. I am skipping this step!")
+        #     continue
         label = "{}_level_{}_k_{}_{}".format(scheme, level, k, basename)
         with Timer("Prepare") as tmr_prepare:
             # Prepare discretization
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh, k)
+            # FIXME: Remove the following as soon as we have
+            #        2nd order accuracy also for other schemes.
             DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
@@ -467,7 +481,7 @@ def postprocessor(request):
     dt = 0.001
     t_end = 0.01 # FIXME: set t_end = 0.1
     OTD = 2
-    test = 0 # 0 ... order, 1 ... refinement
+    test = 1 # 0 ... order, 1 ... refinement
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
@@ -596,7 +610,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.set_yscale("log")
         ax2.set_yscale("log")
         # Set labels
-        xlabel = "$h_{\min}$" if self.test == "ref" else "Element order"
+        xlabel = "$h$" if self.test == "ref" else "Element order"
         ax1.set_xlabel(xlabel)
         ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("$L^2$ errors")

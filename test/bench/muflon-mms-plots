@@ -39,7 +39,7 @@ def main(argv):
     # FIXME: Remove the following hack
     #proc.outdir="."
     # NOTE: Uncomment the above line when plotting the results that
-    #       were computed elsewher (e.g. on cluster)
+    #       were computed elsewhere (e.g. on cluster)
     rank = 0
     proc.create_plots(rank)
     for arg in argv[1:]:

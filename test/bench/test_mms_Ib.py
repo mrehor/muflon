@@ -50,7 +50,7 @@ parameters["form_compiler"]["optimize"] = True
 #parameters["form_compiler"]["quadrature_degree"] = 4
 
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
+@pytest.mark.parametrize("scheme", ["SemiDecoupled",]) # "FullyDecoupled",  "Monolithic"
 def test_scaling_time(scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
@@ -82,6 +82,8 @@ def test_scaling_time(scheme, matching_p, postprocessor):
     # Prepare space discretization, exact solution and bcs
     mesh, boundary_markers = create_domain(level)
     DS = create_discretization(scheme, mesh, k)
+    # FIXME: Remove the following as soon as we have
+    #        2nd order accuracy also for other schemes.
     DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
     DS.setup()
     esol = create_exact_solution(msol, DS.finite_elements(), degrise)
@@ -330,7 +332,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax2.set_xscale("log")
         ax2.set_yscale("log")
         # Set labels
-        ax1.set_xlabel("time step $\Delta t$")
+        ax1.set_xlabel("time step $\Delta_t$")
         ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("$L^2$ errors")
         ax2.set_ylabel("CPU time")
