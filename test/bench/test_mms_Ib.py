@@ -48,7 +48,6 @@ from test_mms_Ia import (
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 #parameters["form_compiler"]["quadrature_degree"] = 4
-parameters["plotting_backend"] = "matplotlib"
 
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
@@ -335,7 +334,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("$L^2$ errors")
         ax2.set_ylabel("CPU time")
-        ax1.set_ylim(0, None, auto=True)
-        ax2.set_ylim(0, None, auto=True)
+        ax1.set_ylim(None, None, auto=True)
+        ax2.set_ylim(None, None, auto=True)
 
         return (fig1, fig2), (ax1, ax2)

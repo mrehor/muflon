@@ -47,7 +47,6 @@ from muflon.common.timer import Timer
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
-parameters["plotting_backend"] = "matplotlib"
 
 def create_domain(refinement_level):
     # Prepare mesh
@@ -59,7 +58,7 @@ def create_domain(refinement_level):
     class Gamma0(SubDomain):
         def inside(self, x, on_boundary):
             return on_boundary
-    boundary_markers = FacetFunction("size_t", mesh)
+    boundary_markers = MeshFunction("size_t", mesh, mesh.topology().dim()-1)
     boundary_markers.set_all(3)        # interior facets
     Gamma0().mark(boundary_markers, 0) # boundary facets
 
@@ -602,7 +601,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("$L^2$ errors")
         ax2.set_ylabel("CPU time")
-        ax1.set_ylim(0, None, auto=True)
-        ax2.set_ylim(0, None, auto=True)
+        ax1.set_ylim(None, None, auto=True)
+        ax2.set_ylim(None, None, auto=True)
 
         return (fig1, fig2), (ax1, ax2)
