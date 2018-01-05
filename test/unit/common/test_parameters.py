@@ -34,9 +34,10 @@ def test_mpset():
     comm = mpi_comm_world()
     tempdir = "/tmp/pytest-of-fenics"
     fname = tempdir+"/foo.xml"
-    mpset.write(fname)
+    mpset.write(comm, fname)
     if MPI.rank(comm) == 0:
         assert os.path.isfile(fname)
+    MPI.barrier(comm) # wait until the file is written
 
     # Change back value of parameter 'foo'
     mpset["foo"] = "bar"
