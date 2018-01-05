@@ -20,7 +20,7 @@
 """This is MUFLON, MUltiphase FLOw simulatioN package."""
 
 __author__ = "Martin Řehoř"
-__version__ = "2017.2.0"
+__version__ = "2017.2.0.dev0"
 __license__ = "GNU LGPL v3"
 
 # Import public API

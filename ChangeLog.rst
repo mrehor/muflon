@@ -1,10 +1,11 @@
 Change Log
 ==========
 
-dev
----
+2017.2.0.dev0 [2018-01-05]
+--------------------------
 
-- most recent changes goes here
+- <most recent changes goes here>
+- add characteristic quantities for definition of dimensionless problems
 
 2017.1.0 [2017-05-20]
 ---------------------
