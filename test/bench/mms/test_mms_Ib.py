@@ -82,9 +82,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
     # Prepare space discretization, exact solution and bcs
     mesh, boundary_markers = create_domain(level)
     DS = create_discretization(scheme, mesh, k)
-    # FIXME: Remove the following as soon as we have
-    #        2nd order accuracy also for other schemes.
-    DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
+    DS.parameters["PTL"] = OTD #if scheme == "FullyDecoupled" else 1
     DS.setup()
     esol = create_exact_solution(msol, DS.finite_elements(), degrise)
     bcs = create_bcs(DS, boundary_markers, esol)
@@ -248,7 +246,7 @@ class Postprocessor(GenericBenchPostprocessor):
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
-            styles = {"Monolithic": 'x--', "SemiDecoupled": '.--', "FullyDecoupled": '+--'}
+            styles = {"Monolithic": '.--', "SemiDecoupled": '+--', "FullyDecoupled": 'x--'}
             for result in self.results:
                 style = styles[result["scheme"]]
                 if not all(result[name] == value for name, value in fixed_vars):
