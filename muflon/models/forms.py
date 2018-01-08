@@ -1039,55 +1039,59 @@ class Incompressible(Model):
 
         # --- Forms for Advance-Phase procedure ---
 
-        # 1. Vectors Q and R
-        s_bar = sqrt(2.0*a*eps*gamma0*idt/Mo)
-        s_fac = cc["factor_s"]
-        #s = s_fac*s_bar*(eps**2.0)
-        alpha = 0.5*s_bar*(sqrt(s_fac**2.0 - 1.0) - s_fac)
-        Q = (g_src + idt*phi_hat - dot(grad(phi_star), v_star))/Mo
-        R = (b/eps)*dot(iLA, dF_star) - s_fac*s_bar*phi_star
+        # 0. Numerical constants
+        S_fac = cc["factor_s"]
+        S_bar = sqrt(2.0*a*eps*gamma0*idt/Mo)
+        ALPHA1 = (sqrt(S_fac**2.0 - 1.0) - S_fac)*S_bar/(a*eps) # 2.0*alpha/(a*eps**2.0)
+        ALPHA2 = (sqrt(S_fac**2.0 - 1.0) + S_fac)*S_bar/(a*eps) # 2.0*(alpha + S)/(a*eps**2.0)
+        # NOTES:
+        #   S/eps = S_fac*S_bar
+        #   alpha/eps = 0.5*S_bar*(sqrt(S_fac**2.0 - 1.0) - S_fac)
 
-        # 2. Equations for chi (<-- psi)
+        # 1. Vectors Q and R
+        Q = 2.0*(g_src + idt*phi_hat - dot(grad(phi_star), v_star))/(a*eps*Mo)
+        R = 2.0*((b/eps)*dot(iLA, dF_star) - S_fac*S_bar*phi_star)/(a*eps)
+
+        # 2. Equations for chi (<-- varphi)
         lhs_chi, rhs_chi = [], []
         for i in range(len(test["chi"])):
             lhs_chi.append((
                   inner(grad(trial["chi"][i]), grad(test["chi"][i]))
-                + 2.0/(a*eps)*(
-                    (alpha + s_fac*s_bar)*trial["chi"][i]*test["chi"][i]
-            ))*dx)
+                + ALPHA2*trial["chi"][i]*test["chi"][i]
+            )*dx)
             rhs_chi.append((
-                - 2.0/(a*eps)*(
-                      Q[i]*test["chi"][i]
-                    - inner(grad(R[i]), grad(test["chi"][i]))
-            ))*dx)
+                - Q[i]*test["chi"][i]
+                + inner(grad(R[i]), grad(test["chi"][i]))
+            )*dx)
 
         # 3. Equations for phi
         lhs_phi, rhs_phi = [], []
         for i in range(len(test["phi"])):
             lhs_phi.append((
                   inner(grad(trial["phi"][i]), grad(test["phi"][i]))
-                - 2.0/(a*eps)*alpha*trial["phi"][i]*test["phi"][i]
+                - ALPHA1*trial["phi"][i]*test["phi"][i]
             )*dx)
             rhs_phi.append((
                 - chi[i]*test["phi"][i]
             )*dx)
 
-        # 4. Total flux
+        # 4a. Total flux
         #    Def: CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*div(grad(phi))
-        #    Def: div(grad(phi)) = chi - 2.0/(a*eps)*alpha*phi
-        CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*chi + alpha*phi
+        #    Def: div(grad(phi)) = chi - ALPHA1*phi
+        #CHI = (b/eps)*dot(iLA, dF) - 0.5*a*eps*(chi - ALPHA1*phi)
+        CHI = 0.5*a*eps*R - 0.5*a*eps*(chi - ALPHA2*phi) # consistent w.r.t. stabilization
         rho_mat = self.collect_material_params("rho")
         nu_mat = self.collect_material_params("nu")
         J = total_flux(Mo, rho_mat, CHI)
 
-        # 5. Capillary force
+        # 4b. Capillary force
         #    Def: f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*div(grad(phi)))
         if matching_p:
             f_cap = capillary_force(phi, CHI, LA)
         else:
-            f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*chi - alpha*phi))
+            f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*(chi - ALPHA1*phi)))
 
-        # 6. Density and viscosity
+        # 5. Density and viscosity
         rho = self.density(rho_mat, phi)
         nu = self.viscosity(nu_mat, phi)
 
@@ -1121,7 +1125,7 @@ class Incompressible(Model):
             + idt*v_hat
             + (irho0 - irho)*grad(p_star)
             + 2.0*irho*dot(Dv_star, grad(nu))
-            + irho*f_cap # FIXME: check the sign once again
+            + irho*f_cap
             + crosscurl(grad(irho*nu), w_star)
         )
         lhs_p = inner(grad(trial["p"]), grad(test["p"]))*dx
@@ -1130,7 +1134,6 @@ class Incompressible(Model):
         # Equation for pressure step (boundary integrals)
         n = self._DS.facet_normal()
 
-        # FIXME: check origin of the following terms
         rhs_p -= irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
 
         # NOTE:
@@ -1184,12 +1187,21 @@ class Incompressible(Model):
             lhs_v.append((
                   inner(grad(trial["v"][i]), grad(test["v"][i]))
                 + inu0*gamma0*idt*(trial["v"][i]*test["v"][i])
-            )*dx)
+            )*dx
+                #- inner(grad(trial["v"][i]), n)*test["v"][i]*ds
+            )
             rhs_v.append((
-                  inu0*(G[i] - irho0*p.dx(i))*test["v"][i]
+                  inu0*G[i]*test["v"][i]
+                - inu0*irho0*p.dx(i)*test["v"][i]
+                # TODO: Try to replace the above line by the line below
+                #       to approximate perfect slip (better use Nitsche)
+                #+ inu0*irho0*p*test["v"][i].dx(i)
                 + (inu0*irho*nu - 1.0)*crosscurl(grad(test["v"][i]), w_star)[i]
+                # NOTE: The above line is equivalent to:
+                #   - (inu0*irho*nu - 1.0)*w_star[i]*curl(test["v"])[i]
               )*dx
                 - (inu0*irho*nu - 1.0)*crosscurl(n, w_star)[i]*test["v"][i]*ds
+                #- inu0*irho0*p*test["v"][i]*n[i]*ds
             )
 
         forms = {
