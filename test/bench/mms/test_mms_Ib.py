@@ -286,10 +286,10 @@ class Postprocessor(GenericBenchPostprocessor):
                  label=r"$L^2$-$p$")
 
         if OTD == 1:
-            ref = list(map(lambda x: 1e+1*ys0[0]["phi1"]*x, xs))
+            ref = list(map(lambda x: 1e+1*(0.8*ys0[0]["phi1"] + 0.2*ys0[0]["p"])*x, xs))
         elif OTD == 2:
-            ref = list(map(lambda x: 1e+2*ys0[0]["phi1"]*x**2, xs))
-        ax1.plot(xs, ref, '', linewidth=1.0, label="ref-"+str(OTD))
+            ref = list(map(lambda x: 1e+2*(0.8*ys0[0]["phi1"] + 0.2*ys0[0]["p"])*x**2, xs))
+        ax1.plot(xs, ref, 'k-', linewidth=0.5, label="ref-"+str(OTD))
 
         # ref1 = list(map(lambda x: 1e+1*ys0[0]["phi1"]*x, xs))
         # ref2 = list(map(lambda x: 1e+2*ys0[0]["phi1"]*x**2, xs))
