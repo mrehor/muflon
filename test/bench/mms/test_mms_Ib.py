@@ -50,7 +50,7 @@ parameters["form_compiler"]["optimize"] = True
 #parameters["form_compiler"]["quadrature_degree"] = 4
 
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["SemiDecoupled",]) # "FullyDecoupled",  "Monolithic"
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"]) # "Monolithic"
 def test_scaling_time(scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
@@ -82,7 +82,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
     # Prepare space discretization, exact solution and bcs
     mesh, boundary_markers = create_domain(level)
     DS = create_discretization(scheme, mesh, k)
-    DS.parameters["PTL"] = OTD #if scheme == "FullyDecoupled" else 1
+    DS.parameters["PTL"] = OTD
     DS.setup()
     esol = create_exact_solution(msol, DS.finite_elements(), degrise)
     bcs = create_bcs(DS, boundary_markers, esol)
@@ -193,9 +193,9 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     t_end = 0.2 # FIXME: set t_end = 1.0
-    level = 2   # NOTE: set to 6 for direct solvers
-    OPA = 5     # Order of Polynomial Approximation
-    OTD = 2
+    level = 2   # FIXME: set max to 5 for direct solvers
+    OPA = 5     # Order of Polynomial Approximation (lower the value for higher levels)
+    OTD = 1
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)

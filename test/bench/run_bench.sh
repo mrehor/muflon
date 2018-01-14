@@ -23,8 +23,10 @@ echo Time is `date`
 
 #module load fenics
 
+mkdir -p $OUTPUTDIR
 cd $OUTPUTDIR
 cp -r $SCRIPTDIR/* . # copy everything from from SCRIPTDIR to OUTPUTDIR
+rm slurm-*.out
 
 # Execute computation
 if [ "$JOBNAME" == "all_benchmarks" ]; then

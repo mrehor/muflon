@@ -899,13 +899,13 @@ class Incompressible(Model):
             eqn_phi -= inner(grad(inner(ca, test["chi"])), v_star)*dx
 
         phi_star = fact_ctl*phi + fact_ptl*phi0
-        eqn_chi = (
+        eqn_chi = ( #idt*( # FIXME: Scale or not to scale?
               inner(chi, test["phi"])
             - 0.5*cc["a"]*cc["eps"]*inner(grad(phi_star), grad(test["phi"]))
             - (cc["b"]/cc["eps"])*inner(dot(cc["iLA"], dF), test["phi"])
         )*dx
 
-        system_ch = eqn_phi + eqn_chi#*idt # FIXME: Scale or not to scale?
+        system_ch = eqn_phi + eqn_chi
 
         # System of NS eqns
         J = total_flux(Mo, rho_mat, chi)

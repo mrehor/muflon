@@ -317,7 +317,7 @@ def prepare_hook(t_src, model, esol, degrise, err):
                         degrise=degrise, err=err)
 
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["SemiDecoupled",]) # "FullyDecoupled", "Monolithic"
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"]) # "Monolithic"
 def test_scaling_mesh(scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed time step and gradually refined mesh or
@@ -347,7 +347,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
-    for it in range(1, 5): # NOTE: set max to 8 for direct solvers
+    for it in range(1, 6): # NOTE: set max to 8 for direct solvers
         # Decide which test to perform
         if test_type == "ref":
             level = it
@@ -355,16 +355,12 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
         elif test_type == "ord":
             level = 1
             k = it
-        # if scheme == "SemiDecoupled" and level == 1 and k == 1:
-        #     warning("Newton solver does not converge for 'SemiDecoupled' scheme"
-        #             " with k=1 and level=1. I am skipping this step!")
-        #     continue
         label = "{}_level_{}_k_{}_{}".format(scheme, level, k, basename)
         with Timer("Prepare") as tmr_prepare:
             # Prepare discretization
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh, k)
-            DS.parameters["PTL"] = OTD #if scheme == "FullyDecoupled" else 1
+            DS.parameters["PTL"] = OTD
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
             esol = create_exact_solution(msol, DS.finite_elements(), degrise)
@@ -478,7 +474,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
 def postprocessor(request):
     dt = 0.001
     t_end = 0.01 # FIXME: set t_end = 0.1
-    OTD = 2
+    OTD = 1
     test = 1 # 0 ... order, 1 ... refinement
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
