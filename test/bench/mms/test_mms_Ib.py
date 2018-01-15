@@ -88,7 +88,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
     bcs = create_bcs(DS, boundary_markers, esol)
 
     # Iterate over time step
-    for m in range(5): # FIXME: set to 7
+    for m in range(5): # CHANGE #1: set "m in range(7)"
         dt = 0.1*0.5**m
         label = "{}_dt_{}_{}".format(scheme, dt, basename)
         with Timer("Prepare") as tmr_prepare:
@@ -192,10 +192,10 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 0.2 # FIXME: set t_end = 1.0
-    level = 2   # FIXME: set max to 5 for direct solvers
-    OPA = 5     # Order of Polynomial Approximation (lower the value for higher levels)
-    OTD = 1
+    t_end = 0.2 # CHANGE #2: set "t_end = 1.0"
+    level = 2   # CHANGE #3: set "level = 5" for direct solvers
+    OPA = 5     # CHANGE #4: set "OPA = 3" (Order of Polynomial Approximation)
+    OTD = 1     # CHANGE #5: set "OTD" to 1 or 2 according to chosen scheme
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)

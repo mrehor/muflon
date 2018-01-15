@@ -347,7 +347,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
-    for it in range(1, 6): # NOTE: set max to 8 for direct solvers
+    for it in range(1, 6): # CHANGE #1: set "it in range(1, 8)"
         # Decide which test to perform
         if test_type == "ref":
             level = it
@@ -473,8 +473,8 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     dt = 0.001
-    t_end = 0.01 # FIXME: set t_end = 0.1
-    OTD = 1
+    t_end = 0.01 # CHANGE #2: set "t_end = 0.1"
+    OTD = 1 # CHANGE #3: set "OTD" to 1 or 2 according to chosen scheme
     test = 1 # 0 ... order, 1 ... refinement
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
