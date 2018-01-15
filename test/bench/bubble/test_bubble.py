@@ -57,7 +57,6 @@ from muflon.common.timer import Timer
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 #parameters["form_compiler"]["quadrature_degree"] = 4
-parameters["plotting_backend"] = "matplotlib"
 
 def create_domain(refinement_level):
     # Prepare mesh
@@ -70,7 +69,7 @@ def create_domain(refinement_level):
     freeslip = CompiledSubDomain(
         "on_boundary && (near(x[0], x0) || near(x[0], x1))",
         x0=0.0, x1=1.0)
-    boundary_markers = FacetFunction('size_t', mesh)
+    boundary_markers = MeshFunction("size_t", mesh, mesh.topology().dim()-1)
     boundary_markers.set_all(0)              # interior facets
     bndry.mark(boundary_markers, 1)          # boundary facets (no-slip)
     freeslip.mark(boundary_markers, 2)       # boundary facets (free-slip)
@@ -196,7 +195,7 @@ def prepare_hook(DS, functionals, modulo_factor):
 
 @pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["FullyDecoupled", "SemiDecoupled", "Monolithic"])
+@pytest.mark.parametrize("scheme", ["SemiDecoupled",]) # "FullyDecoupled", "Monolithic"
 def test_bubble(scheme, matching_p, case, postprocessor):
     set_log_level(WARNING)
 
@@ -234,7 +233,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             # Prepare space discretization
             mesh, boundary_markers = create_domain(level)
             DS = create_discretization(scheme, mesh, k)
-            DS.parameters["PTL"] = OTD if scheme == "FullyDecoupled" else 1
+            DS.parameters["PTL"] = OTD #if scheme == "FullyDecoupled" else 1
             DS.setup()
 
             # Prepare initial conditions
@@ -352,8 +351,8 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 0.4 # FIXME: Set to 3.
-    OTD = 2     # Order of Time Discretization
+    t_end = 3.0 # FIXME: Set to 3.
+    OTD = 1     # Order of Time Discretization
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
@@ -405,7 +404,7 @@ class Postprocessor(GenericBenchPostprocessor):
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
-            styles = {"Monolithic": ':', "SemiDecoupled": '--', "FullyDecoupled": '-'}
+            styles = {"Monolithic": ':', "SemiDecoupled": '-', "FullyDecoupled": '--'}
             for result in self.results:
                 style = styles[result["scheme"]]
                 if not all(result[name] == value for name, value in fixed_vars):
