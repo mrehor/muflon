@@ -2,6 +2,7 @@
 *.pyc
 
 # Compressed files
+*.tar
 *.xml.gz
 
 # Data files
