@@ -361,8 +361,8 @@ def postprocessor(request):
     # Decide what should be plotted
     proc.register_fixed_variables(
         (("t_end", t_end), ("OTD", OTD)))
-    proc.register_fixed_variables(
-        (("t_end", t_end), ("OTD", OTD), ("level", 1)))
+    #proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("level", 1)))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -472,8 +472,8 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.set_ylabel("rise velocity")
         ax2.set_ylabel("center of mass")
         ax3.set_ylabel("bubble volume")
-        ax1.set_ylim(0, None, auto=True)
-        ax2.set_ylim(0, None, auto=True)
+        ax1.set_ylim(None, None, auto=True)
+        ax2.set_ylim(None, None, auto=True)
         ax3.set_ylim(0.15, 0.21, auto=False)
 
         return (fig1, fig2, fig3), (ax1, ax2, ax3)

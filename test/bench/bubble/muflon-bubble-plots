@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright (C) 2017 Martin Řehoř
+#
+# This file is part of MUFLON.
+#
+# MUFLON is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# MUFLON is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
+
+"""
+This script is used to plot results obtained using Method of Manufactured
+Solutions.
+
+Usage:
+
+.. code-block:: console
+
+  $ ./muflon-mms-plots <postprocessor> <result1> [<result2>, [...]]
+"""
+
+import sys
+
+from muflon.utils.testing import read_postprocessor
+from dolfin import mpi_comm_world, MPI
+
+# import csv, itertools
+# counter = 0
+# def _plot_with_customized_labels(fig, xs, ys0, ys1, ys2, free_vars, style):
+#     (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
+#     global counter
+#     counter += 1
+#     #label = "_".join(map(str, itertools.chain(*free_vars)))
+#     label = "label %i" % counter
+#     for i in range(len(xs)):
+#         ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
+#         ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
+#         ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
+
+#     if counter == 3:
+#         label = 'ref'
+#         style = '-'
+#         x1, y1 = read_csv_data("../../../bubble/reference_results/refAV_model3-case1-velo.csv")
+#         x2, y2 = read_csv_data("../../../bubble/reference_results/refAV_model3-case1-mass.csv")
+#         ax1.plot(x1, y1, style, linewidth=1, label=label)
+#         ax2.plot(x2, y2, style, linewidth=1, label=label)
+#         ax3.plot([xs[-1][0], xs[-1][-1]], [ys2[-1][0], ys2[-1][0]],
+#                      style, linewidth=1, label=label)
+
+#     for ax in (ax1, ax2, ax3):
+#         # ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
+#         #           fontsize='x-small', ncol=1)
+#         ax.legend(loc=4, borderaxespad=1, fontsize='x-small')
+
+# def read_csv_data(csvfile):
+#     x, y = [], []
+#     with open(csvfile, 'r') as f:
+#         reader = csv.reader(f)
+#         row = next(reader) # get the first row
+#         col = row.index("ref")
+#         row = next(reader) # get the rest of the header
+#         assert row[col] == "X" and row[col+1] == "Y"
+#         for row in reader:
+#             if row[col] != '':
+#                 x.append(float(row[col]))
+#                 y.append(float(row[col+1]))
+#             else:
+#                 break
+#     return x, y
+
+def main(argv):
+    proc = read_postprocessor(argv[0])
+    # FIXME: Remove the following hack
+    #proc.outdir="."
+    # NOTE: Uncomment the above line when plotting the results that
+    #       were computed elsewhere (e.g. on cluster)
+    rank = 0
+    proc.create_plots(rank)
+    for arg in argv[1:]:
+        proc.read_results(rank, arg)
+    proc.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
+    #proc._plot = _plot_with_customized_labels
+    proc.flush_plots()
+    # FIXME: Resolve the order of plotting!
+
+if __name__ == "__main__":
+    if MPI.size(mpi_comm_world()) > 1:
+        raise RuntimeError("This script can be run only in serial")
+    main(sys.argv[1:])
