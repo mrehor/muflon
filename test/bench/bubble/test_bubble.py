@@ -465,6 +465,10 @@ class Postprocessor(GenericBenchPostprocessor):
         ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
         ax3 = fig3.add_subplot(gs[0, 0], sharex=ax1)
 
+        # Set ticks
+        for ax in [ax1, ax2, ax3]:
+            ax.tick_params(direction="in", right=True, top=True)
+
         # Set labels
         ax1.set_xlabel("time $t$")
         ax2.set_xlabel(ax1.get_xlabel())

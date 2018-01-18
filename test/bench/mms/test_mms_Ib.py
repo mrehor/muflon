@@ -329,6 +329,9 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.set_yscale("log")
         ax2.set_xscale("log")
         ax2.set_yscale("log")
+        # Set ticks
+        for ax in [ax1, ax2]:
+            ax.tick_params(direction="in", right=True, top=True)
         # Set labels
         ax1.set_xlabel("time step $\Delta_t$")
         ax2.set_xlabel(ax1.get_xlabel())

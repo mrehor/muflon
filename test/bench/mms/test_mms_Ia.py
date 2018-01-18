@@ -603,6 +603,9 @@ class Postprocessor(GenericBenchPostprocessor):
             ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax1.set_yscale("log")
         ax2.set_yscale("log")
+        # Set ticks
+        for ax in [ax1, ax2]:
+            ax.tick_params(direction="in", right=True, top=True)
         # Set labels
         xlabel = "$h$" if self.test == "ref" else "Element order"
         ax1.set_xlabel(xlabel)
