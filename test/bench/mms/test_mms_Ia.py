@@ -567,10 +567,12 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.plot(xs, [d["p"] for d in ys0], style, linewidth=0.2,
                  label=r"$L^2$-$p$")
         ax2.plot(xs, ys1, '*--', linewidth=0.2, label=label)
-        ax1.legend(bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0,
-                   fontsize='x-small', ncol=1)
-        ax2.legend(bbox_to_anchor=(0, 1.1), loc=2, borderaxespad=0,
-                   fontsize='x-small', ncol=3)
+        # ax1.legend(bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0,
+        #            fontsize='x-small', ncol=1)
+        # ax2.legend(bbox_to_anchor=(0, 1.1), loc=2, borderaxespad=0,
+        #            fontsize='x-small', ncol=3)
+        ax1.legend(loc=4, borderaxespad=1, fontsize='x-small', ncol=1)
+        ax2.legend(loc=1, borderaxespad=1, fontsize='x-small', ncol=3)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir="", prefix=""):
