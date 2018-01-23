@@ -125,7 +125,7 @@ def load_initial_conditions(DS, eps):
 
       Expression_phi()
         : Expression(), center(Point(0.5, 0.5)),
-          radius(0.25), eps(0.04), width_factor(4.6875) {}
+          radius(0.25), eps(0.04), width_factor(5.1811) {}
 
       void eval(Array<double>& value, const Array<double>& x) const
       {
@@ -144,8 +144,7 @@ def load_initial_conditions(DS, eps):
         center=Point(0.5, 0.5),
         eps=eps,
         radius=0.25,
-        #width_factor=4.6875 # 3*h_int/eps [Aland & Voigt (2011), Table 1]
-        width_factor=2.*4.6875
+        width_factor=5.1811 # arctanh(0.95)*2*sqrt(2)
     )
 
     # Load ic for phi_0
