@@ -94,7 +94,7 @@ def create_discretization(scheme, mesh, k=1, periodic_boundary=None):
     Pk = FiniteElement("Lagrange", mesh.ufl_cell(), k)
     Pk1 = FiniteElement("Lagrange", mesh.ufl_cell(), k+1)
 
-    return DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk,
+    return DiscretizationFactory.create(scheme, mesh, Pk1, Pk1, Pk1, Pk,
                                         constrained_domain=periodic_boundary)
 
 def create_bcs(DS, boundary_markers, periodic_boundary=None):
@@ -235,7 +235,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
     outdir = postprocessor.outdir
 
     # Scheme-dependent variables
-    k = 2 if scheme == "FullyDecoupled" else 1
+    k = 1 #if scheme == "FullyDecoupled" else 1
 
     for level in range(2): # FIXME: set to 3 (direct) or 4 (iterative)
         dividing_factor = 0.5**level
