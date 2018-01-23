@@ -308,18 +308,26 @@ def test_bubble(scheme, matching_p, case, postprocessor):
         # Time-stepping
         t_beg = 0.0
         with Timer("Time stepping") as tmr_tstepping:
+            it = 0
             if OTD == 2:
                 if scheme == "FullyDecoupled":
                     dt0 = dt
-                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=it)
                     t_beg = dt
+                    it = 1
                 elif scheme == "Monolithic":
                     dt0 = 1.0e-4*dt
-                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=-1)
+                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=it)
                     if dt - dt0 > 0.0:
-                        result = TS.run(dt0, dt, dt - dt0, OTD=2, it=-0.5)
+                        it = 0.5
+                        result = TS.run(dt0, dt, dt - dt0, OTD=2, it=it)
                     t_beg = dt
-            result = TS.run(t_beg, t_end, dt, OTD)
+                    it = 1
+            try:
+                result = TS.run(t_beg, t_end, dt, OTD, it)
+            except RuntimeError:
+                warning("Ooops. Something went wrong!")
+                continue
 
         # Prepare results
         result.update(
