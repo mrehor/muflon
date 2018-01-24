@@ -1037,6 +1037,9 @@ class Incompressible(Model):
             raise RuntimeError(msg)
         Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
 
+        # Outward unit normal
+        n = self._DS.facet_normal()
+
         # --- Forms for Advance-Phase procedure ---
 
         # 0. Numerical constants
@@ -1048,9 +1051,10 @@ class Incompressible(Model):
         #   S/eps = S_fac*S_bar
         #   alpha/eps = 0.5*S_bar*(sqrt(S_fac**2.0 - 1.0) - S_fac)
 
-        # 1. Vectors Q and R
-        Q = 2.0*(g_src + idt*phi_hat - dot(grad(phi_star), v_star))/(a*eps*Mo)
+        # 1. Vectors Q, R and Z
+        Q = 2.0*(g_src + idt*phi_hat)/(a*eps*Mo)
         R = 2.0*((b/eps)*dot(iLA, dF_star) - S_fac*S_bar*phi_star)/(a*eps)
+        Z = -(2.0/(a*eps*Mo))*outer(phi_star, v_star)
 
         # 2. Equations for chi (<-- varphi)
         lhs_chi, rhs_chi = [], []
@@ -1061,8 +1065,10 @@ class Incompressible(Model):
             )*dx)
             rhs_chi.append((
                 - Q[i]*test["chi"][i]
-                + inner(grad(R[i]), grad(test["chi"][i]))
-            )*dx)
+                + inner(grad(R[i]) + Z[i, :], grad(test["chi"][i]))
+            )*dx
+                - inner(Z[i, :], n)*test["chi"][i]*ds
+            )
 
         # 3. Equations for phi
         lhs_phi, rhs_phi = [], []
@@ -1132,8 +1138,6 @@ class Incompressible(Model):
         rhs_p = inner(rho0*G, grad(test["p"]))*dx
 
         # Equation for pressure step (boundary integrals)
-        n = self._DS.facet_normal()
-
         rhs_p -= irho*rho0*nu*inner(crosscurl(n, w_star), grad(test["p"]))*ds
 
         # NOTE:
@@ -1189,19 +1193,23 @@ class Incompressible(Model):
                 + inu0*gamma0*idt*(trial["v"][i]*test["v"][i])
             )*dx
                 #- inner(grad(trial["v"][i]), n)*test["v"][i]*ds
+                # FIXME:
+                #   The above surface integral must be taken into account
+                #   unless we have specified Dirichlet BC along whole boundary
+                #   for all velocity components.
+                #   It pops up due to integration by parts.
+                # NOTE:
+                #   By omitting the above integral we practically enforce
+                #   perfect slip on the side walls in bubble benchmark.
             )
             rhs_v.append((
                   inu0*G[i]*test["v"][i]
                 - inu0*irho0*p.dx(i)*test["v"][i]
-                # TODO: Try to replace the above line by the line below
-                #       to approximate perfect slip (better use Nitsche)
-                #+ inu0*irho0*p*test["v"][i].dx(i)
                 + (inu0*irho*nu - 1.0)*crosscurl(grad(test["v"][i]), w_star)[i]
                 # NOTE: The above line is equivalent to:
                 #   - (inu0*irho*nu - 1.0)*w_star[i]*curl(test["v"])[i]
               )*dx
                 - (inu0*irho*nu - 1.0)*crosscurl(n, w_star)[i]*test["v"][i]*ds
-                #- inu0*irho0*p*test["v"][i]*n[i]*ds
             )
 
         forms = {
