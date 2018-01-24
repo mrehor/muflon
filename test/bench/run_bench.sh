@@ -25,8 +25,12 @@ echo Time is `date`
 
 mkdir -p $OUTPUTDIR
 cd $OUTPUTDIR
-cp -r $SCRIPTDIR/* . # copy everything from from SCRIPTDIR to OUTPUTDIR
-rm slurm-*.out
+rsync -arv \
+      --exclude='slurm-*.out' \
+      --exclude='reference_results' \
+      --exclude='.*' \
+      --exclude='__pycache__' \
+      $SCRIPTDIR/ .
 
 # Execute computation
 if [ "$JOBNAME" == "all_benchmarks" ]; then

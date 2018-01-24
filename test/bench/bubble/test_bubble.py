@@ -269,9 +269,11 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             model.parameters["cut"]["density"] = True
             model.parameters["cut"]["viscosity"] = True
             #model.parameters["cut"]["mobility"] = True
+            #model.parameters["mobility"]["beta"] = 0.5
             if scheme == "FullyDecoupled":
                 model.parameters["mobility"]["m"] = 0
-                #model.parameters["full"]["factor_s"] = 1.
+                model.parameters["mobility"]["M0"] *= 1e-2
+                #model.parameters["full"]["factor_s"] = 2.
                 #model.parameters["full"]["factor_rho0"] = 0.5
                 #model.parameters["full"]["factor_nu0"] = 5.
 
@@ -376,7 +378,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     t_end = 3.0 # FIXME: Set to 3.
-    OTD = 1     # Order of Time Discretization
+    OTD = 2     # Order of Time Discretization
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
