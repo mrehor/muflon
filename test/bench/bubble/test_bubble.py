@@ -330,6 +330,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
                 result = TS.run(t_beg, t_end, dt, OTD, it)
             except:
                 warning("Ooops! Something went wrong: {}".format(sys.exc_info()[0]))
+                TS.logger().dump_to_file()
                 continue
 
         # Prepare results
