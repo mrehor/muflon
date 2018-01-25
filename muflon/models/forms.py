@@ -965,6 +965,13 @@ class Incompressible(Model):
         ``['lin']['lhs']``. Similarly, forms corresponding to
         right hand sides are accessible through ``['lin']['rhs']``.
 
+        .. warning::
+
+          The scheme is currently applicable only for enclosed flows with
+          Dirichlet BCs for **all velocity components on the whole boundary**.
+          In some special configurations, like in the *rising bubble benchmark*,
+          it can be used even with *full slip* on some parts of the boundary.
+
         :param matching_p: if True then pressure matches *monolithic pressure*
         :type matching_p: bool
         :returns: dictonary with items ``'nln'`` and ``'lin'``,
