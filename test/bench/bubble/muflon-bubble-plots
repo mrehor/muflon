@@ -34,49 +34,55 @@ import sys
 from muflon.utils.testing import read_postprocessor
 from dolfin import mpi_comm_world, MPI
 
-# import csv, itertools
-# counter = 0
-# def _plot_with_customized_labels(fig, xs, ys0, ys1, ys2, free_vars, style):
-#     (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
-#     global counter
-#     counter += 1
-#     #label = "_".join(map(str, itertools.chain(*free_vars)))
-#     label = "label %i" % counter
-#     for i in range(len(xs)):
-#         ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
-#         ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
-#         ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
+import csv, itertools
+counter = 0
+eps = ['0.08', '0.04', '0.02'] # label corresponds to levels 0--2
+custom_style = ['k:', 'g-.', 'r--']
+def _plot_with_customized_labels(fig, xs, ys0, ys1, ys2, free_vars, style):
+    (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
+    global counter, eps, custom_style
+    counter += 1
+    #label = "_".join(map(str, itertools.chain(*free_vars)))
+    label = r"$\varepsilon = %s \cdot \sqrt{2}$" % eps[counter-1]
+    style = custom_style[counter-1]
+    for i in range(len(xs)):
+        ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
+        ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
+        ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
 
-#     if counter == 3:
-#         label = 'ref'
-#         style = '-'
-#         x1, y1 = read_csv_data("../../../bubble/reference_results/refAV_model3-case1-velo.csv")
-#         x2, y2 = read_csv_data("../../../bubble/reference_results/refAV_model3-case1-mass.csv")
-#         ax1.plot(x1, y1, style, linewidth=1, label=label)
-#         ax2.plot(x2, y2, style, linewidth=1, label=label)
-#         ax3.plot([xs[-1][0], xs[-1][-1]], [ys2[-1][0], ys2[-1][0]],
-#                      style, linewidth=1, label=label)
+    if counter == 3:
+        label = 'ref'
+        style = 'b-'
+        case = dict(free_vars)['case']
+        x1, y1 = read_csv_data(
+            "../../../bubble/reference_results/refAV_model3-case{}-velo.csv".format(case))
+        x2, y2 = read_csv_data(
+            "../../../bubble/reference_results/refAV_model3-case{}-mass.csv".format(case))
+        ax1.plot(x1, y1, style, linewidth=1, label=label)
+        ax2.plot(x2, y2, style, linewidth=1, label=label)
+        ax3.plot([xs[-1][0], xs[-1][-1]], [ys2[-1][0], ys2[-1][0]],
+                     style, linewidth=1, label=label)
 
-#     for ax in (ax1, ax2, ax3):
-#         # ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-#         #           fontsize='x-small', ncol=1)
-#         ax.legend(loc=4, borderaxespad=1, fontsize='x-small')
+    for ax in (ax1, ax2, ax3):
+        # ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
+        #           fontsize='x-small', ncol=1)
+        ax.legend(loc=4, borderaxespad=1, fontsize='x-small')
 
-# def read_csv_data(csvfile):
-#     x, y = [], []
-#     with open(csvfile, 'r') as f:
-#         reader = csv.reader(f)
-#         row = next(reader) # get the first row
-#         col = row.index("ref")
-#         row = next(reader) # get the rest of the header
-#         assert row[col] == "X" and row[col+1] == "Y"
-#         for row in reader:
-#             if row[col] != '':
-#                 x.append(float(row[col]))
-#                 y.append(float(row[col+1]))
-#             else:
-#                 break
-#     return x, y
+def read_csv_data(csvfile):
+    x, y = [], []
+    with open(csvfile, 'r') as f:
+        reader = csv.reader(f)
+        row = next(reader) # get the first row
+        col = row.index("ref") # "eps005"
+        row = next(reader) # get the rest of the header
+        assert row[col] == "X" and row[col+1] == "Y"
+        for row in reader:
+            if row[col] != '':
+                x.append(float(row[col]))
+                y.append(float(row[col+1]))
+            else:
+                break
+    return x, y
 
 def main(argv):
     proc = read_postprocessor(argv[0])

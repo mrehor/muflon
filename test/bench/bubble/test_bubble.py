@@ -42,6 +42,7 @@ import itertools
 
 from dolfin import *
 from matplotlib import pyplot, gridspec
+from collections import OrderedDict
 
 from muflon import mpset
 from muflon import DiscretizationFactory
@@ -429,7 +430,7 @@ class Postprocessor(GenericBenchPostprocessor):
         coord_vars = (self.x_var, self.y_var0, self.y_var1, self.y_var2)
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
-            data = {}
+            data = OrderedDict()
             styles = {"Monolithic": ':', "SemiDecoupled": '-', "FullyDecoupled": '--'}
             for result in self.results:
                 style = styles[result["scheme"]]
