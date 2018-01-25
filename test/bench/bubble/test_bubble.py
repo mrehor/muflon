@@ -35,7 +35,7 @@ respectively.
 from __future__ import print_function
 
 import pytest
-import os
+import os, sys
 import gc
 import six
 import itertools
@@ -327,8 +327,8 @@ def test_bubble(scheme, matching_p, case, postprocessor):
                     it = 1
             try:
                 result = TS.run(t_beg, t_end, dt, OTD, it)
-            except RuntimeError:
-                warning("Ooops. Something went wrong!")
+            except:
+                warning("Ooops! Something went wrong: {}".format(sys.exc_info()[0]))
                 continue
 
         # Prepare results
