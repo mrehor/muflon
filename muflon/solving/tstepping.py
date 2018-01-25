@@ -167,7 +167,7 @@ class TimeStepping(object):
         nested_prm.add("folder", "XDMFdata")
         nested_prm.add("flush", False)
         nested_prm.add("modulo", 1)
-        nested_prm.add("iconds", False)
+        nested_prm.add("iconds", True)
 
         prm.add(nested_prm)
         return prm
@@ -221,13 +221,14 @@ class TimeStepping(object):
         :returns: dictionary with results of the computation
         :rtype: dict
         """
-        if self._xfields: # create xdmf writer for given fields
+        if self._xfields and not hasattr(self, "_xdmf_writer"):
+            # create xdmf writer for given fields
             xfolder = os.path.join(self._outdir,
                                    self.parameters["xdmf"]["folder"])
             xflush = self.parameters["xdmf"]["flush"]
             self._xdmf_writer = XDMFWriter(self._comm, xfolder,
                                            self._xfields, xflush)
-            if self.parameters["xdmf"]["iconds"]:
+            if self.parameters["xdmf"]["iconds"] and it == 0:
                 self._xdmf_writer.write(t_beg)
         return self._tstepping_loop(t_beg, t_end, dt, OTD, it)
 
