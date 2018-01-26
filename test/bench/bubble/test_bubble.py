@@ -211,7 +211,7 @@ def prepare_hook(DS, functionals, modulo_factor):
 
 @pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["SemiDecoupled",]) # "FullyDecoupled", "Monolithic"
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"]) # "Monolithic"
 def test_bubble(scheme, matching_p, case, postprocessor):
     set_log_level(WARNING)
 
@@ -237,12 +237,13 @@ def test_bubble(scheme, matching_p, case, postprocessor):
     # Scheme-dependent variables
     k = 1 #if scheme == "FullyDecoupled" else 1
 
-    for level in range(2): # FIXME: set to 3 (direct) or 4 (iterative)
+    for level in range(2): # CHANGE #1: set " level in range(4)"
         dividing_factor = 0.5**level
-        modulo_factor = 1 if level == 0 else 2**(level-1)
+        modulo_factor = 1 if level == 0 else 2**(level-1)*1
         eps = dividing_factor*0.04
         gamma = dividing_factor*4e-5
-        dt = dividing_factor*0.008
+        dt = dividing_factor*0.008 # CHANGE #2: use smaller time step if needed
+        # NOTE: smaller time step required by 'FullyDecoupled' scheme (case #2)
         label = "case_{}_{}_level_{}_k_{}_dt_{}_{}".format(
                     case, scheme, level, k, dt, basename)
         with Timer("Prepare") as tmr_prepare:
@@ -379,7 +380,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 3.0 # FIXME: Set to 3.
+    t_end = 0.5 # CHANGE #3: Set to "t_end = 3.0"
     OTD = 2     # Order of Time Discretization
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
