@@ -607,7 +607,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax2.set_yscale("log")
         # Set ticks
         for ax in [ax1, ax2]:
-            ax.tick_params(direction="in", right=True, top=True)
+            ax.tick_params(which="both", direction="in", right=True, top=True)
         # Set labels
         xlabel = "$h$" if self.test == "ref" else "Element order"
         ax1.set_xlabel(xlabel)
