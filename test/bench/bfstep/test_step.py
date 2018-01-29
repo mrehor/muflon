@@ -53,7 +53,8 @@ def data_dir():
 def create_domain(refinement_level):
     # Load mesh from file and refine uniformly
     # FIXME: Add script for downloading data
-    mesh = Mesh(os.path.join(data_dir(), "step_domain.xml.gz"))
+    #mesh = Mesh(os.path.join(data_dir(), "step_domain.xml.gz"))
+    mesh = Mesh(os.path.join(data_dir(), "step_domain_fine.xml.gz"))
     for i in range(refinement_level):
         mesh = refine(mesh)
 
@@ -155,25 +156,32 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
     mpset["model"]["nu"]["2"] = nu
 
     # Fixed parameters for setting up MUFLON components
-    dt = 0.1                      # time step
+    dt = postprocessor.dt
     t_end = postprocessor.t_end   # final time of the simulation
     OTD = postprocessor.OTD
     k = 1
     modulo_factor = 2
 
     # Names and directories
-    basename = "dt_{}_t_end_{}".format(dt, t_end)
     outdir = postprocessor.outdir
 
     # Mesh independent predefined quantities
     ic = SimpleCppIC()
     ic.add("phi", "1.0")
 
-    for level in range(3, 4):
-        label = "{}_level_{}_{}".format(scheme, level, basename)
+    for level in range(1):
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers = create_domain(level)
+            if dt is None:
+                hh = mesh.hmin()/(2.0**0.5) # mesh size in the direction of inflow
+                umax = 1.0                  # max velocity at the inlet
+                dt = 0.8*hh/umax            # automatically computed time step
+                del hh, umax
+
+            basename = "dt_{}_t_end_{}".format(dt, t_end)
+            label = "{}_level_{}_{}".format(scheme, level, basename)
+
             DS = create_discretization(scheme, mesh, k)
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
@@ -311,12 +319,13 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
+    dt = None    # will be determined automatically (if None)
     t_end = 50.0 # FIXME: Set to 200
     OTD = 1     # Order of Time Discretization
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(t_end, OTD, outdir)
+    proc = Postprocessor(t_end, OTD, outdir, dt)
 
     # Decide what should be plotted
     proc.register_fixed_variables(
@@ -340,10 +349,11 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericBenchPostprocessor):
-    def __init__(self, t_end, OTD, outdir):
+    def __init__(self, t_end, OTD, outdir, dt=None):
         super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
+        self.dt = dt
         self.t_end = t_end
         self.OTD = OTD
 
