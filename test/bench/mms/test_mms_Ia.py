@@ -571,7 +571,7 @@ class Postprocessor(GenericBenchPostprocessor):
         #            fontsize='x-small', ncol=1)
         # ax2.legend(bbox_to_anchor=(0, 1.1), loc=2, borderaxespad=0,
         #            fontsize='x-small', ncol=3)
-        ax1.legend(loc=4, borderaxespad=1, fontsize='x-small', ncol=1)
+        ax1.legend(loc=2, borderaxespad=1, fontsize='x-small', ncol=1)
         ax2.legend(loc=1, borderaxespad=1, fontsize='x-small', ncol=3)
 
     @staticmethod
@@ -587,11 +587,11 @@ class Postprocessor(GenericBenchPostprocessor):
 
     def _create_figure(self):
         fig1, fig2 = pyplot.figure(), pyplot.figure()
-        gs = gridspec.GridSpec(2, 2, width_ratios=[1, 0.01],
+        gs = gridspec.GridSpec(2, 2, width_ratios=[0.01, 1],
                                height_ratios=[10, 1], hspace=0.1)
         # Set subplots
-        ax1 = fig1.add_subplot(gs[0, 0])
-        ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
+        ax1 = fig1.add_subplot(gs[0, 1])
+        ax2 = fig2.add_subplot(gs[0, 1], sharex=ax1)
         #ax1.xaxis.set_label_position("top")
         #ax1.xaxis.set_ticks_position("top")
         #ax1.xaxis.set_tick_params(labeltop="on", labelbottom="off")

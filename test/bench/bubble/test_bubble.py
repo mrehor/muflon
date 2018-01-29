@@ -488,11 +488,11 @@ class Postprocessor(GenericBenchPostprocessor):
 
     def _create_figure(self):
         fig1, fig2, fig3 = pyplot.figure(), pyplot.figure(), pyplot.figure()
-        gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.05)
+        gs = gridspec.GridSpec(2, 2, height_ratios=[10, 1], width_ratios=[0.001, 1], hspace=0.05)
         # Set subplots
-        ax1 = fig1.add_subplot(gs[0, 0])
-        ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
-        ax3 = fig3.add_subplot(gs[0, 0], sharex=ax1)
+        ax1 = fig1.add_subplot(gs[0, 1])
+        ax2 = fig2.add_subplot(gs[0, 1], sharex=ax1)
+        ax3 = fig3.add_subplot(gs[0, 1], sharex=ax1)
 
         # Set ticks
         for ax in [ax1, ax2, ax3]:

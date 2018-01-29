@@ -34,14 +34,21 @@ import sys
 from muflon.utils.testing import read_postprocessor
 from dolfin import mpi_comm_world, MPI
 
+# Font settings
+from matplotlib import rc
+rc('font',**{'size': 16}) #, 'family':'serif'})
+#rc('text', usetex=True)
+
 import csv, itertools
 counter = 0
-eps = ['0.08', '0.04', '0.02'] # label corresponds to levels 0--2
-custom_style = ['k:', 'g-.', 'r--']
+eps = ['0.08', '0.04', '0.02', '0.01'] # label corresponds to levels 0--3
+custom_style = ['y:', 'k:', 'g-.', 'r--']
 def _plot_with_customized_labels(fig, xs, ys0, ys1, ys2, free_vars, style):
     (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
     global counter, eps, custom_style
     counter += 1
+    if counter == 1:
+        return
     #label = "_".join(map(str, itertools.chain(*free_vars)))
     label = r"$\varepsilon = %s \cdot \sqrt{2}$" % eps[counter-1]
     style = custom_style[counter-1]
@@ -50,7 +57,7 @@ def _plot_with_customized_labels(fig, xs, ys0, ys1, ys2, free_vars, style):
         ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
         ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
 
-    if counter == 3:
+    if counter == 4:
         label = 'ref'
         style = 'b-'
         case = dict(free_vars)['case']
@@ -87,7 +94,7 @@ def read_csv_data(csvfile):
 def main(argv):
     proc = read_postprocessor(argv[0])
     # FIXME: Remove the following hack
-    #proc.outdir="."
+    proc.outdir="."
     # NOTE: Uncomment the above line when plotting the results that
     #       were computed elsewhere (e.g. on cluster)
     rank = 0
@@ -95,7 +102,7 @@ def main(argv):
     for arg in argv[1:]:
         proc.read_results(rank, arg)
     proc.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
-    #proc._plot = _plot_with_customized_labels
+    proc._plot = _plot_with_customized_labels
     proc.flush_plots()
     # FIXME: Resolve the order of plotting!
 

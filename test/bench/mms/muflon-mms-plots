@@ -34,10 +34,15 @@ import sys
 from muflon.utils.testing import read_postprocessor
 from dolfin import mpi_comm_world, MPI
 
+# Font settings
+from matplotlib import rc
+rc('font',**{'size': 13}) #, 'family':'serif'})
+#rc('text', usetex=True)
+
 def main(argv):
     proc = read_postprocessor(argv[0])
     # FIXME: Remove the following hack
-    #proc.outdir="."
+    proc.outdir="."
     # NOTE: Uncomment the above line when plotting the results that
     #       were computed elsewhere (e.g. on cluster)
     rank = 0
