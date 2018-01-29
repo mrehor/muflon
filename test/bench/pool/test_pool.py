@@ -239,7 +239,7 @@ def prepare_hook(model, functionals, modulo_factor, div_v=None):
             info("")
 
     DS = model.discretization_scheme()
-    cc = model.const_coeffs
+    cc = model.coeffs
     mesh = DS.mesh()
     pv = DS.primitive_vars_ctl(indexed=True)
     rho_mat = model.collect_material_params("rho")

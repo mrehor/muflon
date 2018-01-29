@@ -154,7 +154,7 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
     # Fixed parameters for setting up MUFLON components
     dt = 0.01                     # time step
     t0 = 10.0*dt                  # time needed to get fully developed inlet BC
-    t_end = postprocessor.t_end    # final time of the simulation
+    t_end = postprocessor.t_end   # final time of the simulation
     OTD = postprocessor.OTD
     k = 1
     modulo_factor = 10
@@ -187,22 +187,18 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
             forms = model.create_forms()
 
             # Add boundary integrals
-            n = model.discretization_scheme().facet_normal()
+            n = DS.facet_normal()
             ds = Measure("ds", subdomain_data=boundary_markers)
-            test = model.discretization_scheme().test_functions()
-            trial = model.discretization_scheme().trial_functions()
-            pv, pv0 = model._pv_ctl, model._pv_ptl[0] # FIXME
-            cc = model.const_coeffs
-            rho_mat = model.collect_material_params("rho")
-            rho = model.density(rho_mat, pv["phi"])
-            nu_mat = model.collect_material_params("nu")
-            nu = model.viscosity(nu_mat, pv["phi"])
-            Mo = model.mobility(cc["M0"], pv["phi"], pv0["phi"], cc["m"], cc["beta"])
-            J = total_flux(Mo, rho_mat, pv["chi"])
+            test = DS.test_functions()
+            trial = DS.trial_functions()
+            pv = DS.primitive_vars_ctl(indexed=True)
+            pv0 = DS.primitive_vars_ptl(0, indexed=True)
+            cc = model.coeffs
             if scheme == "SemiDecoupled":
                 forms['lin']['lhs'] += (
-                    0.5*inner(rho*pv0["v"] + cc["THETA2"]*J, n)*inner(trial["v"], test["v"])
-                  - nu*inner(dot(grad(trial["v"]).T, n), test["v"])
+                    0.5*inner(cc["rho"]*pv0["v"]
+                                  + cc["THETA2"]*cc["J"], n)*inner(trial["v"], test["v"])
+                  - cc["nu"]*inner(dot(grad(trial["v"]).T, n), test["v"])
                 )*ds(2)
             else:
                 warning("Missing boundary integrals along the outlet!")

@@ -95,6 +95,8 @@ class Model(object):
         :param bcs: dictionary with Dirichlet boundary conditions for
                     individual primitive variables
         :type bcs: dict
+        :ivar coeffs: dictionary with coefficients which have been created
+                      to constitute variational forms
         """
         # Initialize parameters
         self.parameters = prm = Parameters(mpset["model"])
@@ -133,6 +135,9 @@ class Model(object):
 
         # Initialize flags
         self._flag_forms = False
+
+        # Create empty dictionary for coefficients of the model
+        self.coeffs = OrderedDict()
 
     def bcs(self):
         """
@@ -560,7 +565,7 @@ class Incompressible(Model):
 
     def _create_doublewell_and_coefficients(self, factors=()):
         """
-        This method sets attributes 'doublewell' and 'const_coeffs' to the
+        This method sets attributes 'doublewell' and 'coeffs' to the
         current class.
 
         The first attribute corresponds to
@@ -575,8 +580,8 @@ class Incompressible(Model):
         num_types = tuple(list(six.integer_types) + [float,])
         cell = self._DS.mesh().ufl_cell()
 
-        # Create empty dictionary for constant coefficients
-        self.const_coeffs = cc = OrderedDict()
+        # Get (so far empty) dictionary for coefficients
+        cc = self.coeffs
 
         # Process factors
         for key, val in factors:
@@ -615,15 +620,15 @@ class Incompressible(Model):
         Set factors according to chosen order of time discretization OTD.
         """
         if OTD == 1:
-            self.const_coeffs["TD_theta"].assign(Constant(1.0))
-            self.const_coeffs["TD_dF_auto"].assign(Constant(1.0))
-            self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
-            self.const_coeffs["TD_dF_semi"].assign(Constant(0.0))
+            self.coeffs["TD_theta"].assign(Constant(1.0))
+            self.coeffs["TD_dF_auto"].assign(Constant(1.0))
+            self.coeffs["TD_dF_full"].assign(Constant(0.0))
+            self.coeffs["TD_dF_semi"].assign(Constant(0.0))
         elif OTD == 2:
-            self.const_coeffs["TD_theta"].assign(Constant(0.5))
-            self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
-            self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
-            self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
+            self.coeffs["TD_theta"].assign(Constant(0.5))
+            self.coeffs["TD_dF_auto"].assign(Constant(0.0))
+            self.coeffs["TD_dF_full"].assign(Constant(0.0))
+            self.coeffs["TD_dF_semi"].assign(Constant(1.0))
             # from dolfin import warning
             # warning("Time discretization of order %g for '%s'"
             #         " scheme does not work properly" % (OTD, self._DS.name()))
@@ -653,7 +658,7 @@ class Incompressible(Model):
             ("TD_dF_full", 0.0),
             ("TD_dF_semi", 0.0)
         ))
-        cc = self.const_coeffs
+        cc = self.coeffs # created coefficients
         dw = self.doublewell
 
         # Primitive variables
@@ -664,12 +669,12 @@ class Incompressible(Model):
         # Derivative of multi-well potential
         # -- automatic differentiation
         _phi = variable(phi)
-        F = multiwell(dw, _phi, cc["S"])
+        cc["F"] = F = multiwell(dw, _phi, cc["S"])
         dF_auto = diff(F, _phi)
         # -- manual differentiation
         dF_full = multiwell_derivative(dw, phi, phi0, cc["S"], False)
         dF_semi = multiwell_derivative(dw, phi, phi0, cc["S"], True)
-        dF = (
+        cc["dF"] = dF = (
               cc["TD_dF_auto"]*dF_auto
             + cc["TD_dF_full"]*dF_full
             + cc["TD_dF_semi"]*dF_semi
@@ -689,7 +694,7 @@ class Incompressible(Model):
         idt = conditional(gt(self._dt, 0.0), 1.0/self._dt, 0.0)
 
         # Mobility
-        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
+        cc["Mo"] = Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
 
         # System of CH eqns
         def G_phi(phi, v, g_src):
@@ -758,8 +763,14 @@ class Incompressible(Model):
             )*dx
             return G
 
-        rho = self.density(rho_mat, phi)
-        rho0 = self.density(rho_mat, phi0)
+        # Expose coefficients
+        cc["rho"] = rho = self.density(rho_mat, phi)
+        cc["rho0"] = rho0 = self.density(rho_mat, phi0)
+        # cc["nu"] = self.viscosity(nu_mat, phi)
+        # cc["f_cap"] = capillary_force(phi, chi, cc["LA"])
+        # cc["J"] = total_flux(Mo, rho_mat, chi)
+        # FIXME: add further if needed
+
         dvdt = idt*inner(rho*v - rho0*v0, test["v"])*dx
         G_v_ctl = G_v(phi, v, p, f_src[0])
         G_v_ptl = G_v(phi0, v0, p0, f_src[-1])
@@ -785,17 +796,17 @@ class Incompressible(Model):
 
     def _factors_SemiDecoupled(self, OTD):
         if OTD == 1:
-            self.const_coeffs["TD_theta"].assign(Constant(1.0))
-            self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
-            self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
-            self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
+            self.coeffs["TD_theta"].assign(Constant(1.0))
+            self.coeffs["TD_dF_auto"].assign(Constant(0.0))
+            self.coeffs["TD_dF_full"].assign(Constant(0.0))
+            self.coeffs["TD_dF_semi"].assign(Constant(1.0))
         elif OTD == 2:
-            self.const_coeffs["TD_theta"].assign(Constant(0.5))
+            self.coeffs["TD_theta"].assign(Constant(0.5))
             # FIXME: Boyer and Minjeaud (2010) proved the convergence result
             #        assuming TD_theta > 0.5 (for CH part only)
-            self.const_coeffs["TD_dF_auto"].assign(Constant(0.0))
-            self.const_coeffs["TD_dF_full"].assign(Constant(0.0))
-            self.const_coeffs["TD_dF_semi"].assign(Constant(1.0))
+            self.coeffs["TD_dF_auto"].assign(Constant(0.0))
+            self.coeffs["TD_dF_full"].assign(Constant(0.0))
+            self.coeffs["TD_dF_semi"].assign(Constant(1.0))
             # from dolfin import warning
             # warning("Time discretization of order %g for '%s'"
             #        " scheme does not work properly" % (OTD, self._DS.name()))
@@ -829,7 +840,7 @@ class Incompressible(Model):
             ("TD_dF_full", 0.0),
             ("TD_dF_semi", 1.0)
         ))
-        cc = self.const_coeffs
+        cc = self.coeffs # created coefficients
         dw = self.doublewell
 
         # Primitive variables
@@ -840,12 +851,12 @@ class Incompressible(Model):
         # Derivative of multi-well potential
         # -- automatic differentiation
         _phi = variable(phi)
-        F = multiwell(dw, _phi, cc["S"])
+        cc["F"] = F = multiwell(dw, _phi, cc["S"])
         dF_auto = diff(F, _phi)
         # -- manual differentiation
         dF_full = multiwell_derivative(dw, phi, phi0, cc["S"], False)
         dF_semi = multiwell_derivative(dw, phi, phi0, cc["S"], True)
-        dF = (
+        cc["dF"] = dF = (
               cc["TD_dF_auto"]*dF_auto
             + cc["TD_dF_full"]*dF_full
             + cc["TD_dF_semi"]*dF_semi
@@ -867,25 +878,25 @@ class Incompressible(Model):
 
         # Capillary force
         domain_size = self._DS.compute_domain_size()
-        alpha = [assemble(phi0[i]*dx)/domain_size for i in range(len(phi0))]
-        ca = as_vector([phi0[i] - Constant(alpha[i]) for i in range(len(phi0))])
+        cc["alpha"] = alpha = [assemble(phi0[i]*dx)/domain_size for i in range(len(phi0))]
+        cc["ca"] = ca = as_vector([phi0[i] - Constant(alpha[i]) for i in range(len(phi0))])
         if matching_p:
-            f_cap = capillary_force(phi0, chi, cc["LA"])
+            cc["f_cap"] = f_cap = capillary_force(phi0, chi, cc["LA"])
         else:
-            f_cap = - dot(grad(chi).T, dot(cc["LA"].T, ca))
+            cc["f_cap"] = f_cap = - dot(grad(chi).T, dot(cc["LA"].T, ca))
 
         # Density and viscosity
         rho_mat = self.collect_material_params("rho")
-        rho = self.density(rho_mat, phi)
-        rho0 = self.density(rho_mat, phi0)
+        cc["rho"] = rho = self.density(rho_mat, phi)
+        cc["rho0"] = rho0 = self.density(rho_mat, phi0)
         nu_mat = self.collect_material_params("nu")
-        nu = self.viscosity(nu_mat, phi)
+        cc["nu"] = nu = self.viscosity(nu_mat, phi)
 
         # Explicit convective velocity
         v_star = v0 + self._dt*f_cap/rho0
 
         # Mobility
-        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
+        cc["Mo"] = Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
 
         # System of CH eqns
         g_src_star = fact_ctl*g_src[0] + fact_ptl*g_src[-1]
@@ -908,7 +919,7 @@ class Incompressible(Model):
         system_ch = eqn_phi + eqn_chi
 
         # System of NS eqns
-        J = total_flux(Mo, rho_mat, chi)
+        cc["J"] = J = total_flux(Mo, rho_mat, chi)
         Dv  = sym(grad(trial["v"]))
         Dv_ = sym(grad(test["v"]))
 
@@ -938,17 +949,17 @@ class Incompressible(Model):
 
     def _factors_FullyDecoupled(self, OTD):
         if OTD == 1:
-            self.const_coeffs["TD_gamma0"].assign(Constant(1.0))
-            self.const_coeffs["TD_star0"].assign(Constant(1.0))
-            self.const_coeffs["TD_star1"].assign(Constant(0.0))
-            self.const_coeffs["TD_hat0"].assign(Constant(1.0))
-            self.const_coeffs["TD_hat1"].assign(Constant(0.0))
+            self.coeffs["TD_gamma0"].assign(Constant(1.0))
+            self.coeffs["TD_star0"].assign(Constant(1.0))
+            self.coeffs["TD_star1"].assign(Constant(0.0))
+            self.coeffs["TD_hat0"].assign(Constant(1.0))
+            self.coeffs["TD_hat1"].assign(Constant(0.0))
         elif OTD == 2:
-            self.const_coeffs["TD_gamma0"].assign(Constant(1.5))
-            self.const_coeffs["TD_star0"].assign(Constant(2.0))
-            self.const_coeffs["TD_star1"].assign(Constant(-1.0))
-            self.const_coeffs["TD_hat0"].assign(Constant(2.0))
-            self.const_coeffs["TD_hat1"].assign(Constant(-0.5))
+            self.coeffs["TD_gamma0"].assign(Constant(1.5))
+            self.coeffs["TD_star0"].assign(Constant(2.0))
+            self.coeffs["TD_star1"].assign(Constant(-1.0))
+            self.coeffs["TD_hat0"].assign(Constant(2.0))
+            self.coeffs["TD_hat1"].assign(Constant(-0.5))
         else:
             msg = "Time discretization of order %g for '%s'" \
                   " scheme is not implemented." % (OTD, self._DS.name())
@@ -987,7 +998,7 @@ class Incompressible(Model):
             ("factor_rho0", prm["full"]["factor_rho0"]),
             ("factor_nu0",  prm["full"]["factor_nu0"]),
         ))
-        cc = self.const_coeffs
+        cc = self.coeffs # created coefficients
         dw = self.doublewell
 
         # Arguments of the system
@@ -1018,15 +1029,15 @@ class Incompressible(Model):
 
         # Prepare non-linear potential term @ CTL
         _phi = variable(phi)
-        F = multiwell(dw, _phi, S)
-        dF = diff(F, _phi)
-        #dF = multiwell_derivative(dw, phi, phi0, S, False)
+        cc["F"] = F = multiwell(dw, _phi, S)
+        cc["dF"] = dF = diff(F, _phi)
+        #cc["dF"] = dF = multiwell_derivative(dw, phi, phi0, S, False)
 
         # Prepare non-linear potential term at starred time level
         _phi_star = variable(phi_star)
-        F_star = multiwell(dw, _phi_star, S)
-        dF_star = diff(F_star, _phi_star)
-        #dF_star = multiwell_derivative(dw, phi_star, phi0, S, False)
+        cc["F_star"] = F_star = multiwell(dw, _phi_star, S)
+        cc["dF_star"] = dF_star = diff(F_star, _phi_star)
+        #cc["dF_star"] = dF_star = multiwell_derivative(dw, phi_star, phi0, S, False)
 
         # Source terms
         f_src = self._f_src[0]
@@ -1042,7 +1053,7 @@ class Incompressible(Model):
                   " assumption of constant mobility."\
                   " Set mpset['model']['mobility']['m'] = 0" % self._DS.name()
             raise RuntimeError(msg)
-        Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
+        cc["Mo"] = Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
 
         # Outward unit normal
         n = self._DS.facet_normal()
@@ -1095,14 +1106,14 @@ class Incompressible(Model):
         CHI = 0.5*a*eps*R - 0.5*a*eps*(chi - ALPHA2*phi) # consistent w.r.t. stabilization
         rho_mat = self.collect_material_params("rho")
         nu_mat = self.collect_material_params("nu")
-        J = total_flux(Mo, rho_mat, CHI)
+        cc["J"] = J = total_flux(Mo, rho_mat, CHI)
 
         # 4b. Capillary force
         #    Def: f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*div(grad(phi)))
         if matching_p:
-            f_cap = capillary_force(phi, CHI, LA)
+            cc["f_cap"] = f_cap = capillary_force(phi, CHI, LA)
         else:
-            f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*(chi - ALPHA1*phi)))
+            cc["f_cap"] = f_cap = - dot(grad(phi).T, dot(LA, 0.5*a*eps*(chi - ALPHA1*phi)))
 
         # 5. Density and viscosity
         rho = self.density(rho_mat, phi)
