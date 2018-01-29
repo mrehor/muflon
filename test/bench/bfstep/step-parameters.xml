@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<dolfin xmlns:dolfin="http://fenicsproject.org">
+  <parameters name="muflon-parameters">
+    <parameters name="discretization">
+      <parameter key="N" type="int" value="2" />
+      <parameter key="PTL" type="int" value="1" />
+    </parameters>
+    <parameters name="model">
+      <parameter key="eps" type="double" value="1.0"/>
+      <parameters name="mobility">
+        <parameter key="M0" type="double" value="1.0" />
+        <parameter key="m"  type="int" value="0" />
+      </parameters>
+      <parameters name="nu">
+        <parameter key="1" type="double" value="1.0" />
+        <parameter key="2" type="double" value="1.0" />
+      </parameters>
+      <parameters name="rho">
+        <parameter key="1" type="double" value="1.0" />
+        <parameter key="2" type="double" value="1.0" />
+      </parameters>
+      <parameters name="sigma">
+        <parameter key="12" type="double" value="1.0" />
+      </parameters>
+    </parameters>
+  </parameters>
+</dolfin>
