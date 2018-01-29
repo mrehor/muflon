@@ -82,7 +82,7 @@ def create_discretization(scheme, mesh, k=1):
 
     return DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk)
 
-def create_bcs(DS, boundary_markers, t0):
+def create_bcs(DS, boundary_markers, t0=None):
     zero = Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
     bcs = {}
 
@@ -91,9 +91,12 @@ def create_bcs(DS, boundary_markers, t0):
     bcs_nslip_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 0)
 
     # Parabolic inflow BC
-    # inflow = Expression("(t/t0)*t*4.0*x[1]*(1.0 - x[1])",
-    #                         element=DS._FE["v"], t=0.0, t0=t0)
-    inflow = Expression("(1.0 - exp(-5.0*t))*4.0*x[1]*(1.0 - x[1])", element=DS._FE["v"], t=0.0)
+    if t0 is None:
+        inflow = Expression("(1.0 - exp(-alpha*t))*4.0*x[1]*(1.0 - x[1])",
+                                element=DS._FE["v"], t=0.0, alpha=5.0)
+    else:
+        inflow = Expression("(t/t0)*t*4.0*x[1]*(1.0 - x[1])",
+                                element=DS._FE["v"], t=0.0, t0=t0)
     bcs_in_v1 = DirichletBC(DS.subspace("v", 0), inflow, boundary_markers, 1)
     bcs_in_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 1)
 
@@ -152,15 +155,14 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
     mpset["model"]["nu"]["2"] = nu
 
     # Fixed parameters for setting up MUFLON components
-    dt = 0.01                     # time step
-    t0 = 10.0*dt                  # time needed to get fully developed inlet BC
+    dt = 0.1                      # time step
     t_end = postprocessor.t_end   # final time of the simulation
     OTD = postprocessor.OTD
     k = 1
-    modulo_factor = 10
+    modulo_factor = 2
 
     # Names and directories
-    basename = "dt_{}_t0_{}_t_end_{}".format(dt, t0, t_end)
+    basename = "dt_{}_t_end_{}".format(dt, t_end)
     outdir = postprocessor.outdir
 
     # Mesh independent predefined quantities
@@ -177,7 +179,7 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
             DS.load_ic_from_simple_cpp(ic)
 
             # Prepare boundary conditions
-            bcs, inflow = create_bcs(DS, boundary_markers, t0)
+            bcs, inflow = create_bcs(DS, boundary_markers) #, t0=10*dt
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
@@ -309,7 +311,7 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 20.0 # FIXME: Set to 200
+    t_end = 50.0 # FIXME: Set to 200
     OTD = 1     # Order of Time Discretization
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
