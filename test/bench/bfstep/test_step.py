@@ -211,7 +211,7 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
                   - cc["nu"]*inner(dot(grad(trial["v"]).T, n), test["v"])
                 )*ds(2)
             else:
-                warning("Missing boundary integrals along the outlet!")
+                warning("Missing boundary integrals at the outlet!")
 
             # Prepare solver
             solver = SolverFactory.create(model, forms)
