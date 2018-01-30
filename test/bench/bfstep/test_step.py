@@ -245,6 +245,8 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
 
             # Create forms
             forms = model.create_forms()
+            if ls == "direct":
+                forms["pcd"]["a_pc"] = None
 
             # Add boundary integrals
             n = DS.facet_normal()
@@ -275,8 +277,12 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
             # Prepare solver
             comm = mesh.mpi_comm()
             solver = SolverFactory.create(model, forms)
-            # solver.data["solver"]["NS"] = \
-            #   create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False)
+            solver.data["solver"]["NS"] = \
+              create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False)
+            prefix = solver.data["solver"]["NS"].get_options_prefix()
+
+            # PETScOptions.set(prefix+"ksp_monitor")
+            # solver.linear_solver().set_from_options()
 
             # Prepare time-stepping algorithm
             pv = DS.primitive_vars_ctl()

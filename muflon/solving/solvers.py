@@ -29,6 +29,9 @@ from dolfin import derivative, lhs, rhs, assemble, dx, begin, end
 from dolfin import NonlinearVariationalProblem, NonlinearVariationalSolver
 from dolfin import NewtonSolver, NonlinearProblem, SystemAssembler
 from dolfin import as_backend_type, LUSolver
+from dolfin import action, PETScMatrix, info
+
+from fenapack import PCDKSP, PCDProblem
 
 from muflon.common.boilerplate import not_implemented_msg
 from muflon.models.forms import Model
@@ -114,6 +117,12 @@ class Solver(object):
         self._flags = OrderedDict()
         self._flags["fix_p"] = fix_p
         self._flags["setup"] = False
+
+    def comm(self):
+        """
+        Returns MPI communicator.
+        """
+        return self.data["model"].discretization_scheme().mesh().mpi_comm()
 
     def setup(self):
         """
@@ -304,6 +313,23 @@ class SemiDecoupled(Solver):
             self.data["null_space"] = null_space
             self.data["null_fcn"] = null_fcn
 
+    def setup(self):
+        try:
+            ksp = getattr(self.data["solver"]["NS"], "ksp")()
+            if isinstance(ksp, PCDKSP):
+                forms = self.data["forms"]
+                bcs_ns = self.data["bcs_ns"]
+                bc_pcd = self.data["model"].bcs()["pcd"]
+                F = action(forms["lin"]["lhs"], self.data["sol_ns"]) - forms["lin"]["rhs"]
+                self.data["pcd_problem"] = PCDProblem(
+                    F, bcs_ns, forms["lin"]["lhs"], J_pc=forms["pcd"]["a_pc"])
+                    #ap=ap, kp=kp, mp=mp, bcs_pcd=bc_pcd) # FIXME: which operators?
+                self._flags["init_pcd_called"] = False
+        except AttributeError:
+            info("")
+            info("'LUSolver' will be applied to the Navier-Stokes subproblem.")
+            info("")
+
     def solve(self):
         """
         Perform one solution step (in time).
@@ -324,7 +350,27 @@ class SemiDecoupled(Solver):
             # Orthogonalize RHS vector b with respect to the null space
             self.data["null_space"].orthogonalize(b)
 
-        self.data["solver"]["NS"].solve(A, self.data["sol_ns"].vector(), b)
+        pcd_problem = self.data.get("pcd_problem")
+        if pcd_problem:
+            # Assembly in a symmetric fashion
+            # FIXME: do the same for A
+            # P = PETScMatrix(self.comm())
+            # pcd_problem.J_pc(P, self.data["sol_ns"].vector())
+            # P = A if P.empty() else P
+            if self.data["forms"]["pcd"]["a_pc"] is not None:
+                P = assemble(self.data["forms"]["pcd"]["a_pc"])
+                for bc in self.data["bcs_ns"]:
+                    bc.apply(P)
+            else:
+                P = A
+            self.data["solver"]["NS"].set_operators(A, P)
+            if not self._flags["init_pcd_called"]: # only one call is allowed
+                self.data["solver"]["NS"].init_pcd(pcd_problem)
+                self._flags["init_pcd_called"] = True
+        else:
+            self.data["solver"]["NS"].set_operator(A)
+
+        self.data["solver"]["NS"].solve(self.data["sol_ns"].vector(), b)
 
         if self._flags["fix_p"]:
             self._calibrate_pressure(
