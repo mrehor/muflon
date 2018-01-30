@@ -83,13 +83,13 @@ def create_discretization(scheme, mesh, k=1):
 
     return DiscretizationFactory.create(scheme, mesh, Pk, Pk, Pk1, Pk)
 
-def create_bcs(DS, boundary_markers, t0=None):
+def create_bcs(DS, boundary_markers, pcd_variant, t0=None):
     zero = Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
     bcs = {}
 
     # No-slip BC
-    bcs_nslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 0)
-    bcs_nslip_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 0)
+    bc_nslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 0)
+    bc_nslip_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 0)
 
     # Parabolic inflow BC
     if t0 is None:
@@ -98,10 +98,18 @@ def create_bcs(DS, boundary_markers, t0=None):
     else:
         inflow = Expression("(t/t0)*t*4.0*x[1]*(1.0 - x[1])",
                                 element=DS._FE["v"], t=0.0, t0=t0)
-    bcs_in_v1 = DirichletBC(DS.subspace("v", 0), inflow, boundary_markers, 1)
-    bcs_in_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 1)
+    bc_in_v1 = DirichletBC(DS.subspace("v", 0), inflow, boundary_markers, 1)
+    bc_in_v2 = DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 1)
 
-    bcs["v"] = [(bcs_nslip_v1, bcs_nslip_v2), (bcs_in_v1, bcs_in_v2)]
+    bcs["v"] = [(bc_nslip_v1, bc_nslip_v2), (bc_in_v1, bc_in_v2)]
+
+    # Artificial BC for PCD preconditioner
+    if pcd_variant == "BRM1":
+        bcs["pcd"] = DirichletBC(DS.subspace("p"), 0.0, boundary_markers, 1)
+    elif pcd_variant == "BRM2":
+        bcs["pcd"] = DirichletBC(DS.subspace("p"), 0.0, boundary_markers, 2)
+    else:
+        assert False
 
     return bcs, inflow
 
@@ -142,8 +150,7 @@ def prepare_hook(DS, functionals, modulo_factor, inflow):
 @pytest.mark.parametrize("nu", [0.02,])
 @pytest.mark.parametrize("pcd_variant", ["BRM1",]) # "BRM2"
 @pytest.mark.parametrize("ls", ["direct",]) # "iterative"
-@pytest.mark.parametrize("scheme", ["SemiDecoupled",]) #"FullyDecoupled"
-def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
+def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     #set_log_level(WARNING)
 
     # Read parameters
@@ -155,7 +162,7 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
     mpset["model"]["nu"]["1"] = nu
     mpset["model"]["nu"]["2"] = nu
 
-    # Fixed parameters for setting up MUFLON components
+    # Parameters for setting up MUFLON components
     dt = postprocessor.dt
     t_end = postprocessor.t_end   # final time of the simulation
     OTD = postprocessor.OTD
@@ -179,15 +186,14 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
                 dt = 0.8*hh/umax            # automatically computed time step
                 del hh, umax
 
-            basename = "dt_{}_t_end_{}".format(dt, t_end)
-            label = "{}_level_{}_{}".format(scheme, level, basename)
+            label = "level_{}_dt_{}_{}".format(level, dt, postprocessor.basename)
 
-            DS = create_discretization(scheme, mesh, k)
+            DS = create_discretization("SemiDecoupled", mesh, k)
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
 
             # Prepare boundary conditions
-            bcs, inflow = create_bcs(DS, boundary_markers) #, t0=10*dt
+            bcs, inflow = create_bcs(DS, boundary_markers, pcd_variant) #, t0=10*dt
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
@@ -198,33 +204,28 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
 
             # Add boundary integrals
             n = DS.facet_normal()
-            ds = Measure("ds", subdomain_data=boundary_markers)
+            ds_marked = Measure("ds", subdomain_data=boundary_markers)
             test = DS.test_functions()
             trial = DS.trial_functions()
             pv = DS.primitive_vars_ctl(indexed=True)
             pv0 = DS.primitive_vars_ptl(0, indexed=True)
             cc = model.coeffs
-            if scheme == "SemiDecoupled":
-                forms['lin']['lhs'] += (
-                    0.5*inner(cc["rho"]*pv0["v"]
-                                  + cc["THETA2"]*cc["J"], n)*inner(trial["v"], test["v"])
-                  - cc["nu"]*inner(dot(grad(trial["v"]).T, n), test["v"])
-                )*ds(2)
-            else:
-                warning("Missing boundary integrals at the outlet!")
+
+            w = cc["rho"]*pv0["v"] + cc["THETA2"]*cc["J"]
+            forms["lin"]["lhs"] += (
+                0.5*inner(w, n)*inner(trial["v"], test["v"])
+              - cc["nu"]*inner(dot(grad(trial["v"]).T, n), test["v"])
+            )*ds_marked(2)
 
             # Prepare solver
+            comm = mesh.mpi_comm()
             solver = SolverFactory.create(model, forms)
 
             # Prepare time-stepping algorithm
-            comm = mesh.mpi_comm()
             pv = DS.primitive_vars_ctl()
             xfields = list(zip(pv["phi"].split(), ("phi",)))
             xfields.append((pv["p"].dolfin_repr(), "p"))
-            if scheme == "FullyDecoupled":
-                xfields += list(zip(pv["v"].split(), ("v1", "v2")))
-            else:
-                xfields.append((pv["v"].dolfin_repr(), "v"))
+            xfields.append((pv["v"].dolfin_repr(), "v"))
             functionals = {"t": [], "vorticity": []}
             hook = prepare_hook(DS, functionals, modulo_factor, inflow)
             logfile = "log_{}.dat".format(label)
@@ -238,31 +239,12 @@ def test_scaling_mesh(nu, pcd_variant, ls, scheme, postprocessor):
         # Time-stepping
         t_beg = 0.0
         with Timer("Time stepping") as tmr_tstepping:
-            it = 0
-            if OTD == 2:
-                if scheme == "FullyDecoupled":
-                    dt0 = dt
-                    result = TS.run(t_beg, dt0, dt0, OTD=1, it=it)
-                    t_beg = dt
-                    it = 1
-                # elif scheme == "Monolithic":
-                #     dt0 = 1.0e-4*dt
-                #     result = TS.run(t_beg, dt0, dt0, OTD=1, it=it)
-                #     if dt - dt0 > 0.0:
-                #         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=it)
-                #     t_beg = dt
-                #     it = 1
-        try:
             result = TS.run(t_beg, t_end, dt, OTD)
-        except:
-            warning("Ooops! Something went wrong: {}".format(sys.exc_info()[0]))
-            TS.logger().dump_to_file()
-            continue
 
         # Prepare results
         result.update(
             ndofs=DS.num_dofs(),
-            scheme=scheme,
+            scheme="SemiDecoupled",
             level=level,
             h_min=mesh.hmin(),
             OTD=OTD,
