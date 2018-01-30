@@ -272,6 +272,7 @@ class ConstantTimeStep(TimeStepping):
         if OTD != 1:
             model.update_TD_factors(OTD)
         model.update_time_step_value(dt)
+        solver.setup()
         while t < t_end and not near(t, t_end, 0.1*dt):
             # Move to the current time level
             t += dt                   # update time
@@ -307,8 +308,7 @@ class ConstantTimeStep(TimeStepping):
         self._logger.dump_to_file()
 
         # Refresh solver for further use
-        if hasattr(solver, "refresh"):
-            solver.refresh()
+        solver.refresh()
 
         result = {
             "dt": dt,

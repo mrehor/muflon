@@ -113,6 +113,13 @@ class Solver(object):
         # Initialize flags
         self._flags = OrderedDict()
         self._flags["fix_p"] = fix_p
+        self._flags["setup"] = False
+
+    def setup(self):
+        """
+        Override this method to do the additional setup of the solver.
+        """
+        self._flags["setup"] = True
 
     def solution_ctl(self):
         """
@@ -122,6 +129,12 @@ class Solver(object):
         :rtype: tuple
         """
         return self.data["model"].discretization_scheme().solution_ctl()
+
+    def refresh(self):
+        """
+        Put solver into its initial state.
+        """
+        self._flags["setup"] = False
 
     def _calibrate_pressure(self, sol_fcn, null_fcn):
         """
@@ -351,7 +364,7 @@ class FullyDecoupled(Solver):
         # Initialize flags
         self._flags["setup"] = False
 
-    def _assemble_constant_matrices(self):
+    def setup(self):
         """
         Pre-assemble time independent matrices, group right hand sides and
         solution functions.
@@ -408,10 +421,6 @@ class FullyDecoupled(Solver):
         """
         Perform one solution step (in time).
         """
-        # Check that const. matrices have been setup
-        if not self._flags["setup"]:
-            self._assemble_constant_matrices()
-
         solver = self.data["solver"]
         begin("Advance-phase")
         for i, A in enumerate(self.data["A"]["chi"]):
@@ -447,9 +456,3 @@ class FullyDecoupled(Solver):
                     bc[i].apply(b)
             solver["v"].solve(A, self.data["sol"]["v"][i].vector(), b)
         end()
-
-    def refresh(self):
-        """
-        Put solver into its initial state.
-        """
-        self._flags["setup"] = False
