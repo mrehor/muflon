@@ -23,10 +23,13 @@ import pytest
 import os, sys
 import gc
 import six
+import uuid
 import itertools
 
 from dolfin import *
 from matplotlib import pyplot, gridspec
+
+from fenapack import PCDKrylovSolver
 
 from muflon import mpset
 from muflon import SimpleCppIC
@@ -43,6 +46,9 @@ from muflon.common.timer import Timer
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 #parameters["form_compiler"]["quadrature_degree"] = 4
+
+def get_random_string():
+    return uuid.uuid4().hex
 
 @pytest.fixture
 def data_dir():
@@ -112,6 +118,44 @@ def create_bcs(DS, boundary_markers, pcd_variant, t0=None):
         assert False
 
     return bcs, inflow
+
+def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
+    prefix = "s" + get_random_string() + "_"
+
+    # Set up linear solver (GMRES with right preconditioning using Schur fact)
+    linear_solver = PCDKrylovSolver(comm=comm)
+    linear_solver.set_options_prefix(prefix)
+    linear_solver.parameters["relative_tolerance"] = 1e-6
+    PETScOptions.set(prefix+"ksp_gmres_restart", 150)
+
+    # Set up subsolvers
+    PETScOptions.set(prefix+"fieldsplit_p_pc_python_type", "fenapack.PCDPC_" + pcd_variant)
+    if ls == "iterative":
+        PETScOptions.set(prefix+"fieldsplit_u_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_u_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_u_pc_type", "hypre")
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_type", "boomeramg")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_max_it", 2)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_type", "hypre")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_hypre_type", "boomeramg")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_type", "chebyshev")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_max_it", 5)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_chebyshev_eigenvalues", "0.5, 2.0")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_pc_type", "jacobi")
+    elif ls == "direct":
+        # Debugging MUMPS
+        if mumps_debug:
+            PETScOptions.set(prefix+"fieldsplit_u_mat_mumps_icntl_4", 2)
+            PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_mat_mumps_icntl_4", 2)
+            PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_mat_mumps_icntl_4", 2)
+    else:
+        assert False
+
+    # Apply options
+    linear_solver.set_from_options()
+
+    return linear_solver
 
 def prepare_hook(DS, functionals, modulo_factor, inflow):
 
@@ -217,9 +261,22 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
               - cc["nu"]*inner(dot(grad(trial["v"]).T, n), test["v"])
             )*ds_marked(2)
 
+            if pcd_variant == "BRM2":
+                forms["pcd"]["kp"] -= \
+                  (1.0/cc["nu"])*inner(w, n)*test["p"]*trial["p"]*ds_marked(1)
+                # TODO: Is this beneficial?
+                # forms["pcd"]["kp"] -= \
+                #   (1.0/cc["nu"])*inner(w, n)*test["p"]*trial["p"]*ds_marked(0)
+
+                # TODO: Alternatively try:
+                # forms["pcd"]["kp"] -= \
+                #   (1.0/cc["nu"])*inner(w, n)*test["p"]*trial["p"]*ds
+
             # Prepare solver
             comm = mesh.mpi_comm()
             solver = SolverFactory.create(model, forms)
+            # solver.data["solver"]["NS"] = \
+            #   create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False)
 
             # Prepare time-stepping algorithm
             pv = DS.primitive_vars_ctl()

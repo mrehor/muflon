@@ -943,7 +943,16 @@ class Incompressible(Model):
             "rhs" : L
         }
 
-        return dict(nln=system_ch, lin=system_ns)
+        # Create PCD operators
+        # TODO: Add to docstring
+        pcd_operators = {
+            "mu": 0.5*(rho + rho0)*inner(trial["v"], test["v"])*dx,
+            "ap": inner(grad(trial["p"]), grad(test["p"]))*dx,
+            "mp": (1.0/nu)*inner(grad(trial["p"]), grad(test["p"]))*dx,
+            "kp": (1.0/nu)*dot(grad(trial["p"]), rho*v0 + cc["THETA2"]*J)*test["p"]*dx
+        }
+
+        return dict(nln=system_ch, lin=system_ns, pcd=pcd_operators)
 
 # --- FullyDecoupled forms for Incompressible model  --------------------------
 
