@@ -922,15 +922,22 @@ class Incompressible(Model):
         cc["J"] = J = total_flux(Mo, rho_mat, chi)
         Dv  = sym(grad(trial["v"]))
         Dv_ = sym(grad(test["v"]))
+        wind = rho*v0 + cc["THETA2"]*J
 
         a_00 = (
-              idt*0.5*(rho + rho0)*inner(trial["v"], test["v"])
-            + 0.5*inner(dot(grad(trial["v"]), rho*v0 + cc["THETA2"]*J), test["v"])
-            - 0.5*inner(dot(grad(test["v"]), rho*v0 + cc["THETA2"]*J), trial["v"])
-            + 2.0*nu*inner(Dv, Dv_)
+              idt*0.5*(rho + rho0)*inner(trial["v"], test["v"]) # --> M
+            + 0.5*inner(dot(grad(trial["v"]), wind), test["v"]) # --> 0.5*K
+            - 0.5*inner(dot(grad(test["v"]), wind), trial["v"]) # --> 0.5*K.T
+            + 2.0*nu*inner(Dv, Dv_)                             # --> A + A_off
         )*dx
-        a_01 = - trial["p"]*div(test["v"])*dx
-        a_10 = Constant(-1.0)*div(trial["v"])*test["p"]*dx # FIXME: + or -
+        a_01 = - trial["p"]*div(test["v"])*dx                   # --> B.T
+        a_10 = Constant(-1.0)*div(trial["v"])*test["p"]*dx      # --> B [FIXME: + or -]
+
+        a_00_approx = (
+              idt*0.5*(rho + rho0)*inner(trial["v"], test["v"]) # --> idt*M
+            + inner(dot(grad(trial["v"]), wind), test["v"])     # --> K
+            + nu*inner(grad(trial["v"]), grad(test["v"]))       # --> A
+        )*dx
 
         L = (
               idt*rho0*inner(v0, test["v"])
@@ -946,10 +953,11 @@ class Incompressible(Model):
         # Create PCD operators
         # TODO: Add to docstring
         pcd_operators = {
-            "mu": 0.5*(rho + rho0)*inner(trial["v"], test["v"])*dx,
-            "ap": inner(grad(trial["p"]), grad(test["p"]))*dx,
-            "mp": (1.0/nu)*inner(grad(trial["p"]), grad(test["p"]))*dx,
-            "kp": (1.0/nu)*dot(grad(trial["p"]), rho*v0 + cc["THETA2"]*J)*test["p"]*dx
+            "a_pc": a_00_approx + a_01 + a_10, # TODO: Add SD stabilization
+            "mu": 0.5*(rho + rho0)*inner(trial["v"], test["v"])*dx, # --> M
+            "ap": inner(grad(trial["p"]), grad(test["p"]))*dx,      # --> Ap_hat
+            "mp": (1.0/nu)*trial["p"]*test["p"]*dx,                 # --> Qp
+            "kp": (1.0/nu)*dot(grad(trial["p"]), wind)*test["p"]*dx # --> Kp
         }
 
         return dict(nln=system_ch, lin=system_ns, pcd=pcd_operators)
