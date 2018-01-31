@@ -191,7 +191,7 @@ def prepare_hook(DS, functionals, modulo_factor, inflow):
                             functionals=functionals, mod=modulo_factor)
 
 @pytest.mark.parametrize("nu", [0.02,])
-@pytest.mark.parametrize("pcd_variant", ["BRM1",]) # "BRM2"
+@pytest.mark.parametrize("pcd_variant", ["BRM1", "BRM2"])
 @pytest.mark.parametrize("ls", ["direct",]) # "iterative"
 def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     #set_log_level(WARNING)
@@ -228,7 +228,7 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     ax_curl.set_ylabel(r"$\omega_\Omega = \int_\Omega \nabla \times \mathbf{v}$")
     del gs
 
-    for level in range(1):
+    for level in range(3):
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers = create_domain(level)
@@ -362,22 +362,22 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     postprocessor.flush_plots()
     fig_curl.savefig(os.path.join(outdir, "fig_vorticity_{}.pdf".format(label)))
 
-    # Plot last obtained solution
-    pv = DS.primitive_vars_ctl()
-    v = as_vector(pv["v"].split())
-    p = pv["p"].dolfin_repr()
-    #phi = pv["phi"].split()
-    size = MPI.size(mesh.mpi_comm())
-    rank = MPI.rank(mesh.mpi_comm())
-    pyplot.figure()
-    pyplot.subplot(2, 1, 1)
-    plot(v, title="velocity")
-    pyplot.subplot(2, 1, 2)
-    plot(p, title="pressure")
-    pyplot.savefig(os.path.join(outdir, "fig_v_p_size{}_rank{}.pdf".format(size, rank)))
-    pyplot.figure()
-    plot(p, title="pressure", mode="warp")
-    pyplot.savefig(os.path.join(outdir, "fig_warp_size{}_rank{}.pdf".format(size, rank)))
+    # # Plot last obtained solution
+    # pv = DS.primitive_vars_ctl()
+    # v = as_vector(pv["v"].split())
+    # p = pv["p"].dolfin_repr()
+    # #phi = pv["phi"].split()
+    # size = MPI.size(mesh.mpi_comm())
+    # rank = MPI.rank(mesh.mpi_comm())
+    # pyplot.figure()
+    # pyplot.subplot(2, 1, 1)
+    # plot(v, title="velocity")
+    # pyplot.subplot(2, 1, 2)
+    # plot(p, title="pressure")
+    # pyplot.savefig(os.path.join(outdir, "fig_v_p_size{}_rank{}.pdf".format(size, rank)))
+    # pyplot.figure()
+    # plot(p, title="pressure", mode="warp")
+    # pyplot.savefig(os.path.join(outdir, "fig_warp_size{}_rank{}.pdf".format(size, rank)))
 
     # Store timings
     #datafile = os.path.join(outdir, "timings.xml")
