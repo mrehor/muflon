@@ -59,11 +59,10 @@ def data_dir():
 def create_domain(refinement_level):
     # Load mesh from file and refine uniformly
     # FIXME: Add script for downloading data
-    #mesh = Mesh(os.path.join(data_dir(), "step_domain.xml.gz"))
-    mesh = Mesh(os.path.join(data_dir(), "step_domain_fine.xml.gz"))
+    mesh = Mesh(os.path.join(data_dir(), "step_domain.xml.gz")); mesh = refine(mesh)
+    #mesh = Mesh(os.path.join(data_dir(), "step_domain_fine.xml.gz"))
     for i in range(refinement_level):
         mesh = refine(mesh)
-
     # Define and mark boundaries
     class Gamma0(SubDomain):
         def inside(self, x, on_boundary):
@@ -209,7 +208,8 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     # Parameters for setting up MUFLON components
     dt = postprocessor.dt
     t_end = postprocessor.t_end   # final time of the simulation
-    OTD = postprocessor.OTD
+    scheme = "SemiDecoupled"
+    OTD = 1
     k = 1
     modulo_factor = 2
 
@@ -220,19 +220,29 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     ic = SimpleCppIC()
     ic.add("phi", "1.0")
 
+    # Prepare figure for plotting the vorticity
+    fig_curl = pyplot.figure()
+    gs = gridspec.GridSpec(2, 2, height_ratios=[3, 1], width_ratios=[0.01, 1], hspace=0.05)
+    ax_curl = fig_curl.add_subplot(gs[0, 1])
+    ax_curl.set_xlabel(r"time $t$")
+    ax_curl.set_ylabel(r"$\omega_\Omega = \int_\Omega \nabla \times \mathbf{v}$")
+    del gs
+
     for level in range(1):
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers = create_domain(level)
+            #pyplot.figure(); plot(mesh)
+            #pyplot.savefig(os.path.join(outdir, "mesh.pdf"))
             if dt is None:
                 hh = mesh.hmin()/(2.0**0.5) # mesh size in the direction of inflow
                 umax = 1.0                  # max velocity at the inlet
                 dt = 0.8*hh/umax            # automatically computed time step
                 del hh, umax
+            label = "level_{}_nu_{}_{}_{}_dt_{}_{}".format(
+                level, nu, pcd_variant, ls, dt, postprocessor.basename)
 
-            label = "level_{}_dt_{}_{}".format(level, dt, postprocessor.basename)
-
-            DS = create_discretization("SemiDecoupled", mesh, k)
+            DS = create_discretization(scheme, mesh, k)
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
 
@@ -281,8 +291,8 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
               create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False)
             prefix = solver.data["solver"]["NS"].get_options_prefix()
 
-            # PETScOptions.set(prefix+"ksp_monitor")
-            # solver.linear_solver().set_from_options()
+            PETScOptions.set(prefix+"ksp_monitor")
+            solver.data["solver"]["NS"].set_from_options()
 
             # Prepare time-stepping algorithm
             pv = DS.primitive_vars_ctl()
@@ -304,25 +314,40 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
         with Timer("Time stepping") as tmr_tstepping:
             result = TS.run(t_beg, t_end, dt, OTD)
 
-        # Prepare results
+        # Get number of Krylov iterations if relevant
+        try:
+            krylov_it = solver.iters["NS"][0]
+        except AttributeError:
+            krylov_it = 0
+
+        # Prepare results (already contains dt, it, t_end, tmr_solve)
         result.update(
+            nu=nu,
+            pcd_variant=pcd_variant,
+            ls=ls,
+            krylov_it=krylov_it,
             ndofs=DS.num_dofs(),
-            scheme="SemiDecoupled",
             level=level,
             h_min=mesh.hmin(),
+            tmr_prepare=tmr_prepare.elapsed()[0],
+            tmr_tstepping=tmr_tstepping.elapsed()[0],
+            scheme=scheme,
             OTD=OTD,
             k=k,
-            t=hook.functionals["t"],
-            vorticity=functionals["vorticity"],
-            tmr_prepare=tmr_prepare.elapsed()[0],
-            tmr_tstepping=tmr_tstepping.elapsed()[0]
+            t=functionals["t"],
+            vorticity=functionals["vorticity"]
         )
-        print(label, result["ndofs"], result["h_min"], result["tmr_prepare"],
-              result["tmr_solve"], result["it"], result["tmr_tstepping"])
+        print(label, prefix, result["ndofs"], result["it"],
+              result["tmr_tstepping"], result["krylov_it"])
 
         # Send to posprocessor
         rank = MPI.rank(comm)
         postprocessor.add_result(rank, result)
+
+        # Add vorticity plot
+        ax_curl.plot(functionals["t"], functionals["vorticity"], label=label)
+        ax_curl.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
+                fontsize='x-small', ncol=1)
 
     # Save results into a binary file
     filename = "results_{}.pickle".format(label)
@@ -330,12 +355,14 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
 
     # Pop results that we do not want to report at the moment
     postprocessor.pop_items([
-        "ndofs", "tmr_prepare", "tmr_solve", "tmr_tstepping", "it", "h_min"])
+        "level", "h_min", "tmr_prepare", "tmr_tstepping",
+        "scheme", "OTD", "k", "t", "vorticity"])
 
     # Flush plots as we now have data for all level values
     postprocessor.flush_plots()
+    fig_curl.savefig(os.path.join(outdir, "fig_vorticity_{}.pdf".format(label)))
 
-    # Plot solution
+    # Plot last obtained solution
     pv = DS.primitive_vars_ctl()
     v = as_vector(pv["v"].split())
     p = pv["p"].dolfin_repr()
@@ -347,10 +374,10 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     plot(v, title="velocity")
     pyplot.subplot(2, 1, 2)
     plot(p, title="pressure")
-    pyplot.savefig(os.path.join(outdir, "figure_v_p_size{}_rank{}.pdf".format(size, rank)))
+    pyplot.savefig(os.path.join(outdir, "fig_v_p_size{}_rank{}.pdf".format(size, rank)))
     pyplot.figure()
     plot(p, title="pressure", mode="warp")
-    pyplot.savefig(os.path.join(outdir, "figure_warp_size{}_rank{}.pdf".format(size, rank)))
+    pyplot.savefig(os.path.join(outdir, "fig_warp_size{}_rank{}.pdf".format(size, rank)))
 
     # Store timings
     #datafile = os.path.join(outdir, "timings.xml")
@@ -364,19 +391,18 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    dt = None    # will be determined automatically (if None)
-    t_end = 50.0 # FIXME: Set to 200
-    OTD = 1     # Order of Time Discretization
+    dt = 0.1     # will be determined automatically if ``None``
+    t_end = 20.0 # FIXME: Set to 200
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(t_end, OTD, outdir, dt)
+    proc = Postprocessor(t_end, outdir, dt, True)
 
     # Decide what should be plotted
     proc.register_fixed_variables(
-        (("t_end", t_end), ("OTD", OTD)))
+        (("nu", 0.02), ("dt", 0.1), ("t_end", t_end),))
     # proc.register_fixed_variables(
-    #     (("t_end", t_end), ("OTD", OTD), ("level", 1)))
+    #     (("nu", 0.02), ("dt", 0.1), ("t_end", t_end), ("ls", "direct")))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -394,32 +420,35 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericBenchPostprocessor):
-    def __init__(self, t_end, OTD, outdir, dt=None):
+    def __init__(self, t_end, outdir, dt=None, averaging=True):
         super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
         self.dt = dt
         self.t_end = t_end
-        self.OTD = OTD
 
         # So far hardcoded values
-        self.x_var = "t"
-        self.y_var0 = "vorticity"
+        self.x_var = "ndofs"
+        self.y_var0 = "krylov_it"
+        self.y_var1 = "tmr_solve"
 
         # Store names
-        self.basename = "t_end_{}_OTD_{}".format(t_end, OTD)
+        self.basename = "t_end_{}".format(t_end)
+
+        # Store other options
+        self._avg = averaging
 
     def flush_plots(self):
         if not self.plots:
             self.results = []
             return
-        coord_vars = (self.x_var, self.y_var0)
+        coord_vars = (self.x_var, self.y_var0, self.y_var1)
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
-            styles = {"Monolithic": ':', "SemiDecoupled": '-', "FullyDecoupled": '--'}
+            #styles = {"Monolithic": ':', "SemiDecoupled": '-', "FullyDecoupled": '--'}
             for result in self.results:
-                style = styles[result["scheme"]]
+                style = '+--' #styles[result["scheme"]]
                 if not all(result[name] == value for name, value in fixed_vars):
                     continue
                 free_vars = tuple((var, val) for var, val in six.iteritems(result)
@@ -430,30 +459,34 @@ class Postprocessor(GenericBenchPostprocessor):
                 #       dict that is stored inside 'data' under key 'free_vars'
                 xs = datapoints.setdefault("xs", [])
                 ys0 = datapoints.setdefault("ys0", [])
+                ys1 = datapoints.setdefault("ys1", [])
                 xs.append(result[self.x_var])
-                ys0.append(result[self.y_var0])
-
+                N = result["it"] if self._avg else 1
+                ys0.append(result[self.y_var0]/N)
+                ys1.append(result[self.y_var1]/N)
             for free_vars, datapoints in six.iteritems(data):
                 xs = datapoints["xs"]
                 ys0 = datapoints["ys0"]
-                self._plot(fig, xs, ys0, free_vars, style)
+                ys1 = datapoints["ys1"]
+                self._plot(fig, xs, ys0, ys1, free_vars, style)
             self._save_plot(fig, fixed_vars, self.outdir)
+
         self.results = []
 
     @staticmethod
-    def _plot(fig, xs, ys0, free_vars, style):
-        (fig1,), (ax1,) = fig
+    def _plot(fig, xs, ys0, ys1, free_vars, style):
+        subfigs, (ax1, ax2) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
-        for i in range(len(xs)):
-            ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
+        ax1.plot(xs, ys0, style, linewidth=0.2, label=label)
+        ax2.plot(xs, ys1, style, linewidth=0.2, label=label)
 
-        for ax in (ax1,):
+        for ax in (ax1, ax2):
             ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-                      fontsize='x-small', ncol=1)
+                      fontsize='x-small', ncol=2)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):
-        subfigs, (ax1,) = fig
+        subfigs, (ax1, ax2) = fig
         filename = "_".join(map(str, itertools.chain(*fixed_vars)))
         import matplotlib.backends.backend_pdf
         pdf = matplotlib.backends.backend_pdf.PdfPages(
@@ -463,14 +496,22 @@ class Postprocessor(GenericBenchPostprocessor):
         pdf.close()
 
     def _create_figure(self):
-        fig1 = pyplot.figure()
-        gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.05)
+        fig1, fig2 = pyplot.figure(), pyplot.figure()
+        gs = gridspec.GridSpec(2, 2, height_ratios=[3, 1], width_ratios=[0.01, 1], hspace=0.05)
         # Set subplots
-        ax1 = fig1.add_subplot(gs[0, 0])
+        ax1 = fig1.add_subplot(gs[0, 1])
+        ax2 = fig2.add_subplot(gs[0, 1], sharex=ax1)
 
         # Set labels
-        ax1.set_xlabel("time $t$")
-        ax1.set_ylabel("vorticity")
+        tail = "[p.t.s.]" if self._avg else ""
+        ax1.set_xscale('log')
+        ax2.set_xscale('log')
+        ax2.set_yscale('log')
+        ax1.set_xlabel("# DOFs")
+        ax2.set_xlabel(ax1.get_xlabel())
+        ax1.set_ylabel("# GMRES iterations {}".format(tail))
+        ax2.set_ylabel("CPU time {}".format(tail))
         ax1.set_ylim(0, None, auto=True)
+        ax2.set_ylim(0, None, auto=True)
 
-        return (fig1,), (ax1,)
+        return (fig1, fig2), (ax1, ax2)

@@ -957,7 +957,10 @@ class Incompressible(Model):
             "mu": 0.5*(rho + rho0)*inner(trial["v"], test["v"])*dx, # --> M
             "ap": inner(grad(trial["p"]), grad(test["p"]))*dx,      # --> Ap_hat
             "mp": (1.0/nu)*trial["p"]*test["p"]*dx,                 # --> Qp
-            "kp": (1.0/nu)*dot(grad(trial["p"]), wind)*test["p"]*dx # --> Kp
+            "kp": (1.0/nu)*(                                        # --> Kp + idt*Mp
+                  dot(grad(trial["p"]), wind)*test["p"]             # FIXME: remove 2nd part!
+                + idt*0.5*(rho + rho0)*trial["p"]*test["p"]
+                )*dx
         }
 
         return dict(nln=system_ch, lin=system_ns, pcd=pcd_operators)

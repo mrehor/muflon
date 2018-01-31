@@ -313,6 +313,11 @@ class SemiDecoupled(Solver):
             self.data["null_space"] = null_space
             self.data["null_fcn"] = null_fcn
 
+        # Store number of iterations
+        self.iters = OrderedDict()
+        self.iters["CH"] = [0, 0] # (total, last solve)
+        self.iters["NS"] = [0, 0] # (total, last solve)
+
     def setup(self):
         try:
             ksp = getattr(self.data["solver"]["NS"], "ksp")()
@@ -322,8 +327,13 @@ class SemiDecoupled(Solver):
                 bc_pcd = self.data["model"].bcs()["pcd"]
                 F = action(forms["lin"]["lhs"], self.data["sol_ns"]) - forms["lin"]["rhs"]
                 self.data["pcd_problem"] = PCDProblem(
-                    F, bcs_ns, forms["lin"]["lhs"], J_pc=forms["pcd"]["a_pc"])
-                    #ap=ap, kp=kp, mp=mp, bcs_pcd=bc_pcd) # FIXME: which operators?
+                    F, bcs_ns,
+                    forms["lin"]["lhs"],
+                    J_pc=forms["pcd"]["a_pc"],
+                    ap=forms["pcd"]["ap"],
+                    kp=forms["pcd"]["kp"],
+                    mp=forms["pcd"]["mp"],
+                    bcs_pcd=bc_pcd)
                 self._flags["init_pcd_called"] = False
         except AttributeError:
             info("")
@@ -335,7 +345,8 @@ class SemiDecoupled(Solver):
         Perform one solution step (in time).
         """
         begin("Cahn-Hilliard step")
-        self.data["solver"]["CH"].solve()
+        self.iters["CH"][-1] = self.data["solver"]["CH"].solve()[0]
+        self.iters["CH"][0] += self.iters["CH"][-1]
         end()
 
         begin("Navier-Stokes step")
@@ -370,7 +381,9 @@ class SemiDecoupled(Solver):
         else:
             self.data["solver"]["NS"].set_operator(A)
 
-        self.data["solver"]["NS"].solve(self.data["sol_ns"].vector(), b)
+        self.iters["NS"][-1] = \
+          self.data["solver"]["NS"].solve(self.data["sol_ns"].vector(), b)
+        self.iters["NS"][0] += self.iters["NS"][-1]
 
         if self._flags["fix_p"]:
             self._calibrate_pressure(
