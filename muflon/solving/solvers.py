@@ -25,13 +25,13 @@ import six
 
 from collections import OrderedDict
 
-from dolfin import derivative, lhs, rhs, assemble, dx, begin, end
+from dolfin import derivative, lhs, rhs, assemble, dx, begin, end, info
 from dolfin import NonlinearVariationalProblem, NonlinearVariationalSolver
 from dolfin import NewtonSolver, NonlinearProblem, SystemAssembler
 from dolfin import as_backend_type, LUSolver
-from dolfin import action, PETScMatrix, info
+from dolfin import PETScMatrix, PETScVector
 
-from fenapack import PCDKSP, PCDProblem
+from fenapack import PCDKSP, PCDAssembler
 
 from muflon.common.boilerplate import not_implemented_msg
 from muflon.models.forms import Model
@@ -325,11 +325,11 @@ class SemiDecoupled(Solver):
                 forms = self.data["forms"]
                 bcs_ns = self.data["bcs_ns"]
                 bc_pcd = self.data["model"].bcs()["pcd"]
-                F = action(forms["lin"]["lhs"], self.data["sol_ns"]) - forms["lin"]["rhs"]
-                self.data["pcd_problem"] = PCDProblem(
-                    F, bcs_ns,
-                    forms["lin"]["lhs"],
-                    J_pc=forms["pcd"]["a_pc"],
+                self.data["pcd_assembler"] = PCDAssembler(
+                    forms["lin"]["lhs"],       # A
+                    forms["lin"]["rhs"],       # b
+                    bcs_ns,                    # bcs
+                    forms["pcd"]["a_pc"],      # P
                     ap=forms["pcd"]["ap"],
                     kp=forms["pcd"]["kp"],
                     mp=forms["pcd"]["mp"],
@@ -350,10 +350,19 @@ class SemiDecoupled(Solver):
         end()
 
         begin("Navier-Stokes step")
-        A = assemble(self.data["forms"]["lin"]["lhs"])
-        b = assemble(self.data["forms"]["lin"]["rhs"])
-        for bc in self.data["bcs_ns"]:
-            bc.apply(A, b)
+        pcd_assembler = self.data.get("pcd_assembler", None)
+
+        if pcd_assembler:
+            # Symmetric assembly of the linear system
+            A, b = PETScMatrix(self.comm()), PETScVector(self.comm())
+            pcd_assembler.system_matrix(A)
+            pcd_assembler.rhs_vector(b)
+        else:
+            # Standard assembly of the linear system
+            A = assemble(self.data["forms"]["lin"]["lhs"])
+            b = assemble(self.data["forms"]["lin"]["rhs"])
+            for bc in self.data["bcs_ns"]:
+                bc.apply(A, b)
 
         if self._flags["fix_p"]:
             # Attach null space to PETSc matrix
@@ -361,25 +370,27 @@ class SemiDecoupled(Solver):
             # Orthogonalize RHS vector b with respect to the null space
             self.data["null_space"].orthogonalize(b)
 
-        pcd_problem = self.data.get("pcd_problem")
-        if pcd_problem:
-            # Assembly in a symmetric fashion
-            # FIXME: do the same for A
-            # P = PETScMatrix(self.comm())
-            # pcd_problem.J_pc(P, self.data["sol_ns"].vector())
-            # P = A if P.empty() else P
-            if self.data["forms"]["pcd"]["a_pc"] is not None:
-                P = assemble(self.data["forms"]["pcd"]["a_pc"])
-                for bc in self.data["bcs_ns"]:
-                    bc.apply(P)
-            else:
-                P = A
+        if pcd_assembler:
+            # Symmetric assembly of the preconditioner
+            P = PETScMatrix(self.comm())
+            pcd_assembler.pc_matrix(P)
+            P = A if P.empty() else P
+            # Standard assembly of the preconditioner matrix
+            # if self.data["forms"]["pcd"]["a_pc"] is not None:
+            #     P = assemble(self.data["forms"]["pcd"]["a_pc"])
+            #     for bc in self.data["bcs_ns"]:
+            #         bc.apply(P)
+            # else:
+            #     P = A
             self.data["solver"]["NS"].set_operators(A, P)
             if not self._flags["init_pcd_called"]: # only one call is allowed
-                self.data["solver"]["NS"].init_pcd(pcd_problem)
+                self.data["solver"]["NS"].init_pcd(pcd_assembler)
                 self._flags["init_pcd_called"] = True
         else:
+            # FIXME: Here we assume that LU solver is used
+            assert self.data["solver"]["NS"].parameter_type() == 'lu_solver'
             self.data["solver"]["NS"].set_operator(A)
+            # NOTE: Preconditioner matrix can't be set for LUSolver.
 
         self.iters["NS"][-1] = \
           self.data["solver"]["NS"].solve(self.data["sol_ns"].vector(), b)

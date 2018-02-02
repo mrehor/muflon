@@ -287,6 +287,7 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
             # Prepare solver
             comm = mesh.mpi_comm()
             solver = SolverFactory.create(model, forms)
+            prefix = "LU"
             solver.data["solver"]["NS"] = \
               create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False)
             prefix = solver.data["solver"]["NS"].get_options_prefix()
