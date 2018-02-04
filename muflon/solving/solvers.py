@@ -319,7 +319,7 @@ class SemiDecoupled(Solver):
         self.iters["NS"] = [0, 0] # (total, last solve)
 
     def setup(self):
-        try:
+        if hasattr(self.data["solver"]["NS"], "ksp"):
             ksp = getattr(self.data["solver"]["NS"], "ksp")()
             if isinstance(ksp, PCDKSP):
                 forms = self.data["forms"]
@@ -334,8 +334,9 @@ class SemiDecoupled(Solver):
                     kp=forms["pcd"]["kp"],
                     mp=forms["pcd"]["mp"],
                     bcs_pcd=bc_pcd)
+                self.data["pcd_assembler"].get_pcd_form("mp").constant = False
                 self._flags["init_pcd_called"] = False
-        except AttributeError:
+        else:
             info("")
             info("'LUSolver' will be applied to the Navier-Stokes subproblem.")
             info("")
