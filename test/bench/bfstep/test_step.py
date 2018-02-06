@@ -462,7 +462,7 @@ class Postprocessor(GenericBenchPostprocessor):
                 ys0 = datapoints.setdefault("ys0", [])
                 ys1 = datapoints.setdefault("ys1", [])
                 xs.append(result[self.x_var])
-                N = result["it"] if self._avg else 1
+                N = float(result["it"]) if self._avg else 1
                 ys0.append(result[self.y_var0]/N)
                 ys1.append(result[self.y_var1]/N)
             for free_vars, datapoints in six.iteritems(data):
