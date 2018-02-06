@@ -933,12 +933,6 @@ class Incompressible(Model):
         a_01 = - trial["p"]*div(test["v"])*dx                   # --> B.T
         a_10 = Constant(-1.0)*div(trial["v"])*test["p"]*dx      # --> B [FIXME: + or -]
 
-        a_00_approx = (
-              idt*0.5*(rho + rho0)*inner(trial["v"], test["v"]) # --> idt*M
-            + inner(dot(grad(trial["v"]), wind), test["v"])     # --> K
-            + nu*inner(grad(trial["v"]), grad(test["v"]))       # --> A
-        )*dx
-
         L = (
               idt*rho0*inner(v0, test["v"])
             + inner(f_cap, test["v"])
@@ -950,10 +944,21 @@ class Incompressible(Model):
             "rhs" : L
         }
 
+        # Preconditioner for 00-block
+        a_00_approx = (
+              idt*0.5*(rho + rho0)*inner(trial["v"], test["v"]) # --> idt*M
+            + inner(dot(grad(trial["v"]), wind), test["v"])     # --> K
+            + nu*inner(grad(trial["v"]), grad(test["v"]))       # --> A
+        )*dx
+        # TODO: Reimplement SD stabilization to meet the current setting
+        # delta = StabilizationParameterSD(wind, nu)
+        # a_00_approx += \
+        #   delta*inner(dot(grad(trial["v"]), wind), dot(grad(test["v"]), wind))*dx
+
         # Create PCD operators
         # TODO: Add to docstring
         pcd_operators = {
-            "a_pc": a_00_approx + a_01 + a_10, # TODO: Add SD stabilization
+            "a_pc": a_00_approx + a_01,
             "mu": idt*0.5*(rho + rho0)*inner(trial["v"], test["v"])*dx, # --> idt*M
             "ap": inner(grad(trial["p"]), grad(test["p"]))*dx,      # --> Ap_hat
             "mp": (1.0/nu)*trial["p"]*test["p"]*dx,                 # --> Qp

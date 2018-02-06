@@ -192,7 +192,7 @@ def prepare_hook(DS, functionals, modulo_factor, inflow):
 
 @pytest.mark.parametrize("nu", [0.02,])
 @pytest.mark.parametrize("pcd_variant", ["BRM1", "BRM2"])
-@pytest.mark.parametrize("ls", ["direct",]) # "iterative"
+@pytest.mark.parametrize("ls", ["iterative",]) # "direct"
 def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     #set_log_level(WARNING)
 
@@ -268,10 +268,12 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
             cc = model.coeffs
 
             w = cc["rho"]*pv0["v"] + cc["THETA2"]*cc["J"]
-            forms["lin"]["lhs"] += (
+            a_surf = (
                 0.5*inner(w, n)*inner(trial["v"], test["v"])
               - cc["nu"]*inner(dot(grad(trial["v"]).T, n), test["v"])
             )*ds_marked(2)
+            forms["lin"]["lhs"] += a_surf
+            #forms["pcd"]["a_pc"] += a_surf
 
             if pcd_variant == "BRM2":
                 forms["pcd"]["kp"] -= \
