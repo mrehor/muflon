@@ -330,11 +330,15 @@ class SemiDecoupled(Solver):
                     forms["lin"]["rhs"],       # b
                     bcs_ns,                    # bcs
                     forms["pcd"]["a_pc"],      # P
+                    gp=forms["pcd"]["gp"],     # B^T
                     ap=forms["pcd"]["ap"],
                     kp=forms["pcd"]["kp"],
                     mp=forms["pcd"]["mp"],
+                    mu=forms["pcd"]["mu"],
                     bcs_pcd=bc_pcd)
                 self.data["pcd_assembler"].get_pcd_form("mp").constant = False
+                self.data["pcd_assembler"].get_pcd_form("mu").constant = False
+                #self.data["pcd_assembler"].get_pcd_form("gp").phantom = False
                 self._flags["init_pcd_called"] = False
         else:
             info("")

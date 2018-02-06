@@ -128,7 +128,7 @@ def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
     PETScOptions.set(prefix+"ksp_gmres_restart", 150)
 
     # Set up subsolvers
-    PETScOptions.set(prefix+"fieldsplit_p_pc_python_type", "fenapack.PCDPC_" + pcd_variant)
+    PETScOptions.set(prefix+"fieldsplit_p_pc_python_type", "fenapack.PCDRPC_" + pcd_variant)
     if ls == "iterative":
         PETScOptions.set(prefix+"fieldsplit_u_ksp_type", "richardson")
         PETScOptions.set(prefix+"fieldsplit_u_ksp_max_it", 1)
