@@ -33,6 +33,7 @@ from dolfin import as_matrix, as_vector, variable
 from dolfin import conditional, lt, gt, Min, Max, sin, pi
 from dolfin import dot, inner, outer, dx, ds, sym
 from dolfin import derivative, diff, div, grad, curl, sqrt
+from dolfin import CellDiameter, FiniteElement, FunctionSpace, project
 
 from muflon.common.parameters import mpset
 from muflon.models.potentials import DoublewellFactory
@@ -950,15 +951,16 @@ class Incompressible(Model):
             + inner(dot(grad(trial["v"]), wind), test["v"])     # --> K
             + nu*inner(grad(trial["v"]), grad(test["v"]))       # --> A
         )*dx
-        # TODO: Reimplement SD stabilization to meet the current setting
-        # delta = StabilizationParameterSD(wind, nu)
-        # a_00_approx += \
-        #   delta*inner(dot(grad(trial["v"]), wind), dot(grad(test["v"]), wind))*dx
+
+        delta = self.sd_stab_parameter(self._DS.mesh(), wind, nu)
+        a_00_stab = \
+          delta*inner(dot(grad(trial["v"]), wind), dot(grad(test["v"]), wind))*dx
 
         # Create PCD operators
         # TODO: Add to docstring
         pcd_operators = {
-            "a_pc": a_00_approx + a_01,
+            "a_pc": a_00 + a_00_stab + a_01,
+                    #a_00_approx + a_00_stab + a_01,
             "mu": idt*0.5*(rho + rho0)*inner(trial["v"], test["v"])*dx, # --> idt*M
             "ap": inner(grad(trial["p"]), grad(test["p"]))*dx,      # --> Ap_hat
             "mp": (1.0/nu)*trial["p"]*test["p"]*dx,                 # --> Qp
@@ -970,6 +972,28 @@ class Incompressible(Model):
         }
 
         return dict(nln=system_ch, lin=system_ns, pcd=pcd_operators)
+
+    @staticmethod
+    def sd_stab_parameter(mesh, wind, nu):
+        """
+        Prepares a local parameter used to stabilize 00-block in PCD
+        preconditioning.
+        """
+        DG0_elem = FiniteElement("DG", mesh.ufl_cell(), 0)
+        DG0 = FunctionSpace(mesh, DG0_elem)
+
+        h = CellDiameter(mesh)
+
+        wind_norm = sqrt(dot(wind, wind))
+        PE = wind_norm*h/(2.0*nu)
+
+        delta = conditional(gt(PE, 1.0),
+                            h/(2.0*wind_norm)*(1.0 - 1.0/PE),
+                            0.0)
+
+        delta = project(delta, DG0)
+        delta.rename("delta", "sd_stab_parameter")
+        return delta
 
 # --- FullyDecoupled forms for Incompressible model  --------------------------
 

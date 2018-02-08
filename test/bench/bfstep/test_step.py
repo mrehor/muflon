@@ -192,7 +192,7 @@ def prepare_hook(DS, functionals, modulo_factor, inflow):
 
 @pytest.mark.parametrize("nu", [0.02,])
 @pytest.mark.parametrize("pcd_variant", ["BRM1", "BRM2"])
-@pytest.mark.parametrize("ls", ["iterative",]) # "direct"
+@pytest.mark.parametrize("ls", ["direct", "iterative"])
 def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     #set_log_level(WARNING)
 
@@ -228,7 +228,7 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
     ax_curl.set_ylabel(r"$\omega_\Omega = \int_\Omega \nabla \times \mathbf{v}$")
     del gs
 
-    for level in range(3):
+    for level in range(4):
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers = create_domain(level)
@@ -273,7 +273,8 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
               - cc["nu"]*inner(dot(grad(trial["v"]).T, n), test["v"])
             )*ds_marked(2)
             forms["lin"]["lhs"] += a_surf
-            #forms["pcd"]["a_pc"] += a_surf
+            if forms["pcd"]["a_pc"] is not None:
+                forms["pcd"]["a_pc"] += a_surf
 
             if pcd_variant == "BRM2":
                 forms["pcd"]["kp"] -= \
@@ -404,8 +405,10 @@ def postprocessor(request):
     # Decide what should be plotted
     proc.register_fixed_variables(
         (("nu", 0.02), ("dt", 0.1), ("t_end", t_end),))
-    # proc.register_fixed_variables(
-    #     (("nu", 0.02), ("dt", 0.1), ("t_end", t_end), ("ls", "direct")))
+    proc.register_fixed_variables(
+        (("nu", 0.02), ("dt", 0.1), ("t_end", t_end), ("ls", "direct")))
+    proc.register_fixed_variables(
+        (("nu", 0.02), ("dt", 0.1), ("t_end", t_end), ("ls", "iterative")))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
