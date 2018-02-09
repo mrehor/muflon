@@ -393,7 +393,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
             #       boundary integrals.
 
             # Prepare solver
-            solver = SolverFactory.create(model, forms, fix_p=True)
+            solver = SolverFactory.create(model, forms, fix_p=False)
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()

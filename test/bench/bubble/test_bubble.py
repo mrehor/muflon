@@ -287,7 +287,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             forms = model.create_forms(matching_p)
 
             # Prepare solver
-            solver = SolverFactory.create(model, forms, fix_p=True)
+            solver = SolverFactory.create(model, forms, fix_p=False)
 
             # Prepare time-stepping algorithm
             comm = mesh.mpi_comm()
@@ -496,7 +496,7 @@ class Postprocessor(GenericBenchPostprocessor):
 
         # Set ticks
         for ax in [ax1, ax2, ax3]:
-            ax.tick_params(direction="in", right=True, top=True)
+            ax.tick_params(which="both", direction="in", right=True, top=True)
 
         # Set labels
         ax1.set_xlabel("time $t$")
