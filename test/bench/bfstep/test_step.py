@@ -132,12 +132,19 @@ def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
     if ls == "iterative":
         PETScOptions.set(prefix+"fieldsplit_u_ksp_type", "richardson")
         PETScOptions.set(prefix+"fieldsplit_u_ksp_max_it", 1)
-        PETScOptions.set(prefix+"fieldsplit_u_pc_type", "hypre")
+        PETScOptions.set(prefix+"fieldsplit_u_pc_type", "hypre") # "gamg"
         PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_type", "boomeramg")
+
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_type", "hypre") # "gamg"
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_hypre_type", "boomeramg")
+
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_type", "richardson")
-        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_max_it", 2)
-        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_type", "hypre")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_type", "hypre") # "gamg"
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_hypre_type", "boomeramg")
+
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_type", "chebyshev")
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_max_it", 5)
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_chebyshev_eigenvalues", "0.5, 2.0")
