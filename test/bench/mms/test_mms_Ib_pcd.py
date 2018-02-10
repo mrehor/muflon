@@ -41,7 +41,7 @@ from muflon.utils.testing import GenericBenchPostprocessor
 # FIXME: remove the following workaround
 from muflon.common.timer import Timer
 
-from test_mms_Ia import (
+from test_mms_Ia_pcd import (
     create_manufactured_solution, create_initial_conditions,
     create_domain, create_discretization, create_exact_solution, create_bcs,
     create_source_terms, create_source_terms, create_pcd_solver, prepare_hook
