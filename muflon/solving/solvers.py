@@ -296,9 +296,16 @@ class SemiDecoupled(Solver):
         solver_ch.parameters['newton_solver']['absolute_tolerance'] = 1E-8
         solver_ch.parameters['newton_solver']['relative_tolerance'] = 1E-16
         solver_ch.parameters['newton_solver']['maximum_iterations'] = 10
-        solver_ch.parameters['newton_solver']['linear_solver'] = "mumps"
         #solver_ch.parameters['newton_solver']['relaxation_parameter'] = 1.0
         #solver_ch.parameters['newton_solver']['error_on_nonconvergence'] = False
+        #solver_ch.parameters['newton_solver']['linear_solver'] = "mumps"
+        solver_ch.parameters['newton_solver']['linear_solver'] = "gmres"
+        solver_ch.parameters['newton_solver']['preconditioner'] = "sor" # "ilu"
+        # NOTE: "ilu" (<=> PCILU) performs better, but does not work in parallel
+        krylov_prm = solver_ch.parameters['newton_solver']['krylov_solver']
+        krylov_prm['maximum_iterations'] = 500
+        krylov_prm['monitor_convergence'] = True
+        #krylov_prm['report'] = True
 
         # Store solvers and collect other data
         self.data["solver"] = OrderedDict()
