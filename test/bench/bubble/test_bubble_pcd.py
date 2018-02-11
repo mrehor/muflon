@@ -164,8 +164,30 @@ def load_initial_conditions(DS, eps):
     for i, w in enumerate(DS.solution_ptl(0)):
         DS.solution_ctl()[i].assign(w)
 
+def create_ch_solver(comm):
+    prefix = "CH_"
+
+    # Set up linear solver (GMRES)
+    linear_solver = PETScKrylovSolver(comm)
+    linear_solver.set_options_prefix(prefix)
+    PETScOptions.set(prefix+"ksp_rtol", 1e-6)
+    PETScOptions.set(prefix+"ksp_type", "gmres")
+    PETScOptions.set(prefix+"ksp_gmres_restart", 150)
+    PETScOptions.set(prefix+"ksp_max_it", 1000)
+    #PETScOptions.set(prefix+"ksp_initial_guess_nonzero", True)
+    #PETScOptions.set(prefix+"ksp_pc_side", "right")
+    PETScOptions.set(prefix+"pc_type", "pbjacobi")
+    #PETScOptions.set(prefix+"pc_type", "bjacobi") # uses ilu for individual MPI blocks
+    #PETScOptions.set(prefix+"pc_type", "gamg") # "hypre"
+    #PETScOptions.set(prefix+"pc_hypre_type", "boomeramg")
+
+    # Apply options
+    linear_solver.set_from_options()
+
+    return linear_solver
+
 def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
-    prefix = ""
+    prefix = "NS_"
 
     # Set up linear solver (GMRES with right preconditioning using Schur fact)
     linear_solver = PCDKrylovSolver(comm=comm)
@@ -260,7 +282,7 @@ def prepare_hook(DS, functionals, modulo_factor):
 @pytest.mark.parametrize("pcd_variant", ["BRM1",]) # "BRM2"
 @pytest.mark.parametrize("ls", ["iterative",]) # "direct"
 def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
-    set_log_level(WARNING)
+    #set_log_level(WARNING)
 
     # Read parameters
     scriptdir = os.path.dirname(os.path.realpath(__file__))
@@ -332,10 +354,16 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
             # Prepare solver
             comm = mesh.mpi_comm()
             solver = SolverFactory.create(model, forms, fix_p=True)
+            solver.data["solver"]["CH"]["lin"] = \
+              create_ch_solver(comm)
             solver.data["solver"]["NS"] = \
               create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False)
 
-            # PETScOptions.set("ksp_monitor")
+            # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
+            # PETScOptions.set(prefix_ch+"ksp_monitor_true_residual")
+            # solver.data["solver"]["CH"]["lin"].set_from_options()
+            # prefix_ns = solver.data["solver"]["NS"].get_options_prefix()
+            # PETScOptions.set(prefix_ns+"ksp_monitor")
             # solver.data["solver"]["NS"].set_from_options()
 
             # Prepare time-stepping algorithm

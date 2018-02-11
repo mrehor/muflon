@@ -35,6 +35,7 @@ from fenapack import PCDKSP, PCDAssembler
 
 from muflon.common.boilerplate import not_implemented_msg
 from muflon.models.forms import Model
+from muflon.solving.nls import CHNewtonSolver, CHNonlinearProblem
 
 # --- Generic interface for creating demanded systems of PDEs -----------------
 
@@ -104,6 +105,7 @@ class Solver(object):
                       the pressure so its mean value is equal to zero
         :type fix_p: bool
         """
+        # FIXME: Remove unnecessary kwarg 'name'
         # Get bare version of forms if not given
         if forms is None:
             forms = model.create_forms()
@@ -291,26 +293,15 @@ class SemiDecoupled(Solver):
         # Prepare solver for CH part
         F = self.data["forms"]["nln"]
         J = derivative(F, w_ch)
-        problem = NonlinearVariationalProblem(F, w_ch, bcs_ch, J)
-        solver_ch = NonlinearVariationalSolver(problem)
-        solver_ch.parameters['newton_solver']['absolute_tolerance'] = 1E-8
-        solver_ch.parameters['newton_solver']['relative_tolerance'] = 1E-16
-        solver_ch.parameters['newton_solver']['maximum_iterations'] = 10
-        #solver_ch.parameters['newton_solver']['relaxation_parameter'] = 1.0
-        #solver_ch.parameters['newton_solver']['error_on_nonconvergence'] = False
-        #solver_ch.parameters['newton_solver']['linear_solver'] = "mumps"
-        solver_ch.parameters['newton_solver']['linear_solver'] = "gmres"
-        solver_ch.parameters['newton_solver']['preconditioner'] = "sor" # "ilu"
-        # NOTE: "ilu" (<=> PCILU) performs better, but does not work in parallel
-        krylov_prm = solver_ch.parameters['newton_solver']['krylov_solver']
-        krylov_prm['maximum_iterations'] = 500
-        krylov_prm['monitor_convergence'] = True
-        #krylov_prm['report'] = True
 
         # Store solvers and collect other data
+        self.data["problem_ch"] = CHNonlinearProblem(F, bcs_ch, J, J_pc=None)
         self.data["solver"] = OrderedDict()
-        self.data["solver"]["CH"] = solver_ch
+        self.data["solver"]["CH"] = OrderedDict()
+        self.data["solver"]["CH"]["lin"] = LUSolver("mumps")
+        # NOTE: Initialization of nonlinear solver is postponed until setup
         self.data["solver"]["NS"] = LUSolver("mumps")
+        self.data["sol_ch"] = w_ch
         self.data["sol_ns"] = w_ns
         self.data["bcs_ns"] = bcs_ns
 
@@ -326,6 +317,19 @@ class SemiDecoupled(Solver):
         self.iters["NS"] = [0, 0] # (total, last solve)
 
     def setup(self):
+        # Set up nonlinear CH solver based on provided linear solver
+        mpi_comm = self.data["model"].discretization_scheme().mesh().mpi_comm()
+        solver_ch = CHNewtonSolver(self.data["solver"]["CH"]["lin"], mpi_comm)
+        solver_ch.parameters['absolute_tolerance'] = 1E-8
+        solver_ch.parameters['relative_tolerance'] = 1E-16
+        solver_ch.parameters['maximum_iterations'] = 10
+        #solver_ch.parameters['relaxation_parameter'] = 1.0
+        #solver_ch.parameters['error_on_nonconvergence'] = False
+        #solver_ch.parameters['convergence_criterion'] = 'incremental'
+        assert "nln" not in self.data["solver"]["CH"]
+        self.data["solver"]["CH"]["nln"] = solver_ch
+
+        # Set up NS solver
         if hasattr(self.data["solver"]["NS"], "ksp"):
             ksp = getattr(self.data["solver"]["NS"], "ksp")()
             if isinstance(ksp, PCDKSP):
@@ -357,7 +361,8 @@ class SemiDecoupled(Solver):
         Perform one solution step (in time).
         """
         begin("Cahn-Hilliard step")
-        self.iters["CH"][-1] = self.data["solver"]["CH"].solve()[0]
+        self.iters["CH"][-1] = self.data["solver"]["CH"]["nln"].solve(
+            self.data["problem_ch"], self.data["sol_ch"].vector())[0]
         self.iters["CH"][0] += self.iters["CH"][-1]
         end()
 
@@ -406,6 +411,7 @@ class SemiDecoupled(Solver):
 
         self.iters["NS"][-1] = \
           self.data["solver"]["NS"].solve(self.data["sol_ns"].vector(), b)
+        info("Navier-Stokes solver finished in {} iterations".format(self.iters["NS"][-1]))
         self.iters["NS"][0] += self.iters["NS"][-1]
 
         if self._flags["fix_p"]:
