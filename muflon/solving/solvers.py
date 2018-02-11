@@ -29,13 +29,12 @@ from dolfin import derivative, lhs, rhs, assemble, dx, begin, end, info
 from dolfin import NonlinearVariationalProblem, NonlinearVariationalSolver
 from dolfin import NewtonSolver, NonlinearProblem, SystemAssembler
 from dolfin import as_backend_type, LUSolver
-from dolfin import PETScMatrix, PETScVector
+from dolfin import PETScMatrix, PETScVector, PETScFactory
 
 from fenapack import PCDKSP, PCDAssembler
 
 from muflon.common.boilerplate import not_implemented_msg
 from muflon.models.forms import Model
-from muflon.solving.nls import CHNewtonSolver, CHNonlinearProblem
 
 # --- Generic interface for creating demanded systems of PDEs -----------------
 
@@ -264,6 +263,44 @@ class SemiDecoupled(Solver):
         def create(self, *args, **kwargs):
             return SemiDecoupled(*args, **kwargs)
 
+    class CHProblem(NonlinearProblem):
+        """Class for interfacing with :py:class:`dolfin.NewtonSolver`."""
+
+        def __init__(self, F, bcs, J):
+            super(SemiDecoupled.CHProblem, self).__init__()
+
+            # Assembler for Newton system
+            self.assembler = SystemAssembler(J, F, bcs)
+
+            # Store forms for later
+            self.forms = {
+                "F": F,
+                "J": J,
+            }
+
+        def function_space(self):
+            return self.forms["F"].arguments()[0].function_space()
+
+        def form(self, A, P, b, x):
+            if A.empty():
+                matA = as_backend_type(A).mat()
+                assert not matA.isAssembled()
+                bs = self.function_space().dofmap().block_size()
+                matA.setBlockSize(bs)
+                # matP = as_backend_type(P).mat()
+                # assert not matP.isAssembled()
+                # matP.setBlockSize(bs)
+
+        def F(self, b, x):
+            self.assembler.assemble(b, x)
+
+        def J(self, A, x):
+            # matA = as_backend_type(A).mat()
+            # bs = self.function_space().dofmap().block_size()
+            # assert matA.getBlockSize() == bs
+            self.assembler.assemble(A)
+
+
     def __init__(self, *args, **kwargs):
         """
         Create solver for
@@ -295,7 +332,7 @@ class SemiDecoupled(Solver):
         J = derivative(F, w_ch)
 
         # Store solvers and collect other data
-        self.data["problem_ch"] = CHNonlinearProblem(F, bcs_ch, J, J_pc=None)
+        self.data["problem_ch"] = self.CHProblem(F, bcs_ch, J)
         self.data["solver"] = OrderedDict()
         self.data["solver"]["CH"] = OrderedDict()
         self.data["solver"]["CH"]["lin"] = LUSolver("mumps")
@@ -318,14 +355,17 @@ class SemiDecoupled(Solver):
 
     def setup(self):
         # Set up nonlinear CH solver based on provided linear solver
-        mpi_comm = self.data["model"].discretization_scheme().mesh().mpi_comm()
-        solver_ch = CHNewtonSolver(self.data["solver"]["CH"]["lin"], mpi_comm)
+        factory = PETScFactory.instance()
+        solver_ch = NewtonSolver(
+            self.comm(), self.data["solver"]["CH"]["lin"], factory)
         solver_ch.parameters['absolute_tolerance'] = 1E-8
         solver_ch.parameters['relative_tolerance'] = 1E-16
         solver_ch.parameters['maximum_iterations'] = 10
         #solver_ch.parameters['relaxation_parameter'] = 1.0
         #solver_ch.parameters['error_on_nonconvergence'] = False
         #solver_ch.parameters['convergence_criterion'] = 'incremental'
+        assert solver_ch.parameters["linear_solver"] == "user_defined"
+        assert solver_ch.parameters["preconditioner"] == "user_defined"
         assert "nln" not in self.data["solver"]["CH"]
         self.data["solver"]["CH"]["nln"] = solver_ch
 

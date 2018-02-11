@@ -20,6 +20,11 @@
 """This module provides subclasses of DOLFIN interface for
 solving non-linear problems suitable in combination with MUFLON's
 solvers.
+
+.. warning::
+
+    This module is currently not being used by any other MUFLON component.
+    Consider removing it.
 """
 
 from dolfin import NewtonSolver, PETScFactory, NonlinearProblem

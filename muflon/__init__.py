@@ -36,7 +36,6 @@ from muflon.models.potentials import DoublewellFactory
 from muflon.models.potentials import multiwell, multiwell_derivative
 from muflon.models.varcoeffs import capillary_force, total_flux
 from muflon.solving.solvers import SolverFactory
-from muflon.solving.nls import CHNewtonSolver, CHNonlinearProblem
 from muflon.solving.tstepping import TimeSteppingFactory, TSHook
 
 # FIXME: decide whether the following helper objects should be exposed
