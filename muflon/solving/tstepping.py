@@ -261,6 +261,11 @@ class ConstantTimeStep(TimeStepping):
     def _tstepping_loop(self, t_beg, t_end, dt, OTD=1, it=0):
         """
         Run time-stepping algorithm.
+
+        .. todo::
+
+            Explain what is the adequate setup for stationary problems.
+            (``dt = 0`` and ``t_end > t_beg``)
         """
         prm = self.parameters
         logger = self._logger
@@ -303,6 +308,9 @@ class ConstantTimeStep(TimeStepping):
                     sol_ptl[k][i].assign(w) # t^(n-k) <-- t^(n-k+1)
             for (i, w) in enumerate(solver.solution_ctl()):
                 sol_ptl[0][i].assign(w) # t^(n-0) <-- t^(n+1)
+
+            if dt == 0.0: # NOTE: 'dt = 0' indicates that a stationary problem
+                break     #       is being solved
 
         # Flush output from logger
         self._logger.dump_to_file()
