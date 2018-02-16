@@ -371,8 +371,8 @@ class Model(object):
         min_idx = q.index(min(q)) # index of minimal value
         max_idx = q.index(max(q)) # index of maximal value
         cell = phi.ufl_domain().ufl_cell()
-        q = [Constant(q_i, cell=cell) for q_i in q]
         if itype == "lin":
+            q = [Constant(q_i, cell=cell) for q_i in q]
             q_min = q[min_idx]
             q_max = q[max_idx]
             q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
@@ -381,11 +381,30 @@ class Model(object):
                 A = conditional(lt(interpolant, q_min), 1.0, 0.0)
                 B = conditional(gt(interpolant, q_max), 1.0, 0.0)
                 interpolant = A*q_min + B*q_max + (1.0 - A - B)*interpolant
+        elif itype == "har":
+            # NOTE:
+            #   Harmonic averaging is used.
+            iq = [Constant(1.0/q_i, cell=cell) for q_i in q]
+            iq_diff = as_vector(iq[:-1]) - as_vector((N-1)*[iq[-1],])
+
+            def _clamp_value(z):
+                A = conditional(lt(z, 0.05), 1.0, 0.0)
+                B = conditional(gt(z, 0.95), 1.0, 0.0)
+                return B + (1.0 - A - B)*z
+
+            if trunc:
+                _phi = as_vector([_clamp_value(phi[i])
+                                  for i in range(len(phi))])
+            else:
+                _phi = phi
+            denominator = inner(iq_diff, _phi) + iq[-1]
+            interpolant = 1.0 / denominator
         elif itype == "log":
             # NOTE:
             #   This interpolation is only experimental. It is asymmetric so
             #   it prefers to keep one of the values (which one depends on the
             #   ordering of phases) in a larger portion of the interface.
+            q = [Constant(q_i, cell=cell) for q_i in q]
             interpolant = q[-1]
             for i in range(N-1):
                 interpolant *= pow(q[i]/q[-1], phi[i])
@@ -397,6 +416,7 @@ class Model(object):
             #     and usually leads to overshoots.
             #   * "odd" type of interpolation prefers to keep the averaged
             #     value of given quantity in the middle of the interface.
+            q = [Constant(q_i, cell=cell) for q_i in q]
             q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
 
             def _sin_interpolation_function(z):
@@ -425,7 +445,7 @@ class Model(object):
 
         return interpolant
 
-    def density(self, rho_mat, phi, itype="lin"):
+    def density(self, rho_mat, phi):
         """
         From given material densities builds interpolated (total) density and
         returns the result.
@@ -434,15 +454,14 @@ class Model(object):
         :type rho_mat: list
         :param phi: vector of volume fractions
         :type phi: :py:class:`ufl.tensors.ListTensor`
-        :param itype: type of interpolation: ``'lin'``, ``'log'``, ``'sin'``
-        :type itype: str
         :returns: total density
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
         trunc = self.parameters["cut"]["density"]
+        itype = self.parameters["rho"]["itype"]
         return self._interpolated_quantity(rho_mat, phi, itype, trunc)
 
-    def viscosity(self, nu_mat, phi, itype="lin"):
+    def viscosity(self, nu_mat, phi):
         """
         From given dynamic viscosities builds interpolated (averaged) viscosity
         and returns the result.
@@ -451,12 +470,11 @@ class Model(object):
         :type nu_mat: list
         :param phi: vector of volume fractions
         :type phi: :py:class:`ufl.tensors.ListTensor`
-        :param itype: type of interpolation: ``'lin'``, ``'log'``, ``'sin'``
-        :type itype: str
         :returns: averaged viscosity
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
         trunc = self.parameters["cut"]["viscosity"]
+        itype = self.parameters["nu"]["itype"]
         return self._interpolated_quantity(nu_mat, phi, itype, trunc)
 
     def mobility(self, M0, phi, phi0, m, beta):

@@ -127,8 +127,9 @@ def test_forms(scheme, N, dim, th, plotter):
              "FullyDecoupled": "log"}
     if N == 2:
         pv = DS.primitive_vars_ctl(indexed=True)
+        model.parameters["rho"]["itype"] = itype[scheme]
         rho_mat = model.collect_material_params("rho")
-        rho = model.density(rho_mat, pv["phi"], itype=itype[scheme])
+        rho = model.density(rho_mat, pv["phi"])
         phi_ic = prepare_initial_condition(DS)
         r = dolfin.project(rho, phi_ic.function_space())
         prm = model.parameters

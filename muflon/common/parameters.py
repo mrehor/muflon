@@ -111,7 +111,9 @@ class MuflonParameterSet(Parameters, Singleton):
        \                     .mobility.m      mobility exponent
        \                     .mobility.beta   time discretization factor
        \                     .nu.i            dynamic viscosity of phase i
+       \                     .nu.itype        type of interpolation for viscosity
        \                     .rho.i           density of phase i
+       \                     .rho.itype       type of interpolation for density
        \                     .sigma.ij        surface tension between phases i,j
        \                     .chq.L           characteristic length
        \                     .chq.V           characteristic velocity
@@ -157,7 +159,9 @@ class MuflonParameterSet(Parameters, Singleton):
         nested_prm.add("eps", 1.0)
         nested_prm.add(mobility_prm)
         nested_prm.add(Parameters("nu"))
+        nested_prm["nu"].add("itype", "har", ["lin", "har"])
         nested_prm.add(Parameters("rho"))
+        nested_prm["rho"].add("itype", "lin", ["lin", "har"])
         nested_prm.add(Parameters("sigma"))
         nested_prm.add(char_quants)
         nested_prm.add(cut_prm)
