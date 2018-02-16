@@ -408,9 +408,11 @@ class Model(object):
             interpolant = q[-1]
             for i in range(N-1):
                 interpolant *= pow(q[i]/q[-1], phi[i])
-        elif itype in ["sin", "odd"]:
+        elif itype in ["clamp", "sin", "odd"]:
             # NOTE:
             #   These approximations are only experimental:
+            #   * "clamp" type just clamps the values of phi which are
+            #      below zero / above one.
             #   * "sin" type of interpolation shrinks the region in which
             #     the quantity is supposed to switch from one value to another
             #     and usually leads to overshoots.
@@ -418,6 +420,11 @@ class Model(object):
             #     value of given quantity in the middle of the interface.
             q = [Constant(q_i, cell=cell) for q_i in q]
             q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
+
+            def _clamp_interpolation_function(z):
+                A = conditional(lt(z, 0.0), 1.0, 0.0)
+                B = conditional(gt(z, 1.0), 1.0, 0.0)
+                return B + (1.0 - A - B)*z
 
             def _sin_interpolation_function(z):
                 A = conditional(lt(z, 0.0), 1.0, 0.0)
@@ -432,7 +439,9 @@ class Model(object):
                 approx = 0.5*(pow(2.0*(z - 0.5), odd_a) + 1.0)
                 return B + (1.0 - A - B)*approx
 
-            if itype == "sin":
+            if itype == "clamp":
+                _interpolation_function = _clamp_interpolation_function
+            elif itype == "sin":
                 _interpolation_function = _sin_interpolation_function
             else:
                 _interpolation_function = _odd_interpolation_function
