@@ -66,7 +66,6 @@ from test_shear import create_domain
 from test_shear import create_discretization
 from test_shear import wrap_coeffs_as_constants
 from test_shear import load_initial_conditions
-from test_shear import prepare_hook
 
 
 def create_bcs(DS, boundary_markers, pinpoint=None):
@@ -92,7 +91,59 @@ def create_bcs(DS, boundary_markers, pinpoint=None):
     return bcs
 
 
-@pytest.mark.parametrize("nu_interp", ["har", "lin"]) # "log", "sin", "odd"
+def prepare_hook(model, applied_force, functionals, modulo_factor, div_v=None):
+
+    class TailoredHook(TSHook):
+
+        def head(self, t, it, logger):
+            self.applied_force.t = t # update bcs
+
+        def tail(self, t, it, logger):
+            cc = self.cc
+            v = self.pv["v"].dolfin_repr()
+            p = self.pv["p"].dolfin_repr()
+            phi = self.pv["phi"].dolfin_repr()
+
+            # Get div(v) locally
+            div_v = self.div_v
+            if div_v is not None:
+                div_v.assign(df.project(df.div(v), div_v.function_space()))
+
+            # Compute required functionals
+            keys = ["t", "E_kin", "Psi", "mean_p", "v_errL2", "v_errH10"]
+            vals = {}
+            vals[keys[0]] = t
+            vals[keys[1]] = df.assemble(
+                0.5 * cc["rho"] * df.inner(v, v) * df.dx)
+            vals[keys[2]] = df.assemble((
+                  0.25 * cc["a"] * cc["eps"] *\
+                    df.inner(df.dot(cc["LA"], df.grad(phi)), df.grad(phi))
+                + (cc["b"] / cc["eps"]) * cc["F"]
+            ) * df.dx)
+            vals[keys[3]] = df.assemble(p * df.dx)
+            vals[keys[4]] = df.errornorm(self.v_ref, v, norm_type="L2")
+            vals[keys[5]] = df.errornorm(self.v_ref, v, norm_type="H10")
+            if it % self.mod == 0:
+                for key in keys:
+                    self.functionals[key].append(vals[key])
+            # Logging and reporting
+            df.info("")
+            df.begin("Reported functionals:")
+            for key in keys[1:]:
+                desc = "{:6s} = %g".format(key)
+                logger.info(desc, (vals[key],), (key,), t)
+            df.end()
+            df.info("")
+
+    DS = model.discretization_scheme()
+    pv = DS.primitive_vars_ctl(indexed=False, deepcopy=False)
+    deg = pv["v"].dolfin_repr().ufl_element().degree()
+    v_ref = df.Expression(("0.0", "0.0"), degree=deg+3)
+    return TailoredHook(pv=pv, cc=model.coeffs, applied_force=applied_force, v_ref=v_ref,
+                        div_v=div_v, functionals=functionals, mod=modulo_factor)
+
+
+@pytest.mark.parametrize("nu_interp", ["har",]) # "log", "sin", "odd"
 @pytest.mark.parametrize("scheme", ["SemiDecoupled",])
 def test_noflow(scheme, nu_interp, postprocessor):
     #set_log_level(WARNING)
@@ -126,7 +177,7 @@ def test_noflow(scheme, nu_interp, postprocessor):
     label = "{}_{}".format(basename, nu_interp)
     outdir = postprocessor.outdir
 
-    for level in range(2, 3):
+    for level in range(2, 4):
         # Prepare domain and discretization
         mesh, boundary_markers, pinpoint = create_domain(level)
         DS, div_v = create_discretization(scheme, mesh,
@@ -170,6 +221,7 @@ def test_noflow(scheme, nu_interp, postprocessor):
         pv = DS.primitive_vars_ctl()
         modulo_factor = 1
         xfields = list(zip(pv["phi"].split(), ("phi",)))
+        xfields += list(zip(pv["chi"].split(), ("chi",)))
         xfields.append((pv["p"].dolfin_repr(), "p"))
         if scheme == "FullyDecoupled":
             xfields += list(zip(pv["v"].split(), ("v1", "v2")))
@@ -177,7 +229,8 @@ def test_noflow(scheme, nu_interp, postprocessor):
             xfields.append((pv["v"].dolfin_repr(), "v"))
         if div_v is not None:
             xfields.append((div_v, "div_v"))
-        functionals = {"t": [], "E_kin": [], "Psi": [], "mean_p": []}
+        functionals = {"t": [], "E_kin": [], "Psi": [], "mean_p": [],
+                       "v_errL2": [], "v_errH10": []}
         hook = prepare_hook(model, applied_force, functionals, modulo_factor, div_v)
         logfile = "log_{}.dat".format(label)
         TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
@@ -209,7 +262,8 @@ def test_noflow(scheme, nu_interp, postprocessor):
         # Save results
         make_cut = postprocessor._make_cut
         rs = dict(
-            level=level,
+            ndofs=DS.num_dofs('NS'),
+            #level=level,
             r_dens=c[r"r_dens"],
             r_visc=c[r"r_visc"],
             nu_interp=nu_interp
@@ -220,6 +274,8 @@ def test_noflow(scheme, nu_interp, postprocessor):
         rs[r"$D_{22}$"] = make_cut(D_22)
         rs[r"$T_{22}$"] = make_cut(T_22)
         rs[r"$\nu$"] = make_cut(nu_0)
+        rs[r"$\mathbf{v}$-$L^2$"] = functionals["v_errL2"]
+        rs[r"$\mathbf{v}$-$H^1_0$"] = functionals["v_errH10"]
         print(label, level)
 
         # Send to posprocessor
@@ -273,9 +329,16 @@ class Postprocessor(GenericBenchPostprocessor):
         x2 = np.arange(0.0, 1.0, .01)
         x2 = np.append(x2, [1.0,]) # append right margin
 
-        self.x_var = x2
-        self.y_vars = [r"$\phi$", r"$v_2$", r"$p$", r"$\nu$",
+        self.x_var1 = x2
+        self.x_var2 = "ndofs"
+        self.y_var1 = [r"$\phi$", r"$v_2$", r"$p$", r"$\nu$",
                        r"$D_{22}$", r"$T_{22}$"]
+        self.y_var2 = [r"$\mathbf{v}$-$L^2$", r"$\mathbf{v}$-$H^1_0$"]
+        self._style = {}
+        for var in self.y_var1:
+            self._style[var] = '-'
+        for var in self.y_var2:
+            self._style[var] = '+--'
 
         self.c = self._create_coefficients(r_dens, r_visc)
         self.esol = self._prepare_exact_solution(x2, self.c)
@@ -361,34 +424,47 @@ class Postprocessor(GenericBenchPostprocessor):
         return esol
 
     def _make_cut(self, f):
-        x1, x2 = 0.5, self.x_var
+        x1, x2 = 0.5, self.x_var1
         return np.array([f(x1, y) for y in x2])
 
     def _create_figure(self):
-        figs = [pyplot.figure(),]
-        axes = [figs[-1].gca(),]
-        for i in range(5):
-            figs.append(pyplot.figure())
-            axes.append(figs[-1].gca(sharex=axes[0]))
-        assert len(self.y_vars) == len(axes)
+        figs_cut = [pyplot.figure(),]
+        axes_cut = [figs_cut[-1].gca(),]
+        for i in range(len(self.y_var1) - 1):
+            figs_cut.append(pyplot.figure())
+            axes_cut.append(figs_cut[-1].gca(sharex=axes_cut[0]))
 
-        axes[0].set_xlabel(r"$x_2$")
-        for ax in axes[1:]:
-            ax.set_xlabel(axes[0].get_xlabel())
-        for i, label in enumerate(self.y_vars):
-            axes[i].set_ylabel(label)
+        axes_cut[0].set_xlabel(r"$x_2$")
+        for ax in axes_cut[1:]:
+            ax.set_xlabel(axes_cut[0].get_xlabel())
+        for i, label in enumerate(self.y_var1):
+            axes_cut[i].set_ylabel(label)
             if self.esol[label] is not None:
-                axes[i].plot(self.x_var, self.esol[label],
+                axes_cut[i].plot(self.x_var1, self.esol[label],
                              'r.', markersize=3, label='ref')
 
-        axes[0].set_xlim(0.0, 1.0, auto=False)
-        axes[0].set_ylim(-0.1, 1.1, auto=False)
-        #axes[1].set_yscale("log")
-        #axes[3].set_yscale("log")
-        #axes[4].set_yscale("log")
-        axes[5].set_ylim(-0.001, 0.001, auto=False)
+        axes_cut[0].set_xlim(0.0, 1.0, auto=False)
+        axes_cut[0].set_ylim(-0.1, 1.1, auto=False)
+        #axes_cut[1].set_yscale("log")
+        #axes_cut[3].set_yscale("log")
+        #axes_cut[4].set_yscale("log")
+        axes_cut[5].set_ylim(-0.001, 0.001, auto=False)
 
-        return figs, axes
+        figs_dof = [pyplot.figure(),]
+        axes_dof = [figs_dof[-1].gca(),]
+        axes_dof[-1].set_xscale("log")
+        for i in range(len(self.y_var2) - 1):
+            figs_dof.append(pyplot.figure())
+            axes_dof.append(figs_dof[-1].gca(sharex=axes_dof[0]))
+
+        axes_dof[0].set_xlabel(r"number of DOF")
+        for ax in axes_dof[1:]:
+            ax.set_xlabel(axes_dof[0].get_xlabel())
+        for i, label in enumerate(self.y_var2):
+            axes_dof[i].set_ylabel(label)
+            axes_dof[i].set_yscale("log")
+
+        return figs_cut + figs_dof, axes_cut + axes_dof
 
     def flush_plots(self):
         if not self.plots:
@@ -398,24 +474,34 @@ class Postprocessor(GenericBenchPostprocessor):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
             for result in self.results:
-                style = '-'
+                style = self._style
                 if not all(result[name] == value for name, value in fixed_vars):
                     continue
                 free_vars = tuple((var, val) for var, val in six.iteritems(result)
                                   if var not in fixed_var_names
-                                  and var not in self.y_vars)
+                                  and var not in self.y_var1 + self.y_var2
+                                  and var != self.x_var2)
                 datapoints = data.setdefault(free_vars, {})
                 # NOTE: Variable 'datapoints' is now a "pointer" to an empty
                 #       dict that is stored inside 'data' under key 'free_vars'
-                for var in self.y_vars:
+                dp = datapoints.setdefault(self.x_var2, [])
+                dp.append(result[self.x_var2])
+                for var in self.y_var1:
                     dp = datapoints.setdefault(var, [])
                     dp.append(result[var])
+                for var in self.y_var2:
+                    dp = datapoints.setdefault(var, [])
+                    dp.append(result[var][-1])
 
             for free_vars, datapoints in six.iteritems(data):
-                ys = []
-                for var in self.y_vars:
+                xs, ys = [], []
+                for var in self.y_var1:
+                    xs.append(self.x_var1)
                     ys.append(datapoints[var])
-                self._plot(fig, self.x_var, ys, free_vars, style)
+                for var in self.y_var2:
+                    xs.append(datapoints[self.x_var2])
+                    ys.append([datapoints[var],])
+                self._plot(fig, xs, ys, free_vars, style)
             self._save_plot(fig, fixed_vars, self.outdir)
         self.results = []
 
@@ -426,8 +512,9 @@ class Postprocessor(GenericBenchPostprocessor):
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for i, ax in enumerate(axes):
             var = ax.get_ylabel()
+            s = style[var]
             for j in range(len(ys[i])):
-                ax.plot(xs, ys[i][j], style, linewidth=1, label=label)
+                ax.plot(xs[i], ys[i][j], s, linewidth=1, label=label)
             ax.legend(loc=0, fontsize='x-small', ncol=1)
 
     @staticmethod

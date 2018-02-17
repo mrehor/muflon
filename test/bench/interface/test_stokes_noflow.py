@@ -94,8 +94,16 @@ def create_bcs(W, boundary_markers, pinpoint=None):
     return bcs
 
 
+def compute_errornorms(v):
+    deg = v.ufl_element().degree()
+    v_ref = df.Expression(("0.0", "0.0"), degree=deg+3)
+    v_errL2 = df.errornorm(v_ref, v, norm_type="L2")
+    v_errH10 = df.errornorm(v_ref, v, norm_type="H10")
+    return v_errL2, v_errH10
+
+
 #@pytest.mark.parametrize("nu_interp", _nu_all_)
-@pytest.mark.parametrize("nu_interp", ["lin", "PW_harm", "PWC_sharp"])
+@pytest.mark.parametrize("nu_interp", ["PW_harm",]) #"lin", "PWC_sharp"
 def test_stokes_noflow(nu_interp, postprocessor):
     #set_log_level(WARNING)
 
@@ -106,7 +114,7 @@ def test_stokes_noflow(nu_interp, postprocessor):
     cc = wrap_coeffs_as_constants(c)
     nu = eval("nu_" + nu_interp) # choose viscosity interpolation
 
-    for level in range(2, 3):
+    for level in range(2, 4):
         mesh, boundary_markers, pinpoint = create_domain(level)
         W = create_mixed_space(mesh)
         bcs = create_bcs(W, boundary_markers, pinpoint)
@@ -129,6 +137,8 @@ def test_stokes_noflow(nu_interp, postprocessor):
         v.rename("v", "velocity")
         p.rename("p", "pressure")
 
+        v_errL2, v_errH10 = compute_errornorms(v)
+
         V_dv = df.FunctionSpace(mesh, "DG", W.sub(0).ufl_element().degree()-1)
         div_v = df.project(df.div(v), V_dv)
         div_v.rename("div_v", "velocity-divergence")
@@ -146,7 +156,8 @@ def test_stokes_noflow(nu_interp, postprocessor):
         # Save results
         make_cut = postprocessor._make_cut
         rs = dict(
-            level=level,
+            ndofs=W.dim(),
+            #level=level,
             r_dens=c[r"r_dens"],
             r_visc=c[r"r_visc"],
             nu_interp=nu_interp
@@ -157,6 +168,8 @@ def test_stokes_noflow(nu_interp, postprocessor):
         rs[r"$D_{22}$"] = make_cut(D_22)
         rs[r"$T_{22}$"] = make_cut(T_22)
         rs[r"$\nu$"] = make_cut(nu_0)
+        rs[r"$\mathbf{v}$-$L^2$"] = v_errL2
+        rs[r"$\mathbf{v}$-$H^1_0$"] = v_errH10
         print(label, level)
 
         # Send to posprocessor
@@ -222,9 +235,16 @@ class Postprocessor(GenericBenchPostprocessor):
         x2 = np.arange(0.0, 1.0, .01)
         x2 = np.append(x2, [1.0,]) # append right margin
 
-        self.x_var = x2
-        self.y_vars = [r"$\phi$", r"$v_2$", r"$p$", r"$\nu$",
+        self.x_var1 = x2
+        self.x_var2 = "ndofs"
+        self.y_var1 = [r"$\phi$", r"$v_2$", r"$p$", r"$\nu$",
                        r"$D_{22}$", r"$T_{22}$"]
+        self.y_var2 = [r"$\mathbf{v}$-$L^2$", r"$\mathbf{v}$-$H^1_0$"]
+        self._style = {}
+        for var in self.y_var1:
+            self._style[var] = '-'
+        for var in self.y_var2:
+            self._style[var] = '+--'
 
         self.c = self._create_coefficients(r_dens, r_visc)
         self.esol = self._prepare_exact_solution(x2, self.c)
@@ -241,7 +261,7 @@ class Postprocessor(GenericBenchPostprocessor):
         # Problem parameters
         c[r"\rho_1"] = 1.0
         c[r"\rho_2"] = r_dens * c[r"\rho_1"]
-        c[r"\nu_1"] = 1.0e-04
+        c[r"\nu_1"] = 1.0e-4
         c[r"\nu_2"] = r_visc * c[r"\nu_1"]
         c[r"\eps"] = 0.1
         c[r"g_a"] = 1.0
@@ -309,34 +329,47 @@ class Postprocessor(GenericBenchPostprocessor):
         return esol
 
     def _make_cut(self, f):
-        x1, x2 = 0.5, self.x_var
+        x1, x2 = 0.5, self.x_var1
         return np.array([f(x1, y) for y in x2])
 
     def _create_figure(self):
-        figs = [pyplot.figure(),]
-        axes = [figs[-1].gca(),]
-        for i in range(5):
-            figs.append(pyplot.figure())
-            axes.append(figs[-1].gca(sharex=axes[0]))
-        assert len(self.y_vars) == len(axes)
+        figs_cut = [pyplot.figure(),]
+        axes_cut = [figs_cut[-1].gca(),]
+        for i in range(len(self.y_var1) - 1):
+            figs_cut.append(pyplot.figure())
+            axes_cut.append(figs_cut[-1].gca(sharex=axes_cut[0]))
 
-        axes[0].set_xlabel(r"$x_2$")
-        for ax in axes[1:]:
-            ax.set_xlabel(axes[0].get_xlabel())
-        for i, label in enumerate(self.y_vars):
-            axes[i].set_ylabel(label)
+        axes_cut[0].set_xlabel(r"$x_2$")
+        for ax in axes_cut[1:]:
+            ax.set_xlabel(axes_cut[0].get_xlabel())
+        for i, label in enumerate(self.y_var1):
+            axes_cut[i].set_ylabel(label)
             if self.esol[label] is not None:
-                axes[i].plot(self.x_var, self.esol[label],
+                axes_cut[i].plot(self.x_var1, self.esol[label],
                              'r.', markersize=3, label='ref')
 
-        axes[0].set_xlim(0.0, 1.0, auto=False)
-        axes[0].set_ylim(-0.1, 1.1, auto=False)
-        #axes[1].set_yscale("log")
-        #axes[3].set_yscale("log")
-        #axes[4].set_yscale("log")
-        axes[5].set_ylim(-0.001, 0.001, auto=False)
+        axes_cut[0].set_xlim(0.0, 1.0, auto=False)
+        axes_cut[0].set_ylim(-0.1, 1.1, auto=False)
+        #axes_cut[1].set_yscale("log")
+        #axes_cut[3].set_yscale("log")
+        #axes_cut[4].set_yscale("log")
+        axes_cut[5].set_ylim(-0.001, 0.001, auto=False)
 
-        return figs, axes
+        figs_dof = [pyplot.figure(),]
+        axes_dof = [figs_dof[-1].gca(),]
+        axes_dof[-1].set_xscale("log")
+        for i in range(len(self.y_var2) - 1):
+            figs_dof.append(pyplot.figure())
+            axes_dof.append(figs_dof[-1].gca(sharex=axes_dof[0]))
+
+        axes_dof[0].set_xlabel(r"number of DOF")
+        for ax in axes_dof[1:]:
+            ax.set_xlabel(axes_dof[0].get_xlabel())
+        for i, label in enumerate(self.y_var2):
+            axes_dof[i].set_ylabel(label)
+            axes_dof[i].set_yscale("log")
+
+        return figs_cut + figs_dof, axes_cut + axes_dof
 
     def flush_plots(self):
         if not self.plots:
@@ -346,24 +379,34 @@ class Postprocessor(GenericBenchPostprocessor):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
             for result in self.results:
-                style = '-'
+                style = self._style
                 if not all(result[name] == value for name, value in fixed_vars):
                     continue
                 free_vars = tuple((var, val) for var, val in six.iteritems(result)
                                   if var not in fixed_var_names
-                                  and var not in self.y_vars)
+                                  and var not in self.y_var1 + self.y_var2
+                                  and var != self.x_var2)
                 datapoints = data.setdefault(free_vars, {})
                 # NOTE: Variable 'datapoints' is now a "pointer" to an empty
                 #       dict that is stored inside 'data' under key 'free_vars'
-                for var in self.y_vars:
+                dp = datapoints.setdefault(self.x_var2, [])
+                dp.append(result[self.x_var2])
+                for var in self.y_var1:
+                    dp = datapoints.setdefault(var, [])
+                    dp.append(result[var])
+                for var in self.y_var2:
                     dp = datapoints.setdefault(var, [])
                     dp.append(result[var])
 
             for free_vars, datapoints in six.iteritems(data):
-                ys = []
-                for var in self.y_vars:
+                xs, ys = [], []
+                for var in self.y_var1:
+                    xs.append(self.x_var1)
                     ys.append(datapoints[var])
-                self._plot(fig, self.x_var, ys, free_vars, style)
+                for var in self.y_var2:
+                    xs.append(datapoints[self.x_var2])
+                    ys.append([datapoints[var],])
+                self._plot(fig, xs, ys, free_vars, style)
             self._save_plot(fig, fixed_vars, self.outdir)
         self.results = []
 
@@ -374,8 +417,9 @@ class Postprocessor(GenericBenchPostprocessor):
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for i, ax in enumerate(axes):
             var = ax.get_ylabel()
+            s = style[var]
             for j in range(len(ys[i])):
-                ax.plot(xs, ys[i][j], style, linewidth=1, label=label)
+                ax.plot(xs[i], ys[i][j], s, linewidth=1, label=label)
             ax.legend(loc=0, fontsize='x-small', ncol=1)
 
     @staticmethod
