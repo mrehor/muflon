@@ -51,97 +51,160 @@ import numpy as np
 from matplotlib import pyplot
 from collections import OrderedDict
 
+from muflon import mpset
+from muflon import DiscretizationFactory
+from muflon import ModelFactory
+from muflon import SolverFactory
+from muflon import TimeSteppingFactory, TSHook
+
 from muflon.utils.testing import GenericBenchPostprocessor
 
-from test_stokes_shear import rho
-from test_stokes_shear import _nu_all_
-from test_stokes_shear import nu_lin, nu_harm, nu_log, nu_PW_harm
-from test_stokes_shear import nu_PWC_harm, nu_PWC_arit, nu_PWC_sharp
-from test_stokes_shear import create_fixed_vfract
-from test_stokes_shear import create_mixed_space
-from test_stokes_shear import create_domain
-from test_stokes_shear import wrap_coeffs_as_constants
+# FIXME: remove the following workaround
+from muflon.common.timer import Timer
+
+from test_shear import create_domain
+from test_shear import create_discretization
+from test_shear import wrap_coeffs_as_constants
+from test_shear import load_initial_conditions
+from test_shear import prepare_hook
 
 
-def create_forms(W, rho, nu, g_a, boundary_markers):
-    v, p = df.TrialFunctions(W)
-    v_t, p_t = df.TestFunctions(W)
+def create_bcs(DS, boundary_markers, pinpoint=None):
+    bcs = {"v": []}
+    zero = df.Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
 
-    a = (
-        2.0 * nu * df.inner(df.sym(df.grad(v)), df.grad(v_t))
-      - p * df.div(v_t)
-      - df.div(v) * p_t
-      #- nu * df.div(v) * p_t
-    ) * df.dx
+    bcs_nslip1_v1 = df.DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 1)
+    bcs_nslip1_v2 = df.DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 1)
+    bcs_nslip2_v1 = df.DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 3)
+    bcs_nslip2_v2 = df.DirichletBC(DS.subspace("v", 1), zero, boundary_markers, 3)
+    bcs["v"].append((bcs_nslip1_v1, bcs_nslip1_v2))
+    bcs["v"].append((bcs_nslip2_v1, bcs_nslip2_v2))
 
-    L = rho * df.inner(df.Constant((0.0, - g_a)), v_t) * df.dx
-
-    return a, L
-
-
-def create_bcs(W, boundary_markers, pinpoint=None):
-    bcs = []
-    zero, vec_zero = df.Constant(0.0), df.Constant((0.0, 0.0))
-
-    bcs.append(df.DirichletBC(W.sub(0), vec_zero, boundary_markers, 1))
-    bcs.append(df.DirichletBC(W.sub(0), vec_zero, boundary_markers, 3))
-    bcs.append(df.DirichletBC(W.sub(0).sub(0), zero, boundary_markers, 2))
-    bcs.append(df.DirichletBC(W.sub(0).sub(0), zero, boundary_markers, 4))
+    bcs_fix_v2_rhs = df.DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 2)
+    bcs_fix_v2_lhs = df.DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 4)
+    bcs["v"].append((None, bcs_fix_v2_rhs))
+    bcs["v"].append((None, bcs_fix_v2_lhs))
 
     if pinpoint is not None:
-        bcs.append(df.DirichletBC(W.sub(1), zero, pinpoint, method="pointwise"))
+        bcs["p"] = [df.DirichletBC(DS.subspace("p"), zero,
+                    pinpoint, method="pointwise"),]
 
     return bcs
 
 
-#@pytest.mark.parametrize("nu_interp", _nu_all_)
-@pytest.mark.parametrize("nu_interp", ["lin", "PW_harm", "PWC_sharp"])
-def test_stokes_noflow(nu_interp, postprocessor):
+@pytest.mark.parametrize("nu_interp", ["har", "lin"]) # "log", "sin", "odd"
+@pytest.mark.parametrize("scheme", ["SemiDecoupled",])
+def test_noflow(scheme, nu_interp, postprocessor):
     #set_log_level(WARNING)
+    assert scheme == "SemiDecoupled"
 
+    dt = 0.0 # solve as the stationary problem
+
+    # Read parameters
+    scriptdir = os.path.dirname(os.path.realpath(__file__))
+    prm_file = os.path.join(scriptdir, "interface-parameters.xml")
+    mpset.read(prm_file)
+
+    # Adjust parameters
+    c = postprocessor.get_coefficients()
+    mpset["model"]["eps"] = c[r"\eps"]
+    mpset["model"]["rho"]["1"] = c[r"\rho_1"]
+    mpset["model"]["rho"]["2"] = c[r"\rho_2"]
+    mpset["model"]["nu"]["1"] = c[r"\nu_1"]
+    mpset["model"]["nu"]["2"] = c[r"\nu_2"]
+    mpset["model"]["chq"]["L"] = c[r"L_0"]
+    mpset["model"]["chq"]["V"] = c[r"V_0"]
+    mpset["model"]["chq"]["rho"] = c[r"\rho_0"]
+    mpset["model"]["mobility"]["M0"] = 1.0e+0
+    mpset["model"]["sigma"]["12"] = 1.0e-0
+    #mpset.show()
+
+    cc = wrap_coeffs_as_constants(c)
+
+    # Names and directories
     basename = postprocessor.basename
     label = "{}_{}".format(basename, nu_interp)
-
-    c = postprocessor.get_coefficients()
-    cc = wrap_coeffs_as_constants(c)
-    nu = eval("nu_" + nu_interp) # choose viscosity interpolation
+    outdir = postprocessor.outdir
 
     for level in range(2, 3):
+        # Prepare domain and discretization
         mesh, boundary_markers, pinpoint = create_domain(level)
-        W = create_mixed_space(mesh)
-        bcs = create_bcs(W, boundary_markers, pinpoint)
+        DS, div_v = create_discretization(scheme, mesh,
+                                          div_projection=True)
+        DS.parameters["PTL"] = 1
+        DS.setup()
 
-        phi = create_fixed_vfract(mesh, c)
+        # Prepare initial and boundary conditions
+        load_initial_conditions(DS, c)
+        bcs = create_bcs(DS, boundary_markers, pinpoint) # for Dirichlet
+
+        # Force applied on the top plate
+        B = 0.0 if dt == 0.0 else 1.0
+        applied_force = df.Expression(("A*(1.0 - B*exp(-alpha*t))", "0.0"),
+                                      degree=DS.subspace("v", 0).ufl_element().degree(),
+                                      t=0.0, alpha=1.0, A=1.0, B=B)
+
+        # Prepare model
+        model = ModelFactory.create("Incompressible", DS, bcs)
+        model.parameters["THETA2"] = 0.0
+        model.parameters["cut"]["density"] = True
+        model.parameters["cut"]["viscosity"] = True
+        #model.parameters["cut"]["mobility"] = True
+        model.parameters["nu"]["itype"] = nu_interp
+        #model.parameters["rho"]["itype"] = "lin"
+
+        # Prepare external source term
+        g_a = c[r"g_a"]
+        g_a /= mpset["model"]["chq"]["V"]**2.0 * mpset["model"]["chq"]["L"]
+        f_src = df.Constant((0.0, - g_a), cell=mesh.ufl_cell(), name="f_src")
+        model.load_sources(f_src)
 
         # Create forms
-        a, L = create_forms(W, rho(phi, cc), nu(phi, cc), c[r"g_a"],
-                            boundary_markers)
+        forms = model.create_forms()
 
-        # Solve problem
-        w = df.Function(W)
-        A, b = df.assemble_system(a, L, bcs)
-        solver = df.LUSolver()
-        solver.set_operator(A)
-        solver.solve(w.vector(), b)
+        # Prepare solver
+        solver = SolverFactory.create(model, forms, fix_p=False)
+
+        # Prepare time-stepping algorithm
+        comm = mesh.mpi_comm()
+        pv = DS.primitive_vars_ctl()
+        modulo_factor = 1
+        xfields = list(zip(pv["phi"].split(), ("phi",)))
+        xfields.append((pv["p"].dolfin_repr(), "p"))
+        if scheme == "FullyDecoupled":
+            xfields += list(zip(pv["v"].split(), ("v1", "v2")))
+        else:
+            xfields.append((pv["v"].dolfin_repr(), "v"))
+        if div_v is not None:
+            xfields.append((div_v, "div_v"))
+        functionals = {"t": [], "E_kin": [], "Psi": [], "mean_p": []}
+        hook = prepare_hook(model, applied_force, functionals, modulo_factor, div_v)
+        logfile = "log_{}.dat".format(label)
+        TS = TimeSteppingFactory.create("ConstantTimeStep", comm, solver,
+               hook=hook, logfile=logfile, xfields=xfields, outdir=outdir)
+        TS.parameters["xdmf"]["folder"] = "XDMF_{}".format(label)
+        TS.parameters["xdmf"]["modulo"] = modulo_factor
+        TS.parameters["xdmf"]["flush"]  = True
+        TS.parameters["xdmf"]["iconds"] = True
+
+        # Time-stepping
+        with Timer("Time stepping") as tmr_tstepping:
+            result = TS.run(0.0, 2.0, dt, OTD=1)
 
         # Pre-process results
-        v, p = w.split(True)
-        v.rename("v", "velocity")
-        p.rename("p", "pressure")
+        v = pv["v"].dolfin_repr()
+        p = pv["p"].dolfin_repr()
+        phi = pv["phi"].split()[0]
 
-        V_dv = df.FunctionSpace(mesh, "DG", W.sub(0).ufl_element().degree()-1)
-        div_v = df.project(df.div(v), V_dv)
-        div_v.rename("div_v", "velocity-divergence")
-        D_22 = df.project(v.sub(1).dx(1), V_dv)
+        D_22 = df.project(v.sub(1).dx(1), div_v.function_space())
 
-        if nu_interp[:2] == "PW":
-            V_nu = df.FunctionSpace(mesh, "DG", phi.ufl_element().degree())
+        if nu_interp in ["har",]:
+            deg = DS.subspace("phi", 0).ufl_element().degree()
+            V_nu = df.FunctionSpace(mesh, "DG", deg)
         else:
-            V_nu = phi.function_space()
-        nu_0 = df.project(nu(phi, cc), V_nu)
-        T_22 = df.project(2.0 * nu(phi, cc) * v.sub(1).dx(1), V_nu)
-
-        #p_ref = df.project(p_h, df.FunctionSpace(mesh, W.sub(1).ufl_element()))
+            V_nu = DS.subspace("phi", 0, deepcopy=True)
+        nu_0 = df.project(model.coeffs["nu"], V_nu)
+        T_22 = df.project(2.0 * model.coeffs["nu"] * v.sub(1).dx(1), V_nu)
 
         # Save results
         make_cut = postprocessor._make_cut
@@ -163,18 +226,6 @@ def test_stokes_noflow(nu_interp, postprocessor):
         comm = mesh.mpi_comm()
         rank = df.MPI.rank(comm)
         postprocessor.add_result(rank, rs)
-
-
-    # Plot results obtained in the last round
-    outdir = os.path.join(postprocessor.outdir, "XDMFoutput")
-    with df.XDMFFile(os.path.join(outdir, "v.xdmf")) as file:
-        file.write(v, 0.0)
-    with df.XDMFFile(os.path.join(outdir, "p.xdmf")) as file:
-        file.write(p, 0.0)
-    with df.XDMFFile(os.path.join(outdir, "phi.xdmf")) as file:
-        file.write(phi, 0.0)
-    with df.XDMFFile(os.path.join(outdir, "div_v.xdmf")) as file:
-        file.write(div_v, 0.0)
 
     # Save results into a binary file
     filename = "results_{}.pickle".format(label)
@@ -241,7 +292,7 @@ class Postprocessor(GenericBenchPostprocessor):
         # Problem parameters
         c[r"\rho_1"] = 1.0
         c[r"\rho_2"] = r_dens * c[r"\rho_1"]
-        c[r"\nu_1"] = 1.0
+        c[r"\nu_1"] = 1.0e-4
         c[r"\nu_2"] = r_visc * c[r"\nu_1"]
         c[r"\eps"] = 0.1
         c[r"g_a"] = 1.0
@@ -261,14 +312,6 @@ class Postprocessor(GenericBenchPostprocessor):
         df.info("Re_2 = {}".format(Re_2))
         df.info("At = {}".format(At))
         df.end()
-
-        # Normalized quantities
-        c[r"\rho_1"] /= c[r"\rho_0"]
-        c[r"\rho_2"] /= c[r"\rho_0"]
-        c[r"\nu_1"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
-        c[r"\nu_2"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
-        c[r"\eps"] /= c[r"L_0"]
-        c[r"g_a"] /= c[r"V_0"]**2.0 * c[r"L_0"]
 
         return c
 
