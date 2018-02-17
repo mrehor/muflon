@@ -63,27 +63,6 @@ from muflon.utils.testing import GenericBenchPostprocessor
 from muflon.common.timer import Timer
 
 
-def create_forms(W, rho, nu, g_a, p_h, boundary_markers):
-    v, p = df.TrialFunctions(W)
-    v_t, p_t = df.TestFunctions(W)
-
-    a = (
-        2.0 * nu * df.inner(df.sym(df.grad(v)), df.grad(v_t))
-      - p * df.div(v_t)
-      - df.div(v) * p_t
-      #- nu * df.div(v) * p_t
-    ) * df.dx
-
-    L = rho * df.inner(df.Constant((0.0, - g_a)), v_t) * df.dx
-
-    n = df.FacetNormal(W.mesh())
-    ds = df.Measure("ds", subdomain_data=boundary_markers)
-    L += df.inner(df.Constant((1.0, 0.0)), v_t) * ds(3) # driving force
-    L -= p_h * df.inner(n, v_t) * (ds(2) + ds(4))       # hydrostatic balance
-
-    return a, L
-
-
 def create_hydrostatic_pressure(mesh, cc):
     x = df.MeshCoordinates(mesh)
     p_h = - 0.25 * (2.0 * x[1] - cc[r"\eps"] * df.ln(df.cosh((1.0 - 2.0 * x[1]) / cc[r"\eps"])))

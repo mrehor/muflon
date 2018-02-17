@@ -53,57 +53,17 @@ from collections import OrderedDict
 
 from muflon.utils.testing import GenericBenchPostprocessor
 
-
-def rho(phi, cc):
-    return cc[r"\rho_1"] * phi + cc[r"\rho_2"] * (1.0 - phi)
-
-_nu_all_ = ["PWC_sharp", "PW_harm", "PWC_harm", "harm", "log", "PWC_arit", "lin"]
-
-def nu_lin(phi, cc):
-    return cc[r"\nu_1"] * phi + cc[r"\nu_2"] * (1.0 - phi)
-
-def nu_harm(phi, cc):
-    denom = (1.0 / cc[r"\nu_1"]) * phi\
-          + (1.0 / cc[r"\nu_2"]) * (1.0 - phi)
-    return 1.0 / denom
-
-def nu_log(phi, cc):
-    return cc[r"\nu_2"] * pow(cc[r"\nu_1"] / cc[r"\nu_2"], phi)
-
-def nu_PWC_sharp(phi, cc):
-    A = df.conditional(df.gt(phi, 0.5), 1.0, 0.0)
-    B = df.conditional(df.lt(phi, 0.5), 1.0, 0.0)
-    nu = A * cc[r"\nu_1"]\
-       + B * cc[r"\nu_2"]\
-       + (1.0 - A - B) * 0.5 * (cc[r"\nu_1"] + cc[r"\nu_2"])
-    return nu
-
-def nu_PW_harm(phi, cc):
-    A = df.conditional(df.gt(phi, 0.95), 1.0, 0.0)
-    B = df.conditional(df.lt(phi, 0.05), 1.0, 0.0)
-    nu = A * cc[r"\nu_1"]\
-       + B * cc[r"\nu_2"]\
-       + (1.0 - A - B) * 1.0 / ((1.0 / cc[r"\nu_1"] - 1.0 / cc[r"\nu_2"]) * phi + 1.0 / cc[r"\nu_2"])
-    return nu
-
-def nu_PWC_harm(phi, cc):
-    A = df.conditional(df.gt(phi, 0.95), 1.0, 0.0)
-    B = df.conditional(df.lt(phi, 0.05), 1.0, 0.0)
-    nu = A * cc[r"\nu_1"]\
-       + B * cc[r"\nu_2"]\
-       + (1.0 - A - B) * 2.0 / (1.0 / cc[r"\nu_1"] + 1.0 / cc[r"\nu_2"])
-    return nu
-
-def nu_PWC_arit(phi, cc):
-    A = df.conditional(df.gt(phi, 0.95), 1.0, 0.0)
-    B = df.conditional(df.lt(phi, 0.05), 1.0, 0.0)
-    nu = A * cc[r"\nu_1"]\
-       + B * cc[r"\nu_2"]\
-       + (1.0 - A - B) * 0.5 * (cc[r"\nu_1"] + cc[r"\nu_2"])
-    return nu
+from test_stokes_shear import rho
+from test_stokes_shear import _nu_all_
+from test_stokes_shear import nu_lin, nu_harm, nu_log, nu_PW_harm
+from test_stokes_shear import nu_PWC_harm, nu_PWC_arit, nu_PWC_sharp
+from test_stokes_shear import create_fixed_vfract
+from test_stokes_shear import create_mixed_space
+from test_stokes_shear import create_domain
+from test_stokes_shear import wrap_coeffs_as_constants
 
 
-def create_forms(W, rho, nu, g_a, p_h, boundary_markers):
+def create_forms(W, rho, nu, g_a, boundary_markers):
     v, p = df.TrialFunctions(W)
     v_t, p_t = df.TestFunctions(W)
 
@@ -118,27 +78,6 @@ def create_forms(W, rho, nu, g_a, p_h, boundary_markers):
 
     return a, L
 
-
-def create_hydrostatic_pressure(mesh, cc):
-    x = df.MeshCoordinates(mesh)
-    p_h = - 0.25 * (2.0 * x[1] - cc[r"\eps"] * df.ln(df.cosh((1.0 - 2.0 * x[1]) / cc[r"\eps"])))
-    p_h +=  0.25 * (2.0 - cc[r"\eps"] * df.ln(df.cosh(1.0 / cc[r"\eps"])))
-    p_h = cc[r"g_a"] * ((cc[r"\rho_1"] - cc[r"\rho_2"]) * p_h + cc[r"\rho_2"] * (1.0 - x[1]))
-
-    return p_h
-
-
-def create_fixed_vfract(mesh, c, k=1):
-    phi_expr = df.Expression("0.5*(1.0 - tanh((2.0*x[1] - 1.0) / eps))",
-                             degree=k+3, eps=c[r"\eps"])
-
-    V_phi = df.FunctionSpace(mesh, "CG", k)
-
-    phi = df.Function(V_phi)
-    phi.interpolate(phi_expr)
-    phi.rename("phi", "vfract")
-
-    return phi
 
 def create_bcs(W, boundary_markers, pinpoint=None):
     bcs = []
@@ -155,70 +94,9 @@ def create_bcs(W, boundary_markers, pinpoint=None):
     return bcs
 
 
-def create_mixed_space(mesh, k=1, augmentedTH=False):
-    Pk = df.FiniteElement("CG", mesh.ufl_cell(), k)
-    Pk1 = df.FiniteElement("CG", mesh.ufl_cell(), k+1)
-
-    FE_v = df.VectorElement(Pk1, dim=mesh.geometry().dim())
-    FE_p = Pk
-    if augmentedTH:
-        # Use enriched element for p -> augmented TH, see Boffi et al. (2011)
-        P0 = df.FiniteElement("DG", mesh.ufl_cell(), 0)
-        gdim = mesh.geometry().dim()
-        assert k >= gdim - 1 # see Boffi et al. (2011, Eq. (3.1))
-        FE_p = df.EnrichedElement(Pk, P0)
-
-    W = df.FunctionSpace(mesh, df.MixedElement([FE_v, FE_p]))
-
-    return W
-
-
-def create_domain(level):
-    N = 2**level * 11
-    mesh = df.UnitSquareMesh(N, N)
-
-    class Top(df.SubDomain):
-        def inside(self, x, on_boundary):
-            return on_boundary and df.near(x[1], 1.0)
-
-    class Bottom(df.SubDomain):
-        def inside(self, x, on_boundary):
-            return on_boundary and df.near(x[1], 0.0)
-
-    class Left(df.SubDomain):
-        def inside(self, x, on_boundary):
-            return on_boundary and df.near(x[0], 0.0)
-
-    class Right(df.SubDomain):
-        def inside(self, x, on_boundary):
-            return on_boundary and df.near(x[0], 1.0)
-
-    boundary_markers = df.MeshFunction("size_t", mesh, mesh.topology().dim()-1)
-    boundary_markers.set_all(0)
-    Bottom().mark(boundary_markers, 1)
-    Right().mark(boundary_markers, 2)
-    Top().mark(boundary_markers, 3)
-    Left().mark(boundary_markers, 4)
-
-    class Pinpoint(df.SubDomain):
-        def inside(self, x, on_boundary):
-            return df.near(x[0], 0.0) and df.near(x[1], 1.0)
-
-    return mesh, boundary_markers, Pinpoint()
-
-
-def wrap_coeffs_as_constants(c):
-    cc = OrderedDict()
-    for key in c.keys():
-        cc[key] = df.Constant(c[key])
-        cc[key].rename(key, key)
-
-    return cc
-
-
 #@pytest.mark.parametrize("nu_interp", _nu_all_)
 @pytest.mark.parametrize("nu_interp", ["lin", "PW_harm", "PWC_sharp"])
-def test_noflow(nu_interp, postprocessor):
+def test_stokes_noflow(nu_interp, postprocessor):
     #set_log_level(WARNING)
 
     basename = postprocessor.basename
@@ -234,11 +112,10 @@ def test_noflow(nu_interp, postprocessor):
         bcs = create_bcs(W, boundary_markers, pinpoint)
 
         phi = create_fixed_vfract(mesh, c)
-        p_h = create_hydrostatic_pressure(mesh, cc)
 
         # Create forms
         a, L = create_forms(W, rho(phi, cc), nu(phi, cc), c[r"g_a"],
-                            p_h, boundary_markers)
+                            boundary_markers)
 
         # Solve problem
         w = df.Function(W)

@@ -220,7 +220,7 @@ def wrap_coeffs_as_constants(c):
 
 #@pytest.mark.parametrize("nu_interp", _nu_all_)
 @pytest.mark.parametrize("nu_interp", ["PW_harm", "PWC_sharp"])
-def test_shear(nu_interp, postprocessor):
+def test_stokes_shear(nu_interp, postprocessor):
     #set_log_level(WARNING)
 
     basename = postprocessor.basename
