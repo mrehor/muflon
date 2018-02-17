@@ -94,6 +94,12 @@ class Singleton(_Singleton('SingletonMeta', (object,), {})):
 
 class MuflonParameterSet(Parameters, Singleton):
     """
+    .. todo::
+
+        Redistribute ``cut`` options among corresponding functions,
+        that is, replace ``mpset["model"]["cut"]["density"]`` by
+        ``mpset["model"]["rho"]["trunc"]``.
+
     .. _tab_mpset:
 
        ====================  ===============  ===================================
