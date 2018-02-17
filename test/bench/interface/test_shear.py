@@ -466,28 +466,37 @@ class Postprocessor(GenericBenchPostprocessor):
 
     @staticmethod
     def _prepare_exact_solution(y, c):
+        # Normalized quantities
+        cn = dict()
+        cn[r"\rho_1"] = c[r"\rho_1"] / c[r"\rho_0"]
+        cn[r"\rho_2"] = c[r"\rho_2"] / c[r"\rho_0"]
+        cn[r"\nu_1"] = c[r"\nu_1"] / c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
+        cn[r"\nu_2"] = c[r"\nu_2"] / c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
+        cn[r"\eps"] = c[r"\eps"] / c[r"L_0"]
+        cn[r"g_a"] = c[r"g_a"] / c[r"V_0"]**2.0 * c[r"L_0"]
+
         # Velocity
         v1_ref = np.piecewise(y, [y <= 0.5, y > 0.5], [
-            lambda y: 1.0 / c[r"\nu_1"] * y,
-            lambda y: 1.0 / c[r"\nu_2"] * (y - 0.5) + 0.5 / c[r"\nu_1"]])
+            lambda y: 1.0 / cn[r"\nu_1"] * y,
+            lambda y: 1.0 / cn[r"\nu_2"] * (y - 0.5) + 0.5 / cn[r"\nu_1"]])
 
         # Pressure
-        p_ref = - 0.25 * (2.0 * y - c[r"\eps"] * np.log(np.cosh((1.0 - 2.0 * y) / c[r"\eps"])))
-        p_ref += 0.25 * (2.0 - c[r"\eps"] * np.log(np.cosh((1.0) / c[r"\eps"])))
-        p_ref = c[r"g_a"] * ((c[r"\rho_1"] - c[r"\rho_2"]) * p_ref + c[r"\rho_2"] * (1.0 - y))
+        p_ref = - 0.25 * (2.0 * y - cn[r"\eps"] * np.log(np.cosh((1.0 - 2.0 * y) / cn[r"\eps"])))
+        p_ref += 0.25 * (2.0 - cn[r"\eps"] * np.log(np.cosh((1.0) / cn[r"\eps"])))
+        p_ref = cn[r"g_a"] * ((cn[r"\rho_1"] - cn[r"\rho_2"]) * p_ref + cn[r"\rho_2"] * (1.0 - y))
 
         # Volume fraction
-        phi_ref = 0.5 * (1.0 - np.tanh((2.0 * y - 1.0) / c[r"\eps"]))
+        phi_ref = 0.5 * (1.0 - np.tanh((2.0 * y - 1.0) / cn[r"\eps"]))
 
         # Viscosity
         nu_ref = np.piecewise(y, [y <= 0.5, y > 0.5], [
-            lambda y: c[r"\nu_1"],
-            lambda y: c[r"\nu_2"]])
+            lambda y: cn[r"\nu_1"],
+            lambda y: cn[r"\nu_2"]])
 
         # Shear strain
         D12_ref = 0.5 * np.piecewise(y, [y <= 0.5, y > 0.5], [
-            lambda y: 1.0 / c[r"\nu_1"],
-            lambda y: 1.0 / c[r"\nu_2"]])
+            lambda y: 1.0 / cn[r"\nu_1"],
+            lambda y: 1.0 / cn[r"\nu_2"]])
 
         # Shear stress
         T12_ref = 2.0 * nu_ref * D12_ref

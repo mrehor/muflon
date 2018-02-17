@@ -224,7 +224,7 @@ class Postprocessor(GenericBenchPostprocessor):
 
         self.x_var = x2
         self.y_vars = [r"$\phi$", r"$v_2$", r"$p$", r"$\nu$",
-                      r"$D_{22}$", r"$T_{22}$"]
+                       r"$D_{22}$", r"$T_{22}$"]
 
         self.c = self._create_coefficients(r_dens, r_visc)
         self.esol = self._prepare_exact_solution(x2, self.c)
@@ -241,7 +241,7 @@ class Postprocessor(GenericBenchPostprocessor):
         # Problem parameters
         c[r"\rho_1"] = 1.0
         c[r"\rho_2"] = r_dens * c[r"\rho_1"]
-        c[r"\nu_1"] = 1.0
+        c[r"\nu_1"] = 1.0e-04
         c[r"\nu_2"] = r_visc * c[r"\nu_1"]
         c[r"\eps"] = 0.1
         c[r"g_a"] = 1.0
