@@ -369,6 +369,9 @@ class Postprocessor(GenericBenchPostprocessor):
             axes_dof[i].set_ylabel(label)
             axes_dof[i].set_yscale("log")
 
+        for ax in axes_cut + axes_dof:
+            ax.tick_params(which="both", direction="in", right=True, top=True)
+
         return figs_cut + figs_dof, axes_cut + axes_dof
 
     def flush_plots(self):
@@ -430,6 +433,6 @@ class Postprocessor(GenericBenchPostprocessor):
         pdf = matplotlib.backends.backend_pdf.PdfPages(
                   os.path.join(outdir, "fig_" + filename + ".pdf"))
         for fig in subfigs:
+            fig.tight_layout(rect=[0.02, 0, 1, 1])
             pdf.savefig(fig)
-            fig.tight_layout(rect=[0.03, 0, 1, 1])
         pdf.close()
