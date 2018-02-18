@@ -144,9 +144,10 @@ def prepare_hook(model, applied_force, functionals, modulo_factor, div_v=None):
 
 
 @pytest.mark.parametrize("nu_interp", ["har",]) # "log", "sin", "odd"
-@pytest.mark.parametrize("Re", [1.0, 1.0e+2, 1.0e+4])
+@pytest.mark.parametrize("Re", [1.0e+4,]) #1.0, 1.0e+2,
+@pytest.mark.parametrize("gamma", [0.0, 1.0e+0, 1.0e+2, 1.0e+4])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled",])
-def test_noflow(scheme, Re, nu_interp, postprocessor):
+def test_noflow(scheme, gamma, Re, nu_interp, postprocessor):
     #set_log_level(WARNING)
     assert scheme == "SemiDecoupled"
 
@@ -175,7 +176,7 @@ def test_noflow(scheme, Re, nu_interp, postprocessor):
 
     # Names and directories
     basename = postprocessor.basename
-    label = "{}_{}_Re_{}".format(basename, nu_interp, Re)
+    label = "{}_{}_gamma_{}_Re_{}".format(basename, nu_interp, gamma, Re)
     outdir = postprocessor.outdir
 
     for level in range(1, 5):
@@ -204,6 +205,7 @@ def test_noflow(scheme, Re, nu_interp, postprocessor):
         #model.parameters["cut"]["mobility"] = True
         model.parameters["nu"]["itype"] = nu_interp
         #model.parameters["rho"]["itype"] = "lin"
+        model.parameters["semi"]["gdstab"] = gamma
 
         # Prepare external source term
         g_a = c[r"g_a"]
@@ -267,6 +269,7 @@ def test_noflow(scheme, Re, nu_interp, postprocessor):
             #level=level,
             r_dens=c[r"r_dens"],
             r_visc=c[r"r_visc"],
+            gamma=gamma,
             Re=Re,
             nu_interp=nu_interp
         )
@@ -344,8 +347,8 @@ class Postprocessor(GenericBenchPostprocessor):
 
         self.c = self._create_coefficients(r_dens, r_visc)
         self.esol = self._prepare_exact_solution(x2, self.c)
-        #self.basename = "shear_rd_{}_rv_{}".format(r_dens, r_visc)
-        self.basename = "shear_rv_{}".format(r_visc)
+        #self.basename = "noflow_rd_{}_rv_{}".format(r_dens, r_visc)
+        self.basename = "noflow_rv_{}".format(r_visc)
 
 
     @staticmethod

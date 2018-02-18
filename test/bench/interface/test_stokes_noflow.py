@@ -63,7 +63,7 @@ from test_stokes_shear import create_domain
 from test_stokes_shear import wrap_coeffs_as_constants
 
 
-def create_forms(W, rho, nu, g_a, boundary_markers):
+def create_forms(W, rho, nu, g_a, boundary_markers, gamma=0.0):
     v, p = df.TrialFunctions(W)
     v_t, p_t = df.TestFunctions(W)
 
@@ -75,6 +75,9 @@ def create_forms(W, rho, nu, g_a, boundary_markers):
     ) * df.dx
 
     L = rho * df.inner(df.Constant((0.0, - g_a)), v_t) * df.dx
+
+    # Grad-div stabilization
+    a += df.Constant(gamma) * df.div(v) * df.div(v_t) * df.dx
 
     return a, L
 
@@ -104,12 +107,13 @@ def compute_errornorms(v):
 
 #@pytest.mark.parametrize("nu_interp", _nu_all_)
 @pytest.mark.parametrize("nu_interp", ["PW_harm",]) #"lin", "PWC_sharp"
-@pytest.mark.parametrize("Re", [1.0, 1.0e+2, 1.0e+4])
-def test_stokes_noflow(Re, nu_interp, postprocessor):
+@pytest.mark.parametrize("Re", [1.0e+4,]) #1.0, 1.0e+2,
+@pytest.mark.parametrize("gamma", [0.0, 1.0e+0, 1.0e+2, 1.0e+4])
+def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
     #set_log_level(WARNING)
 
     basename = postprocessor.basename
-    label = "{}_{}_Re_{}".format(basename, nu_interp, Re)
+    label = "{}_{}_gamma_{}_Re_{}".format(basename, nu_interp, gamma, Re)
 
     c = postprocessor.get_coefficients()
     c[r"\nu_1"] = c[r"\rho_1"] / Re
@@ -129,7 +133,7 @@ def test_stokes_noflow(Re, nu_interp, postprocessor):
 
         # Create forms
         a, L = create_forms(W, rho(phi, cc), nu(phi, cc), c[r"g_a"],
-                            boundary_markers)
+                            boundary_markers, gamma)
 
         # Solve problem
         w = df.Function(W)
@@ -166,6 +170,7 @@ def test_stokes_noflow(Re, nu_interp, postprocessor):
             #level=level,
             r_dens=c[r"r_dens"],
             r_visc=c[r"r_visc"],
+            gamma=gamma,
             Re=Re,
             nu_interp=nu_interp
         )
@@ -255,8 +260,8 @@ class Postprocessor(GenericBenchPostprocessor):
 
         self.c = self._create_coefficients(r_dens, r_visc)
         self.esol = self._prepare_exact_solution(x2, self.c)
-        #self.basename = "shear_rd_{}_rv_{}".format(r_dens, r_visc)
-        self.basename = "shear_rv_{}".format(r_visc)
+        #self.basename = "noflow_rd_{}_rv_{}".format(r_dens, r_visc)
+        self.basename = "noflow_rv_{}".format(r_visc)
 
 
     @staticmethod

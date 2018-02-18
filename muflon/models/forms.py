@@ -102,6 +102,12 @@ class Model(object):
         # Initialize parameters
         self.parameters = prm = Parameters(mpset["model"])
 
+        # Spec. parameters for SemiDecoupled scheme
+        nested_prm = Parameters("semi")
+        nested_prm.add("gdstab", 0.0) # grad-div stabilization
+        prm.add(nested_prm)
+
+        # Spec. parameters for FullyDecoupled scheme
         nested_prm = Parameters("full")
         nested_prm.add("factor_s", 1.0) # to control num. parameter 's'
         nested_prm.add("factor_rho0", 1.0) # to control num. param 'rho0'
@@ -862,11 +868,13 @@ class Incompressible(Model):
         :returns: dictonary with items ``'nln'`` and ``'lin'``
         :rtype: dict
         """
+        prm = self.parameters
         self._create_doublewell_and_coefficients((
             ("TD_theta",   1.0),
             ("TD_dF_auto", 0.0),
             ("TD_dF_full", 0.0),
-            ("TD_dF_semi", 1.0)
+            ("TD_dF_semi", 1.0),
+            ("gdstab", prm["semi"]["gdstab"])
         ))
         cc = self.coeffs # created coefficients
         dw = self.doublewell
@@ -967,6 +975,9 @@ class Incompressible(Model):
             + rho*inner(f_src, test["v"])
         )*dx
 
+        # Grad-div stabilization
+        a_00 += cc["gdstab"]*div(trial["v"])*div(test["v"])*dx
+
         system_ns = {
             "lhs" : a_00 + a_01 + a_10,
             "rhs" : L
@@ -978,6 +989,9 @@ class Incompressible(Model):
             + inner(dot(grad(trial["v"]), wind), test["v"])     # --> K
             + nu*inner(grad(trial["v"]), grad(test["v"]))       # --> A
         )*dx
+
+        # Grad-div stabilization
+        a_00_approx += cc["gdstab"]*div(trial["v"])*div(test["v"])*dx
 
         delta = self.sd_stab_parameter(self._DS.mesh(), wind, nu)
         a_00_stab = \
