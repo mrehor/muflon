@@ -104,17 +104,23 @@ def compute_errornorms(v):
 
 #@pytest.mark.parametrize("nu_interp", _nu_all_)
 @pytest.mark.parametrize("nu_interp", ["PW_harm",]) #"lin", "PWC_sharp"
-def test_stokes_noflow(nu_interp, postprocessor):
+@pytest.mark.parametrize("Re", [1.0, 1.0e+2, 1.0e+4])
+def test_stokes_noflow(Re, nu_interp, postprocessor):
     #set_log_level(WARNING)
 
     basename = postprocessor.basename
-    label = "{}_{}".format(basename, nu_interp)
+    label = "{}_{}_Re_{}".format(basename, nu_interp, Re)
 
     c = postprocessor.get_coefficients()
+    c[r"\nu_1"] = c[r"\rho_1"] / Re
+    c[r"\nu_2"] = c[r"r_visc"] * c[r"\nu_1"]
+    c[r"\nu_1"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
+    c[r"\nu_2"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
+
     cc = wrap_coeffs_as_constants(c)
     nu = eval("nu_" + nu_interp) # choose viscosity interpolation
 
-    for level in range(2, 4):
+    for level in range(1, 5):
         mesh, boundary_markers, pinpoint = create_domain(level)
         W = create_mixed_space(mesh)
         bcs = create_bcs(W, boundary_markers, pinpoint)
@@ -160,6 +166,7 @@ def test_stokes_noflow(nu_interp, postprocessor):
             #level=level,
             r_dens=c[r"r_dens"],
             r_visc=c[r"r_visc"],
+            Re=Re,
             nu_interp=nu_interp
         )
         rs[r"$v_2$"] = make_cut(v.sub(1))
@@ -261,7 +268,7 @@ class Postprocessor(GenericBenchPostprocessor):
         # Problem parameters
         c[r"\rho_1"] = 1.0
         c[r"\rho_2"] = r_dens * c[r"\rho_1"]
-        c[r"\nu_1"] = 1.0e-4
+        c[r"\nu_1"] = 1.0
         c[r"\nu_2"] = r_visc * c[r"\nu_1"]
         c[r"\eps"] = 0.1
         c[r"g_a"] = 1.0

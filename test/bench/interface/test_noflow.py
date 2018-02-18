@@ -144,8 +144,9 @@ def prepare_hook(model, applied_force, functionals, modulo_factor, div_v=None):
 
 
 @pytest.mark.parametrize("nu_interp", ["har",]) # "log", "sin", "odd"
+@pytest.mark.parametrize("Re", [1.0, 1.0e+2, 1.0e+4])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled",])
-def test_noflow(scheme, nu_interp, postprocessor):
+def test_noflow(scheme, Re, nu_interp, postprocessor):
     #set_log_level(WARNING)
     assert scheme == "SemiDecoupled"
 
@@ -161,8 +162,8 @@ def test_noflow(scheme, nu_interp, postprocessor):
     mpset["model"]["eps"] = c[r"\eps"]
     mpset["model"]["rho"]["1"] = c[r"\rho_1"]
     mpset["model"]["rho"]["2"] = c[r"\rho_2"]
-    mpset["model"]["nu"]["1"] = c[r"\nu_1"]
-    mpset["model"]["nu"]["2"] = c[r"\nu_2"]
+    mpset["model"]["nu"]["1"] = c[r"\rho_1"] / Re
+    mpset["model"]["nu"]["2"] = c[r"r_visc"] * mpset["model"]["nu"]["1"]
     mpset["model"]["chq"]["L"] = c[r"L_0"]
     mpset["model"]["chq"]["V"] = c[r"V_0"]
     mpset["model"]["chq"]["rho"] = c[r"\rho_0"]
@@ -174,10 +175,10 @@ def test_noflow(scheme, nu_interp, postprocessor):
 
     # Names and directories
     basename = postprocessor.basename
-    label = "{}_{}".format(basename, nu_interp)
+    label = "{}_{}_Re_{}".format(basename, nu_interp, Re)
     outdir = postprocessor.outdir
 
-    for level in range(2, 4):
+    for level in range(1, 5):
         # Prepare domain and discretization
         mesh, boundary_markers, pinpoint = create_domain(level)
         DS, div_v = create_discretization(scheme, mesh,
@@ -266,6 +267,7 @@ def test_noflow(scheme, nu_interp, postprocessor):
             #level=level,
             r_dens=c[r"r_dens"],
             r_visc=c[r"r_visc"],
+            Re=Re,
             nu_interp=nu_interp
         )
         rs[r"$v_2$"] = make_cut(v.sub(1))
@@ -355,7 +357,7 @@ class Postprocessor(GenericBenchPostprocessor):
         # Problem parameters
         c[r"\rho_1"] = 1.0
         c[r"\rho_2"] = r_dens * c[r"\rho_1"]
-        c[r"\nu_1"] = 1.0e-4
+        c[r"\nu_1"] = 1.0
         c[r"\nu_2"] = r_visc * c[r"\nu_1"]
         c[r"\eps"] = 0.1
         c[r"g_a"] = 1.0
