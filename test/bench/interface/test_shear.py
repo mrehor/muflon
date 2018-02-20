@@ -95,7 +95,7 @@ def load_initial_conditions(DS, c):
     k = V_phi.ufl_element().degree()
 
     phi_expr = df.Expression("0.5*(1.0 - tanh((2.0*x[1] - 1.0) / eps))",
-                             degree=k+3, eps=c[r"\eps"])
+                             degree=k, eps=c[r"\eps"])
 
     _phi = df.Function(V_phi)
     _phi.interpolate(phi_expr)

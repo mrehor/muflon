@@ -135,7 +135,7 @@ def create_hydrostatic_pressure(mesh, cc):
 
 def create_fixed_vfract(mesh, c, k=1):
     phi_expr = df.Expression("0.5*(1.0 - tanh((2.0*x[1] - 1.0) / eps))",
-                             degree=k+3, eps=c[r"\eps"])
+                             degree=k, eps=c[r"\eps"])
 
     V_phi = df.FunctionSpace(mesh, "CG", k)
 

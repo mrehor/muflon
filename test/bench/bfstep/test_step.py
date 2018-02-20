@@ -520,7 +520,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.set_xscale('log')
         ax2.set_xscale('log')
         ax2.set_yscale('log')
-        ax1.set_xlabel("# DOFs")
+        ax1.set_xlabel("number of DOF")
         ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("# GMRES iterations {}".format(tail))
         ax2.set_ylabel("CPU time {}".format(tail))
