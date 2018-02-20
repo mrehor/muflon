@@ -474,7 +474,7 @@ class Model(object):
 
         return interpolant
 
-    def density(self, rho_mat, phi):
+    def density(self, rho_mat, phi, itype=None, trunc=None):
         """
         From given material densities builds interpolated (total) density and
         returns the result.
@@ -486,11 +486,13 @@ class Model(object):
         :returns: total density
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
-        trunc = self.parameters["cut"]["density"]
-        itype = self.parameters["rho"]["itype"]
+        if trunc is None:
+            trunc = self.parameters["cut"]["density"]
+        if itype is None:
+            itype = self.parameters["rho"]["itype"]
         return self._interpolated_quantity(rho_mat, phi, itype, trunc)
 
-    def viscosity(self, nu_mat, phi):
+    def viscosity(self, nu_mat, phi, itype=None, trunc=None):
         """
         From given dynamic viscosities builds interpolated (averaged) viscosity
         and returns the result.
@@ -502,8 +504,10 @@ class Model(object):
         :returns: averaged viscosity
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
-        trunc = self.parameters["cut"]["viscosity"]
-        itype = self.parameters["nu"]["itype"]
+        if trunc is None:
+            trunc = self.parameters["cut"]["viscosity"]
+        if itype is None:
+            itype = self.parameters["nu"]["itype"]
         return self._interpolated_quantity(nu_mat, phi, itype, trunc)
 
     def mobility(self, M0, phi, phi0, m, beta):
@@ -941,13 +945,15 @@ class Incompressible(Model):
 
         # Density and viscosity
         rho_mat = self.collect_material_params("rho")
+        irho_mat = [1.0/rm for rm in rho_mat]
         cc["rho"] = rho = self.density(rho_mat, phi)
         cc["rho0"] = rho0 = self.density(rho_mat, phi0)
+        irho0 = self.density(irho_mat, phi0, itype="lin", trunc=True)
         nu_mat = self.collect_material_params("nu")
         cc["nu"] = nu = self.viscosity(nu_mat, phi)
 
         # Explicit convective velocity
-        v_star = v0 + self._dt*f_cap/rho0
+        v_star = v0 + self._dt*f_cap*irho0
 
         # Mobility
         cc["Mo"] = Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])
