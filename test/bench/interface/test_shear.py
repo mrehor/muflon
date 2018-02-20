@@ -137,9 +137,9 @@ def create_discretization(scheme, mesh, k=1, augmentedTH=False,
     return DS, div_v
 
 
-def create_domain(level):
+def create_domain(level, diagonal="right"):
     N = 2**level * 11
-    mesh = df.UnitSquareMesh(N, N)
+    mesh = df.UnitSquareMesh(N, N, diagonal)
 
     class Top(df.SubDomain):
         def inside(self, x, on_boundary):
@@ -168,7 +168,16 @@ def create_domain(level):
         def inside(self, x, on_boundary):
             return df.near(x[0], 0.0) and df.near(x[1], 1.0)
 
-    return mesh, boundary_markers, Pinpoint()
+    class PeriodicBoundary(df.SubDomain):
+        # Left boundary is "target domain" G
+        def inside(self, x, on_boundary):
+            return bool(on_boundary and (df.near(x[0], 0.0)))
+        # Map right boundary (H) to left boundary (G)
+        def map(self, x, y):
+            y[0] = x[0] - 1.0
+            y[1] = x[1]
+
+    return mesh, boundary_markers, Pinpoint(), PeriodicBoundary()
 
 
 def wrap_coeffs_as_constants(c):
@@ -261,7 +270,8 @@ def test_shear(scheme, nu_interp, postprocessor):
 
     for level in range(2, 3):
         # Prepare domain and discretization
-        mesh, boundary_markers, pinpoint = create_domain(level)
+        mesh, boundary_markers, pinpoint, periodic_bnd = create_domain(level, "crossed")
+        del periodic_bnd
         DS, div_v = create_discretization(scheme, mesh,
                                           div_projection=True)
         DS.parameters["PTL"] = 1
@@ -339,6 +349,16 @@ def test_shear(scheme, nu_interp, postprocessor):
         v = pv["v"].dolfin_repr()
         p = pv["p"].dolfin_repr()
         phi = pv["phi"].split()[0]
+
+        w_diff = DS.solution_ctl()[0].copy(True)
+        w0 = DS.solution_ptl(0)[0]
+        w_diff.vector().axpy(-1.0, w0.vector())
+        phi_diff = w_diff.split(True)[0]
+        phi_diff.rename("phi_diff", "phi_tstep_difference")
+        xdmfdir = \
+          os.path.join(outdir, TS.parameters["xdmf"]["folder"], "phi_diff.xdmf")
+        with df.XDMFFile(xdmfdir) as file:
+            file.write(phi_diff, 0.0)
 
         D_12 = df.project(0.5 * v.sub(0).dx(1), div_v.function_space())
 

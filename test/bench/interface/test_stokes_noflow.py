@@ -82,14 +82,15 @@ def create_forms(W, rho, nu, g_a, boundary_markers, gamma=0.0):
     return a, L
 
 
-def create_bcs(W, boundary_markers, pinpoint=None):
+def create_bcs(W, boundary_markers, periodic_boundary=None, pinpoint=None):
     bcs = []
     zero, vec_zero = df.Constant(0.0), df.Constant((0.0, 0.0))
 
     bcs.append(df.DirichletBC(W.sub(0), vec_zero, boundary_markers, 1))
     bcs.append(df.DirichletBC(W.sub(0), vec_zero, boundary_markers, 3))
-    bcs.append(df.DirichletBC(W.sub(0).sub(0), zero, boundary_markers, 2))
-    bcs.append(df.DirichletBC(W.sub(0).sub(0), zero, boundary_markers, 4))
+    if periodic_boundary is None:
+        bcs.append(df.DirichletBC(W.sub(0).sub(0), zero, boundary_markers, 2))
+        bcs.append(df.DirichletBC(W.sub(0).sub(0), zero, boundary_markers, 4))
 
     if pinpoint is not None:
         bcs.append(df.DirichletBC(W.sub(1), zero, pinpoint, method="pointwise"))
@@ -125,9 +126,11 @@ def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
     nu = eval("nu_" + nu_interp) # choose viscosity interpolation
 
     for level in range(1, 5):
-        mesh, boundary_markers, pinpoint = create_domain(level)
-        W = create_mixed_space(mesh)
-        bcs = create_bcs(W, boundary_markers, pinpoint)
+        mesh, boundary_markers, pinpoint, periodic_bnd = create_domain(level)
+        W = create_mixed_space(mesh, periodic_boundary=periodic_bnd)
+        bcs = create_bcs(W, boundary_markers,
+                         periodic_boundary=periodic_bnd,
+                         pinpoint=pinpoint)
 
         phi = create_fixed_vfract(mesh, c)
 

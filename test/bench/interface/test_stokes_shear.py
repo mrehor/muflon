@@ -157,7 +157,7 @@ def create_bcs(W, boundary_markers, pinpoint=None):
     return bcs
 
 
-def create_mixed_space(mesh, k=1, augmentedTH=False):
+def create_mixed_space(mesh, k=1, augmentedTH=False, periodic_boundary=None):
     Pk = df.FiniteElement("CG", mesh.ufl_cell(), k)
     Pk1 = df.FiniteElement("CG", mesh.ufl_cell(), k+1)
 
@@ -170,14 +170,15 @@ def create_mixed_space(mesh, k=1, augmentedTH=False):
         assert k >= gdim - 1 # see Boffi et al. (2011, Eq. (3.1))
         FE_p = df.EnrichedElement(Pk, P0)
 
-    W = df.FunctionSpace(mesh, df.MixedElement([FE_v, FE_p]))
+    W = df.FunctionSpace(mesh, df.MixedElement([FE_v, FE_p]),
+                         constrained_domain=periodic_boundary)
 
     return W
 
 
-def create_domain(level):
+def create_domain(level, diagonal="right"):
     N = 2**level * 11
-    mesh = df.UnitSquareMesh(N, N)
+    mesh = df.UnitSquareMesh(N, N, diagonal)
 
     class Top(df.SubDomain):
         def inside(self, x, on_boundary):
@@ -206,7 +207,16 @@ def create_domain(level):
         def inside(self, x, on_boundary):
             return df.near(x[0], 0.0) and df.near(x[1], 1.0)
 
-    return mesh, boundary_markers, Pinpoint()
+    class PeriodicBoundary(df.SubDomain):
+        # Left boundary is "target domain" G
+        def inside(self, x, on_boundary):
+            return bool(on_boundary and (df.near(x[0], 0.0)))
+        # Map right boundary (H) to left boundary (G)
+        def map(self, x, y):
+            y[0] = x[0] - 1.0
+            y[1] = x[1]
+
+    return mesh, boundary_markers, Pinpoint(), PeriodicBoundary()
 
 
 def wrap_coeffs_as_constants(c):
@@ -231,7 +241,8 @@ def test_stokes_shear(nu_interp, postprocessor):
     nu = eval("nu_" + nu_interp) # choose viscosity interpolation
 
     for level in range(2, 3):
-        mesh, boundary_markers, pinpoint = create_domain(level)
+        mesh, boundary_markers, pinpoint, periodic_bnd = create_domain(level, "crossed")
+        del periodic_bnd
         W = create_mixed_space(mesh)
         bcs = create_bcs(W, boundary_markers, pinpoint)
 
@@ -316,7 +327,7 @@ def test_stokes_shear(nu_interp, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     r_dens = 1.0e-0
-    r_visc = 1.0e-3
+    r_visc = 1.0e-4
     rank = df.MPI.rank(df.mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
@@ -460,7 +471,7 @@ class Postprocessor(GenericBenchPostprocessor):
         axes[0].set_xlim(0.0, 1.0, auto=False)
         axes[0].set_ylim(-0.1, 1.1, auto=False)
         #axes[1].set_yscale("log")
-        axes[3].set_yscale("log")
+        #axes[3].set_yscale("log")
         axes[4].set_yscale("log")
         axes[5].set_ylim(0.999, 1.001, auto=False)
 

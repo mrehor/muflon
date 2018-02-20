@@ -68,7 +68,7 @@ from test_shear import wrap_coeffs_as_constants
 from test_shear import load_initial_conditions
 
 
-def create_bcs(DS, boundary_markers, pinpoint=None):
+def create_bcs(DS, boundary_markers, periodic_boundary=None, pinpoint=None):
     bcs = {"v": []}
     zero = df.Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
 
@@ -79,10 +79,11 @@ def create_bcs(DS, boundary_markers, pinpoint=None):
     bcs["v"].append((bcs_nslip1_v1, bcs_nslip1_v2))
     bcs["v"].append((bcs_nslip2_v1, bcs_nslip2_v2))
 
-    bcs_fix_v2_rhs = df.DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 2)
-    bcs_fix_v2_lhs = df.DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 4)
-    bcs["v"].append((None, bcs_fix_v2_rhs))
-    bcs["v"].append((None, bcs_fix_v2_lhs))
+    if periodic_boundary is None:
+        bcs_fix_v2_rhs = df.DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 2)
+        bcs_fix_v2_lhs = df.DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 4)
+        bcs["v"].append((None, bcs_fix_v2_rhs))
+        bcs["v"].append((None, bcs_fix_v2_lhs))
 
     if pinpoint is not None:
         bcs["p"] = [df.DirichletBC(DS.subspace("p"), zero,
@@ -181,15 +182,18 @@ def test_noflow(scheme, gamma, Re, nu_interp, postprocessor):
 
     for level in range(1, 5):
         # Prepare domain and discretization
-        mesh, boundary_markers, pinpoint = create_domain(level)
+        mesh, boundary_markers, pinpoint, periodic_bnd = create_domain(level)
         DS, div_v = create_discretization(scheme, mesh,
+                                          periodic_boundary=periodic_bnd,
                                           div_projection=True)
         DS.parameters["PTL"] = 1
         DS.setup()
 
         # Prepare initial and boundary conditions
         load_initial_conditions(DS, c)
-        bcs = create_bcs(DS, boundary_markers, pinpoint) # for Dirichlet
+        bcs = create_bcs(DS, boundary_markers,
+                         periodic_boundary=periodic_bnd,
+                         pinpoint=pinpoint)
 
         # Force applied on the top plate
         B = 0.0 if dt == 0.0 else 1.0
@@ -251,6 +255,16 @@ def test_noflow(scheme, gamma, Re, nu_interp, postprocessor):
         v = pv["v"].dolfin_repr()
         p = pv["p"].dolfin_repr()
         phi = pv["phi"].split()[0]
+
+        w_diff = DS.solution_ctl()[0].copy(True)
+        w0 = DS.solution_ptl(0)[0]
+        w_diff.vector().axpy(-1.0, w0.vector())
+        phi_diff = w_diff.split(True)[0]
+        phi_diff.rename("phi_diff", "phi_tstep_difference")
+        xdmfdir = \
+          os.path.join(outdir, TS.parameters["xdmf"]["folder"], "phi_diff.xdmf")
+        with df.XDMFFile(xdmfdir) as file:
+            file.write(phi_diff, 0.0)
 
         D_22 = df.project(v.sub(1).dx(1), div_v.function_space())
 
