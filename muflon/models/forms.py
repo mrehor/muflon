@@ -185,7 +185,7 @@ class Model(object):
         """
         self._dt.assign(Constant(dt))
 
-    def update_TD_factors(self, OTD):
+    def update_TD_factors(self, OTD, dt=None):
         """
         Update time discretization factors according to required order of
         accuracy.
@@ -195,7 +195,7 @@ class Model(object):
             msg = "Cannot update factors since forms have not been created yet"
             raise RuntimeError(msg)
         if hasattr(self, "_factors_" + scheme):
-            return getattr(self, "_factors_" + scheme)(OTD)
+            return getattr(self, "_factors_" + scheme)(OTD, dt)
         else:
             msg  = "Cannot update factors for '%s' scheme." % scheme
             msg += " Reason: Method '%s' of class '%s' is not implemented" \
@@ -649,7 +649,7 @@ class Incompressible(Model):
 
 # --- Monolithic forms for Incompressible model -------------------------------
 
-    def _factors_Monolithic(self, OTD):
+    def _factors_Monolithic(self, OTD, dt=None):
         """
         Set factors according to chosen order of time discretization OTD.
         """
@@ -828,26 +828,30 @@ class Incompressible(Model):
 
 # --- SemiDecoupled forms for Incompressible model ----------------------------
 
-    def _factors_SemiDecoupled(self, OTD):
-        if OTD == 1:
+    def _factors_SemiDecoupled(self, OTD, dt=None):
+        if dt == 0.0:
+            assert OTD == 1
             self.coeffs["TD_theta"].assign(Constant(1.0))
-            self.coeffs["TD_dF_auto"].assign(Constant(0.0))
+            self.coeffs["TD_dF_auto"].assign(Constant(1.0))
             self.coeffs["TD_dF_full"].assign(Constant(0.0))
-            self.coeffs["TD_dF_semi"].assign(Constant(1.0))
-        elif OTD == 2:
-            self.coeffs["TD_theta"].assign(Constant(0.5))
-            # FIXME: Boyer and Minjeaud (2010) proved the convergence result
-            #        assuming TD_theta > 0.5 (for CH part only)
-            self.coeffs["TD_dF_auto"].assign(Constant(0.0))
-            self.coeffs["TD_dF_full"].assign(Constant(0.0))
-            self.coeffs["TD_dF_semi"].assign(Constant(1.0))
-            # from dolfin import warning
-            # warning("Time discretization of order %g for '%s'"
-            #        " scheme does not work properly" % (OTD, self._DS.name()))
+            self.coeffs["TD_dF_semi"].assign(Constant(0.0))
         else:
-            msg = "Time discretization of order %g for '%s'" \
-                  " scheme is not implemented" % (OTD, self._DS.name())
-            raise NotImplementedError(msg)
+            if OTD == 1:
+                self.coeffs["TD_theta"].assign(Constant(1.0))
+                self.coeffs["TD_dF_auto"].assign(Constant(0.0))
+                self.coeffs["TD_dF_full"].assign(Constant(0.0))
+                self.coeffs["TD_dF_semi"].assign(Constant(1.0))
+            elif OTD == 2:
+                self.coeffs["TD_theta"].assign(Constant(0.5))
+                # FIXME: Boyer and Minjeaud (2010) proved the convergence
+                #        result assuming TD_theta > 0.5 (for CH part only)
+                self.coeffs["TD_dF_auto"].assign(Constant(0.0))
+                self.coeffs["TD_dF_full"].assign(Constant(0.0))
+                self.coeffs["TD_dF_semi"].assign(Constant(1.0))
+            else:
+                msg = "Time discretization of order %g for '%s'" \
+                      " scheme is not implemented" % (OTD, self._DS.name())
+                raise NotImplementedError(msg)
 
     def forms_SemiDecoupled(self, matching_p=False):
         """
@@ -1038,7 +1042,7 @@ class Incompressible(Model):
 
 # --- FullyDecoupled forms for Incompressible model  --------------------------
 
-    def _factors_FullyDecoupled(self, OTD):
+    def _factors_FullyDecoupled(self, OTD, dt=None):
         if OTD == 1:
             self.coeffs["TD_gamma0"].assign(Constant(1.0))
             self.coeffs["TD_star0"].assign(Constant(1.0))

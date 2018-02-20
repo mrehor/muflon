@@ -274,8 +274,7 @@ class ConstantTimeStep(TimeStepping):
         sol_ptl = model.discretization_scheme().solution_ptl()
 
         t = t_beg
-        if OTD != 1:
-            model.update_TD_factors(OTD)
+        model.update_TD_factors(OTD, dt)
         model.update_time_step_value(dt)
         solver.setup()
         while t < t_end and not near(t, t_end, 0.1*dt):
@@ -302,15 +301,17 @@ class ConstantTimeStep(TimeStepping):
                     self._xdmf_writer.write(t)
 
             # Update variables at previous time levels
-            L = len(sol_ptl)
-            for k in reversed(range(1, L)): # k goes from L-1 to 1
-                for (i, w) in enumerate(sol_ptl[k-1]):
-                    sol_ptl[k][i].assign(w) # t^(n-k) <-- t^(n-k+1)
-            for (i, w) in enumerate(solver.solution_ctl()):
-                sol_ptl[0][i].assign(w) # t^(n-0) <-- t^(n+1)
-
-            if dt == 0.0: # NOTE: 'dt = 0' indicates that a stationary problem
-                break     #       is being solved
+            if dt > 0:
+                L = len(sol_ptl)
+                for k in reversed(range(1, L)): # k goes from L-1 to 1
+                    for (i, w) in enumerate(sol_ptl[k-1]):
+                        sol_ptl[k][i].assign(w) # t^(n-k) <-- t^(n-k+1)
+                for (i, w) in enumerate(solver.solution_ctl()):
+                    sol_ptl[0][i].assign(w) # t^(n-0) <-- t^(n+1)
+            else:
+                # NOTE:
+                #   dt = 0 indicates that a stationary problem is being solved
+                break
 
         # Flush output from logger
         self._logger.dump_to_file()
