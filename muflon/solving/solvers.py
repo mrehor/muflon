@@ -434,6 +434,11 @@ class SemiDecoupled(Solver):
             # Symmetric assembly of the preconditioner
             P = PETScMatrix(self.comm())
             pcd_assembler.pc_matrix(P)
+            # FIXME: Should we attach the null space also to preconditioner?
+            # if P.empty():
+            #     P = A
+            # else:
+            #     as_backend_type(P).set_nullspace(self.data["null_space"])
             P = A if P.empty() else P
             # Standard assembly of the preconditioner matrix
             # if self.data["forms"]["pcd"]["a_pc"] is not None:

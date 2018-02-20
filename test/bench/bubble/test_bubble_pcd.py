@@ -200,8 +200,14 @@ def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
     if ls == "iterative":
         PETScOptions.set(prefix+"fieldsplit_u_ksp_type", "richardson")
         PETScOptions.set(prefix+"fieldsplit_u_ksp_max_it", 1)
-        PETScOptions.set(prefix+"fieldsplit_u_pc_type", "gamg") # "hypre"
+        PETScOptions.set(prefix+"fieldsplit_u_pc_type", "hypre") # "gamg"
         PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_type", "boomeramg")
+        # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_P_max", 4)
+        # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_agg_nl", 1)
+        # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_agg_num_paths", 2)
+        # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_coarsen_type", "HMIS")
+        # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_interp_type", "ext+i")
+        # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_no_CF")
 
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_type", "richardson")
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_max_it", 1)
@@ -277,7 +283,7 @@ def prepare_hook(DS, functionals, modulo_factor):
     return TailoredHook(mesh=mesh, phi=phi, v=v, p=p,
                             functionals=functionals, mod=modulo_factor)
 
-@pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
+@pytest.mark.parametrize("case", [2,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("pcd_variant", ["BRM1",]) # "BRM2"
 @pytest.mark.parametrize("ls", ["iterative",]) # "direct"
@@ -307,7 +313,7 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
     basename = postprocessor.basename
     outdir = postprocessor.outdir
 
-    for level in range(2): # CHANGE #1: set " level in range(4)"
+    for level in range(1, 2): # CHANGE #1: set " level in range(4)"
         dividing_factor = 0.5**level
         modulo_factor = 1 if level == 0 else 2**(level-1)*1
         eps = dividing_factor*0.04
@@ -337,12 +343,16 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
             #model.parameters["THETA2"] = 0.0
-            model.parameters["cut"]["density"] = True
+            #model.parameters["cut"]["density"] = True
+            model.parameters["rho"]["itype"] = "clamp"
             model.parameters["cut"]["viscosity"] = True
+            model.parameters["nu"]["itype"] = "har"
             #model.parameters["cut"]["mobility"] = True
             #model.parameters["mobility"]["beta"] = 0.5
             #model.parameters["mobility"]["m"] = 0
             #model.parameters["mobility"]["M0"] *= 1e-2
+            #model.parameters["semi"]["gdstab"] = 1.0e+4
+            #model.parameters["semi"]["sdstab"] = True
 
             # Prepare external source term
             f_src = Constant((0.0, -0.98), cell=mesh.ufl_cell(), name="f_src")
@@ -350,6 +360,12 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
 
             # Create forms
             forms = model.create_forms(matching_p)
+            if ls == "direct":
+                forms["pcd"]["a_pc"] = None
+            elif ls == "iterative":
+                model.parameters["semi"]["sdstab"] = True
+            else:
+                assert False
 
             # Prepare solver
             comm = mesh.mpi_comm()
@@ -362,9 +378,9 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
             # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
             # PETScOptions.set(prefix_ch+"ksp_monitor_true_residual")
             # solver.data["solver"]["CH"]["lin"].set_from_options()
-            # prefix_ns = solver.data["solver"]["NS"].get_options_prefix()
-            # PETScOptions.set(prefix_ns+"ksp_monitor")
-            # solver.data["solver"]["NS"].set_from_options()
+            prefix_ns = solver.data["solver"]["NS"].get_options_prefix()
+            PETScOptions.set(prefix_ns+"ksp_monitor")
+            solver.data["solver"]["NS"].set_from_options()
 
             # Prepare time-stepping algorithm
             pv = DS.primitive_vars_ctl()
