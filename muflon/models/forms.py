@@ -1063,9 +1063,10 @@ class Incompressible(Model):
     def _update_sd_stab_parameter(self):
         cc = self.coeffs
         info("Updating SD stabilization parameter...")
-        # FIXME: Perhaps use manual projection.
-        project(cc["sdstab"]["ufl"], function=cc["sdstab"]["fcn"],
-                solver_type='cg', preconditioner_type='icc')
+        # FIXME: Use manual projection with stashed vectors!
+        cc["sdstab"]["fcn"].assign(
+            project(cc["sdstab"]["ufl"], cc["sdstab"]["fcn"].function_space(),
+                    solver_type='cg', preconditioner_type='icc'))
 
     # TODO: Think about grad-div stabilization parameter defined element-wise.
     #  e.g. (Jenkins, John, Linke, Rebholz) On the parameter
