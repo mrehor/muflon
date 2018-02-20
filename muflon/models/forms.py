@@ -27,7 +27,7 @@ import numpy as np
 
 from collections import OrderedDict
 
-from dolfin import Parameters
+from dolfin import Parameters, info
 from dolfin import Constant, Function, Measure, assemble
 from dolfin import as_matrix, as_vector, variable
 from dolfin import conditional, lt, gt, eq, Or, Min, Max, sin, pi
@@ -104,7 +104,8 @@ class Model(object):
 
         # Spec. parameters for SemiDecoupled scheme
         nested_prm = Parameters("semi")
-        nested_prm.add("gdstab", 0.0) # grad-div stabilization
+        nested_prm.add("gdstab", 0.0)   # grad-div stabilization parameter
+        nested_prm.add("sdstab", False) # turn on/off SD stabilization in PCD
         prm.add(nested_prm)
 
         # Spec. parameters for FullyDecoupled scheme
@@ -992,14 +993,6 @@ class Incompressible(Model):
             + rho*inner(f_src, test["v"])
         )*dx
 
-        # Grad-div stabilization
-        a_00 += cc["gdstab"]*div(trial["v"])*div(test["v"])*dx
-
-        system_ns = {
-            "lhs" : a_00 + a_01 + a_10,
-            "rhs" : L
-        }
-
         # Preconditioner for 00-block
         a_00_approx = (
               idt*0.5*(rho + rho0)*inner(trial["v"], test["v"]) # --> idt*M
@@ -1007,12 +1000,16 @@ class Incompressible(Model):
             + nu*inner(grad(trial["v"]), grad(test["v"]))       # --> A
         )*dx
 
-        # Grad-div stabilization
-        a_00_approx += cc["gdstab"]*div(trial["v"])*div(test["v"])*dx
-
-        delta = self.sd_stab_parameter(self._DS.mesh(), wind, nu)
+        # Streamline-diffusion stabilization
+        cc["sdstab"] = self.sd_stab_parameter(self._DS.mesh(), wind, nu)
         a_00_stab = \
-          delta*inner(dot(grad(trial["v"]), wind), dot(grad(test["v"]), wind))*dx
+          cc["sdstab"]["fcn"]*inner(dot(grad(trial["v"]), wind), dot(grad(test["v"]), wind))*dx
+
+        # Grad-div stabilization
+        # FIXME: This kind of stabilization does not work properly with PCD
+        #        when inverting the 00-block using AMG
+        a_00 += cc["gdstab"]*div(trial["v"])*div(test["v"])*dx
+        a_00_approx += cc["gdstab"]*div(trial["v"])*div(test["v"])*dx
 
         # Create PCD operators
         # TODO: Add to docstring
@@ -1029,6 +1026,11 @@ class Incompressible(Model):
             "gp": a_01                                              # --> B^T
         }
 
+        system_ns = {
+            "lhs" : a_00 + a_01 + a_10,
+            "rhs" : L
+        }
+
         return dict(nln=system_ch, lin=system_ns, pcd=pcd_operators)
 
     @staticmethod
@@ -1040,18 +1042,46 @@ class Incompressible(Model):
         DG0_elem = FiniteElement("DG", mesh.ufl_cell(), 0)
         DG0 = FunctionSpace(mesh, DG0_elem)
 
-        h = CellDiameter(mesh)
+        delta = Function(DG0)
+        delta.rename("sd_stab", "sd_stab_parameter")
 
+        h = CellDiameter(mesh)
         wind_norm = sqrt(dot(wind, wind))
         PE = wind_norm*h/(2.0*nu)
+        delta_ufl = conditional(gt(PE, 1.0),
+                                h/(2.0*wind_norm)*(1.0 - 1.0/PE),
+                                0.0)
 
-        delta = conditional(gt(PE, 1.0),
-                            h/(2.0*wind_norm)*(1.0 - 1.0/PE),
-                            0.0)
+        return {"fcn": delta, "ufl": delta_ufl}
 
-        delta = project(delta, DG0)
-        delta.rename("delta", "sd_stab_parameter")
-        return delta
+    def _update_sd_stab_parameter(self):
+        cc = self.coeffs
+        info("Updating SD stabilization parameter...")
+        # FIXME: Perhaps use manual projection.
+        project(cc["sdstab"]["ufl"], function=cc["sdstab"]["fcn"],
+                solver_type='cg', preconditioner_type='icc')
+
+    # TODO: Think about grad-div stabilization parameter defined element-wise.
+    #  e.g. (Jenkins, John, Linke, Rebholz) On the parameter
+    #         choice in grad-div stabilization for the Stokes equations.
+    #
+    # @staticmethod
+    # def gd_stab_parameter(p, v, nu):
+    #     DG0_elem = FiniteElement("DG", mesh.ufl_cell(), 0)
+    #     DG0 = FunctionSpace(mesh, DG0_elem)
+    #
+    #     gamma = Function(DG0)
+    #     gamma.rename("gd_stab", "gd_stab_parameter")
+    #
+    #     G = sqrt(inner(grad(p), grad(p))/inner(grad(grad(v)), grad(grad(v)))) - nu
+    #     gamma = conditional(gt(G, 0.0), G, 0.0)
+    #     return gamma
+    #
+    # def _update_gd_stab_parameter(self):
+    #     cc = self.coeffs
+    #     info("Updating grad-div stabilization parameter...")
+    #     cc["gdstab"]["fcn"].assign(
+    #         project(cc["gdstab"]["ufl"], cc["gdstab"]["fcn"].function_space()))
 
 # --- FullyDecoupled forms for Incompressible model  --------------------------
 

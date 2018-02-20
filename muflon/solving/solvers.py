@@ -407,8 +407,11 @@ class SemiDecoupled(Solver):
         end()
 
         begin("Navier-Stokes step")
-        pcd_assembler = self.data.get("pcd_assembler", None)
+        # Update stabilization terms
+        if self.data["model"].parameters["semi"]["sdstab"]:
+            self.data["model"]._update_sd_stab_parameter()
 
+        pcd_assembler = self.data.get("pcd_assembler", None)
         if pcd_assembler:
             # Symmetric assembly of the linear system
             A, b = PETScMatrix(self.comm()), PETScVector(self.comm())
