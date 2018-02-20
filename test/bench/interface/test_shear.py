@@ -234,7 +234,8 @@ def prepare_hook(model, applied_force, functionals, modulo_factor, div_v=None):
                         div_v=div_v, functionals=functionals, mod=modulo_factor)
 
 
-@pytest.mark.parametrize("nu_interp", ["har", "lin"]) # "log", "sin", "odd"
+#@pytest.mark.parametrize("nu_interp", ["har", "sharp", "lin", "log", "sin", "odd"])
+@pytest.mark.parametrize("nu_interp", ["har", "sharp"])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled",])
 def test_shear(scheme, nu_interp, postprocessor):
     #set_log_level(WARNING)

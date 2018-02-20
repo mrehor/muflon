@@ -30,7 +30,7 @@ from collections import OrderedDict
 from dolfin import Parameters
 from dolfin import Constant, Function, Measure, assemble
 from dolfin import as_matrix, as_vector, variable
-from dolfin import conditional, lt, gt, Min, Max, sin, pi
+from dolfin import conditional, lt, gt, eq, Or, Min, Max, sin, pi
 from dolfin import dot, inner, outer, dx, ds, sym
 from dolfin import derivative, diff, div, grad, curl, sqrt
 from dolfin import CellDiameter, FiniteElement, FunctionSpace, project
@@ -373,6 +373,7 @@ class Model(object):
         """
         # FIXME: Take care of Dirac deltas when trunc is True and automated
         #        differentiation is used to get Jacobian in Newton solver.
+        # FIXME: too many opts, consider removing "log", "sin", "odd"
         N = len(q)
         min_idx = q.index(min(q)) # index of minimal value
         max_idx = q.index(max(q)) # index of maximal value
@@ -405,6 +406,18 @@ class Model(object):
                 _phi = phi
             denominator = inner(iq_diff, _phi) + iq[-1]
             interpolant = 1.0 / denominator
+        elif itype == "sharp":
+            q = [Constant(q_i, cell=cell) for q_i in q]
+            q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
+
+            def _clamp_value(z):
+                A = conditional(lt(z, 0.5), 1.0, 0.0)
+                B = conditional(Or(gt(z, 0.5), eq(z, 0.5)), 1.0, 0.0)
+                return B + (1.0 - A - B)*z
+
+            I_phi = as_vector([_clamp_value(phi[i])
+                                   for i in range(len(phi))])
+            interpolant = inner(q_diff, I_phi) + q[-1]
         elif itype == "log":
             # NOTE:
             #   This interpolation is only experimental. It is asymmetric so

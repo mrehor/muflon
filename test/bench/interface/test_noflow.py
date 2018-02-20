@@ -208,7 +208,8 @@ def test_noflow(scheme, gamma, Re, nu_interp, postprocessor):
         model.parameters["cut"]["viscosity"] = True
         #model.parameters["cut"]["mobility"] = True
         model.parameters["nu"]["itype"] = nu_interp
-        #model.parameters["rho"]["itype"] = "lin"
+        model.parameters["rho"]["itype"] = "lin"
+        #model.parameters["rho"]["itype"] = "sharp"
         model.parameters["semi"]["gdstab"] = gamma
 
         # Prepare external source term
