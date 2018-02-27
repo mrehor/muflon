@@ -42,7 +42,8 @@ from muflon.common.timer import Timer
 from test_mms_Ia import (
     create_manufactured_solution, create_initial_conditions,
     create_domain, create_discretization, create_exact_solution, create_bcs,
-    create_source_terms, create_source_terms, prepare_hook
+    create_source_terms, create_source_terms, prepare_hook,
+    create_ch_solver, create_pcd_solver
 )
 
 parameters["form_compiler"]["representation"] = "uflacs"
@@ -50,12 +51,16 @@ parameters["form_compiler"]["optimize"] = True
 #parameters["form_compiler"]["quadrature_degree"] = 4
 
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"]) # "Monolithic"
-def test_scaling_time(scheme, matching_p, postprocessor):
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"])
+@pytest.mark.parametrize("method", ["lu", "it"])
+@pytest.mark.xfail(reason="iterative solvers not implemented for fully-decoupled scheme",
+                   strict=True, raises=AssertionError)
+def test_scaling_time(method, scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
     gradually decreasing time step.
     """
+    assert not (scheme == "FullyDecoupled" and method == "it")
     set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm
@@ -66,10 +71,10 @@ def test_scaling_time(scheme, matching_p, postprocessor):
     mpset.read(prm_file)
 
     # Fixed parameters
-    OTD = postprocessor.OTD
     level = postprocessor.level
     k = postprocessor.OPA
     t_end = postprocessor.t_end
+    OTD = 1 if scheme == "SemiDecoupled" else 2
 
     # Names and directories
     basename = postprocessor.basename
@@ -85,7 +90,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
     DS.parameters["PTL"] = OTD
     DS.setup()
     esol = create_exact_solution(msol, DS.finite_elements(), degrise)
-    bcs = create_bcs(DS, boundary_markers, esol)
+    bcs = create_bcs(DS, boundary_markers, esol, method)
 
     # Iterate over time step
     for m in range(5): # CHANGE #1: set "m in range(7)"
@@ -116,10 +121,22 @@ def test_scaling_time(scheme, matching_p, postprocessor):
             forms = model.create_forms(matching_p)
 
             # Prepare solver
-            solver = SolverFactory.create(model, forms, fix_p=False)
+            comm = mesh.mpi_comm()
+            fix_p = True if method == "it" else False
+            solver = SolverFactory.create(model, forms, fix_p)
+            if method == "it":
+                solver.data["solver"]["CH"]["lin"] = \
+                  create_ch_solver(comm)
+                solver.data["solver"]["NS"] = \
+                  create_pcd_solver(comm, "BRM1", "direct")
+                # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
+                # PETScOptions.set(prefix_ch+"ksp_monitor_true_residual")
+                # solver.data["solver"]["CH"]["lin"].set_from_options()
+                # prefix_ns = solver.data["solver"]["NS"].get_options_prefix()
+                # PETScOptions.set(prefix_ns+"ksp_monitor")
+                # solver.data["solver"]["NS"].set_from_options()
 
             # Prepare time-stepping algorithm
-            comm = mesh.mpi_comm()
             xfields = None
             # NOTE: Uncomment the following block of code to get XDMF output
             # pv = DS.primitive_vars_ctl()
@@ -155,6 +172,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
         # Prepare results
         name = logfile[4:-4]
         result.update(
+            method=method,
             ndofs=DS.num_dofs(),
             scheme=scheme,
             dt=dt,
@@ -178,7 +196,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
         postprocessor.save_results(filename)
 
     # Pop results that we do not want to report at the moment
-    postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
+    postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it", "OTD"])
 
     # Flush plots as we now have data for all level values
     postprocessor.flush_plots()
@@ -195,18 +213,25 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 0.2 # CHANGE #2: set "t_end = 1.0"
-    level = 2   # CHANGE #3: set "level = 5" for direct solvers
-    OPA = 5     # CHANGE #4: set "OPA = 2" (Order of Polynomial Approximation)
-    OTD = 1     # CHANGE #5: set "OTD" to 1 or 2 according to chosen scheme
+    t_end = 1.0 # CHANGE #2: set "t_end = 1.0"
+    level = 5   # CHANGE #3: set "level = 5" for direct solvers
+    OPA = 2     # CHANGE #4: set "OPA = 2" (Order of Polynomial Approximation)
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(t_end, level, OTD, OPA, outdir)
+    proc = Postprocessor(t_end, level, OPA, outdir)
 
     # Decide what should be plotted
     proc.register_fixed_variables(
-        (("level", level), ("k", OPA), ("t_end", t_end), ("OTD", OTD)))
+        (("level", level), ("k", OPA), ("t_end", t_end)))
+    proc.register_fixed_variables((("level", level), ("k", OPA), ("t_end", t_end),
+                                   ("scheme", "SemiDecoupled")))
+    proc.register_fixed_variables((("level", level), ("k", OPA), ("t_end", t_end),
+                                   ("scheme", "FullyDecoupled")))
+    proc.register_fixed_variables((("level", level), ("k", OPA), ("t_end", t_end),
+                                   ("scheme", "SemiDecoupled"), ("method", "lu")))
+    proc.register_fixed_variables((("level", level), ("k", OPA), ("t_end", t_end),
+                                   ("scheme", "SemiDecoupled"), ("method", "it")))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -224,13 +249,12 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericBenchPostprocessor):
-    def __init__(self, t_end, level, OTD, OPA, outdir):
+    def __init__(self, t_end, level, OPA, outdir):
         super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
         self.t_end = t_end
         self.level = level
-        self.OTD = OTD
         self.OPA = OPA
 
         # So far hardcoded values
@@ -239,7 +263,7 @@ class Postprocessor(GenericBenchPostprocessor):
         self.y_var1 = "tmr_tstepping"
 
         # Store names
-        self.basename = "level_{}_k_{}_t_end_{}_OTD_{}".format(level, OPA, t_end, OTD)
+        self.basename = "level_{}_k_{}_t_end_{}".format(level, OPA, t_end)
 
     def flush_plots(self):
         if not self.plots:
@@ -271,12 +295,12 @@ class Postprocessor(GenericBenchPostprocessor):
                 xs = datapoints["xs"]
                 ys0 = datapoints["ys0"]
                 ys1 = datapoints["ys1"]
-                self._plot(fig, xs, ys0, ys1, free_vars, self.OTD, style)
+                self._plot(fig, xs, ys0, ys1, free_vars, style)
             self._save_plot(fig, fixed_vars, self.outdir)
         self.results = []
 
     @staticmethod
-    def _plot(fig, xs, ys0, ys1, free_vars, OTD, style):
+    def _plot(fig, xs, ys0, ys1, free_vars, style):
         (fig1, fig2), (ax1, ax2) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for (i, var) in enumerate(["phi1", "phi2", "phi3"]):
@@ -288,9 +312,11 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.plot(xs, [d["p"] for d in ys0], style, linewidth=0.5,
                  label=r"$L^2$-$p$")
 
-        if OTD == 1:
+        if style == '+--':
+            OTD = 1
             ref = list(map(lambda x: 1e+1*(0.8*ys0[0]["phi1"] + 0.2*ys0[0]["p"])*x, xs))
-        elif OTD == 2:
+        elif style == 'x--':
+            OTD = 2
             ref = list(map(lambda x: 1e+2*(0.8*ys0[0]["phi1"] + 0.2*ys0[0]["p"])*x**2, xs))
         ax1.plot(xs, ref, 'k-', linewidth=0.5, label="ref-"+str(OTD))
 

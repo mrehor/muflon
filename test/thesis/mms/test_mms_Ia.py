@@ -32,6 +32,8 @@ import itertools
 from dolfin import *
 from matplotlib import pyplot, gridspec
 
+from fenapack import PCDKrylovSolver
+
 from muflon import mpset
 from muflon import DiscretizationFactory, SimpleCppIC
 from muflon import ModelFactory
@@ -133,7 +135,7 @@ def create_initial_conditions(ms):
 
     return ic
 
-def create_bcs(DS, boundary_markers, esol):
+def create_bcs(DS, boundary_markers, esol, method):
     bcs_v1 = DirichletBC(DS.subspace("v", 0), esol["v1"], boundary_markers, 0)
     bcs_v2 = DirichletBC(DS.subspace("v", 1), esol["v2"], boundary_markers, 0)
     bcs = {}
@@ -142,8 +144,11 @@ def create_bcs(DS, boundary_markers, esol):
     # -- 1. Dirichlet on the whole boundary
     # bcs["p"] = [DirichletBC(DS.subspace("p"), esol["p"], boundary_markers, 0),]
     # -- 2. Dirichlet in the corner
-    corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=-1.0)
-    bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0), corner, method="pointwise"),]
+    if method == "lu":
+        corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=-1.0)
+        bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0), corner, method="pointwise"),]
+    else:
+        bcs["pcd"] = []
     return bcs
 
 def create_source_terms(t_src, mesh, model, msol, matching_p):
@@ -271,6 +276,73 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
 
     return f_src, g_src
 
+def create_ch_solver(comm):
+    prefix = "CH_"
+
+    # Set up linear solver (GMRES)
+    linear_solver = PETScKrylovSolver(comm)
+    linear_solver.set_options_prefix(prefix)
+    PETScOptions.set(prefix+"ksp_rtol", 1e-6)
+    PETScOptions.set(prefix+"ksp_type", "gmres")
+    PETScOptions.set(prefix+"ksp_gmres_restart", 150)
+    PETScOptions.set(prefix+"ksp_max_it", 1000)
+    #PETScOptions.set(prefix+"ksp_initial_guess_nonzero", True)
+    #PETScOptions.set(prefix+"ksp_pc_side", "right")
+    PETScOptions.set(prefix+"pc_type", "pbjacobi")
+    #PETScOptions.set(prefix+"pc_type", "bjacobi") # uses ilu for individual MPI blocks
+
+    # Apply options
+    linear_solver.set_from_options()
+
+    return linear_solver
+
+def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
+    prefix = ""
+
+    # Set up linear solver (GMRES with right preconditioning using Schur fact)
+    linear_solver = PCDKrylovSolver(comm=comm)
+    linear_solver.set_options_prefix(prefix)
+    linear_solver.parameters["relative_tolerance"] = 1e-6
+    PETScOptions.set(prefix+"ksp_gmres_restart", 150)
+
+    # Set up subsolvers
+    PETScOptions.set(prefix+"fieldsplit_p_pc_python_type", "fenapack.PCDRPC_" + pcd_variant)
+    if ls == "iterative":
+        PETScOptions.set(prefix+"fieldsplit_u_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_u_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_u_pc_type", "hypre")
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_type", "boomeramg")
+
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_type", "hypre")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_hypre_type", "boomeramg")
+
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_type", "hypre")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_hypre_type", "boomeramg")
+
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_type", "chebyshev")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_max_it", 5)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_chebyshev_eigenvalues", "0.5, 2.0")
+        # CHANGE #0: The above estimate is valid only for P1 pressure.
+        #            Increase upper bound for higher OPA!
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_pc_type", "jacobi")
+    elif ls == "direct":
+        # Debugging MUMPS
+        if mumps_debug:
+            PETScOptions.set(prefix+"fieldsplit_u_mat_mumps_icntl_4", 2)
+            PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_mat_mumps_icntl_4", 2)
+            PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_mat_mumps_icntl_4", 2)
+    else:
+        assert False
+
+    # Apply options
+    linear_solver.set_from_options()
+
+    return linear_solver
+
 def prepare_hook(t_src, model, esol, degrise, err):
 
     class TailoredHook(TSHook):
@@ -312,12 +384,16 @@ def prepare_hook(t_src, model, esol, degrise, err):
                         degrise=degrise, err=err)
 
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"]) # "Monolithic"
-def test_scaling_mesh(scheme, matching_p, postprocessor):
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"])
+@pytest.mark.parametrize("method", ["lu", "it"])
+@pytest.mark.xfail(reason="iterative solvers not implemented for fully-decoupled scheme",
+                   strict=True, raises=AssertionError)
+def test_scaling_mesh(method, scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed time step and gradually refined mesh or
     increasing element order.
     """
+    assert not (scheme == "FullyDecoupled" and method == "it")
     set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm
@@ -328,10 +404,10 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
     mpset.read(prm_file)
 
     # Fixed parameters
-    OTD = postprocessor.OTD
     dt = postprocessor.dt
     t_end = postprocessor.t_end
     test_type = postprocessor.test
+    OTD = 1 if scheme == "SemiDecoupled" else 2
 
     # Names and directories
     basename = postprocessor.basename
@@ -342,7 +418,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
-    for it in range(1, 6): # CHANGE #1: set "it in range(1, 8)"
+    for it in range(1, 8): # CHANGE #1: set "it in range(1, 8)"
         # Decide which test to perform
         if test_type == "ref":
             level = it
@@ -359,7 +435,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
             DS.setup()
             DS.load_ic_from_simple_cpp(ic)
             esol = create_exact_solution(msol, DS.finite_elements(), degrise)
-            bcs = create_bcs(DS, boundary_markers, esol)
+            bcs = create_bcs(DS, boundary_markers, esol, method)
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
@@ -388,10 +464,23 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
             #       boundary integrals.
 
             # Prepare solver
-            solver = SolverFactory.create(model, forms, fix_p=False)
+            comm = mesh.mpi_comm()
+            fix_p = True if method == "it" else False
+            solver = SolverFactory.create(model, forms, fix_p)
+            if method == "it":
+                solver.data["solver"]["CH"]["lin"] = \
+                  create_ch_solver(comm)
+                solver.data["solver"]["NS"] = \
+                  create_pcd_solver(comm, "BRM1", "iterative")
+                # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
+                # PETScOptions.set(prefix_ch+"ksp_monitor_true_residual")
+                # solver.data["solver"]["CH"]["lin"].set_from_options()
+                # prefix_ns = solver.data["solver"]["NS"].get_options_prefix()
+                # PETScOptions.set(prefix_ns+"ksp_monitor")
+                # solver.data["solver"]["NS"].set_from_options()
+
 
             # Prepare time-stepping algorithm
-            comm = mesh.mpi_comm()
             xfields = None
             # NOTE: Uncomment the following block of code to get XDMF output
             # pv = DS.primitive_vars_ctl()
@@ -431,6 +520,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
         name = logfile[4:-4]
         x_var = k if test_type == "ord" else mesh.hmin()
         result.update(
+            method=method,
             ndofs=DS.num_dofs(),
             scheme=scheme,
             dt=dt,
@@ -453,7 +543,7 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
         postprocessor.save_results(filename)
 
     # Pop results that we do not want to report at the moment
-    postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it"])
+    postprocessor.pop_items(["ndofs", "tmr_prepare", "tmr_solve", "it", "OTD"])
 
     # Flush plots as we now have data for all level values
     postprocessor.flush_plots()
@@ -471,16 +561,21 @@ def test_scaling_mesh(scheme, matching_p, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     dt = 0.001
-    t_end = 0.01 # CHANGE #2: set "t_end = 0.1"
-    OTD = 1 # CHANGE #3: set "OTD" to 1 or 2 according to chosen scheme
+    t_end = 0.1 # CHANGE #2: set "t_end = 0.1"
     test = 1 # 0 ... order, 1 ... refinement
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(dt, t_end, OTD, test, outdir)
+    proc = Postprocessor(dt, t_end, test, outdir)
 
     # Decide what should be plotted
-    proc.register_fixed_variables((("dt", dt), ("t_end", t_end), ("OTD", OTD)))
+    proc.register_fixed_variables((("dt", dt), ("t_end", t_end)))
+    proc.register_fixed_variables((("dt", dt), ("t_end", t_end), ("scheme", "SemiDecoupled")))
+    proc.register_fixed_variables((("dt", dt), ("t_end", t_end), ("scheme", "FullyDecoupled")))
+    proc.register_fixed_variables((("dt", dt), ("t_end", t_end),
+                                   ("scheme", "SemiDecoupled"), ("method", "lu")))
+    proc.register_fixed_variables((("dt", dt), ("t_end", t_end),
+                                   ("scheme", "SemiDecoupled"), ("method", "it")))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -498,7 +593,7 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericBenchPostprocessor):
-    def __init__(self, dt, t_end, OTD, test, outdir):
+    def __init__(self, dt, t_end, test, outdir):
         super(Postprocessor, self).__init__(outdir)
 
         # Determine test_type
@@ -507,7 +602,6 @@ class Postprocessor(GenericBenchPostprocessor):
         # Hack enabling change of fixed variables at one place
         self.dt = dt
         self.t_end = t_end
-        self.OTD = OTD
         self.test = _test_type[test]
 
         # So far hardcoded values
@@ -516,7 +610,7 @@ class Postprocessor(GenericBenchPostprocessor):
         self.y_var1 = "tmr_tstepping" # "tmr_solve"
 
         # Store names
-        self.basename = "{}_dt_{}_t_end_{}_OTD_{}".format(self.test, dt, t_end, OTD)
+        self.basename = "{}_dt_{}_t_end_{}".format(self.test, dt, t_end)
 
     def flush_plots(self):
         if not self.plots:
@@ -580,6 +674,7 @@ class Postprocessor(GenericBenchPostprocessor):
         pdf = matplotlib.backends.backend_pdf.PdfPages(
                   os.path.join(outdir, "fig_" + prefix + filename + ".pdf"))
         for fig in subfigs:
+            #fig.tight_layout()
             pdf.savefig(fig)
         pdf.close()
 
