@@ -204,9 +204,9 @@ def test_noflow(scheme, gamma, Re, nu_interp, postprocessor):
         # Prepare model
         model = ModelFactory.create("Incompressible", DS, bcs)
         model.parameters["THETA2"] = 0.0
-        model.parameters["cut"]["density"] = True
-        model.parameters["cut"]["viscosity"] = True
-        #model.parameters["cut"]["mobility"] = True
+        model.parameters["rho"]["trunc"] = True
+        model.parameters["nu"]["trunc"] = True
+        #model.parameters["mobility"]["trunc"] = True
         model.parameters["nu"]["itype"] = nu_interp
         model.parameters["rho"]["itype"] = "lin"
         #model.parameters["rho"]["itype"] = "sharp"

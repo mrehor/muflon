@@ -343,11 +343,11 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
             #model.parameters["THETA2"] = 0.0
-            #model.parameters["cut"]["density"] = True
+            #model.parameters["rho"]["trunc"] = True
             model.parameters["rho"]["itype"] = "clamp"
-            model.parameters["cut"]["viscosity"] = True
+            model.parameters["nu"]["trunc"] = True
             model.parameters["nu"]["itype"] = "har"
-            #model.parameters["cut"]["mobility"] = True
+            #model.parameters["mobility"]["trunc"] = True
             #model.parameters["mobility"]["beta"] = 0.5
             #model.parameters["mobility"]["m"] = 0
             #model.parameters["mobility"]["M0"] *= 1e-2

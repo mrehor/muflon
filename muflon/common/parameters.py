@@ -94,12 +94,6 @@ class Singleton(_Singleton('SingletonMeta', (object,), {})):
 
 class MuflonParameterSet(Parameters, Singleton):
     """
-    .. todo::
-
-        Redistribute ``cut`` options among corresponding functions,
-        that is, replace ``mpset["model"]["cut"]["density"]`` by
-        ``mpset["model"]["rho"]["trunc"]``.
-
     .. _tab_mpset:
 
        ====================  ===============  ===================================
@@ -116,17 +110,17 @@ class MuflonParameterSet(Parameters, Singleton):
        \                     .mobility.M0     constant mobility coefficient
        \                     .mobility.m      mobility exponent
        \                     .mobility.beta   time discretization factor
+       \                     .mobility.trunc  toggle for truncation of mobility
        \                     .nu.i            dynamic viscosity of phase i
        \                     .nu.itype        type of interpolation for viscosity
+       \                     .nu.trunc        toggle for truncation of viscosity
        \                     .rho.i           density of phase i
        \                     .rho.itype       type of interpolation for density
+       \                     .rho.trunc       toggle for truncation of density
        \                     .sigma.ij        surface tension between phases i,j
        \                     .chq.L           characteristic length
        \                     .chq.V           characteristic velocity
        \                     .chq.rho         characteristic density
-       \                     .cut.density     toggle for truncation of density
-       \                     .cut.mobility    toggle for truncation of mobility
-       \                     .cut.viscosity   toggle for truncation of viscosity
        ====================  ===============  ===================================
     """
 
@@ -152,25 +146,23 @@ class MuflonParameterSet(Parameters, Singleton):
         mobility_prm.add("M0", 1.0)
         mobility_prm.add("m", 0)
         mobility_prm.add("beta", 0.0, 0.0, 1.0)
+        mobility_prm.add("trunc", False)
         char_quants = Parameters("chq")
         char_quants.add("L", 1.0)
         char_quants.add("V", 1.0)
         char_quants.add("rho", 1.0)
-        cut_prm = Parameters("cut")
-        cut_prm.add("density", False)
-        cut_prm.add("mobility", False)
-        cut_prm.add("viscosity", False)
         nested_prm = Parameters("model")
         nested_prm.add("doublewell", "Poly4", ["Poly4"]) # "MoYo"
         nested_prm.add("eps", 1.0)
         nested_prm.add(mobility_prm)
         nested_prm.add(Parameters("nu"))
         nested_prm["nu"].add("itype", "har", ["lin", "har"])
+        nested_prm["nu"].add("trunc", False)
         nested_prm.add(Parameters("rho"))
         nested_prm["rho"].add("itype", "lin", ["lin", "har"])
+        nested_prm["rho"].add("trunc", False)
         nested_prm.add(Parameters("sigma"))
         nested_prm.add(char_quants)
-        nested_prm.add(cut_prm)
         self.add(nested_prm)
 
     def show(self, verbose=False):

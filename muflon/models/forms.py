@@ -487,7 +487,7 @@ class Model(object):
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
         if trunc is None:
-            trunc = self.parameters["cut"]["density"]
+            trunc = self.parameters["rho"]["trunc"]
         if itype is None:
             itype = self.parameters["rho"]["itype"]
         return self._interpolated_quantity(rho_mat, phi, itype, trunc)
@@ -505,7 +505,7 @@ class Model(object):
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
         if trunc is None:
-            trunc = self.parameters["cut"]["viscosity"]
+            trunc = self.parameters["nu"]["trunc"]
         if itype is None:
             itype = self.parameters["nu"]["itype"]
         return self._interpolated_quantity(nu_mat, phi, itype, trunc)
@@ -549,7 +549,7 @@ class Model(object):
         :returns: [degenerate [truncated]] mobility coefficient
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
-        trunc = self.parameters["cut"]["mobility"]
+        trunc = self.parameters["mobility"]["trunc"]
         cell = phi.ufl_domain().ufl_cell()
         M0 = Constant(M0, cell=cell) if not isinstance(M0, Constant) else M0
         if float(m) == 0.0:

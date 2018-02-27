@@ -310,9 +310,9 @@ def test_pool(scheme, augmentedTH, div_projection, matching_p, case, postprocess
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
             #model.parameters["THETA2"] = 0.0
-            model.parameters["cut"]["density"] = True
-            model.parameters["cut"]["viscosity"] = True
-            #model.parameters["cut"]["mobility"] = True
+            model.parameters["rho"]["trunc"] = True
+            model.parameters["nu"]["trunc"] = True
+            #model.parameters["mobility"]["trunc"] = True
             if scheme == "FullyDecoupled":
                 #model.parameters["full"]["factor_s"] = 1.
                 #model.parameters["full"]["factor_rho0"] = 0.5
