@@ -53,7 +53,7 @@ def get_random_string():
 @pytest.fixture
 def data_dir():
     path = os.path.join(os.getcwd(), os.path.dirname(__file__),
-                        os.pardir, os.pardir, "data")
+                        os.pardir, os.pardir, os.pardir, "data")
     return os.path.realpath(path)
 
 def create_domain(refinement_level):
@@ -524,7 +524,7 @@ class Postprocessor(GenericBenchPostprocessor):
         ax2.set_xlabel(ax1.get_xlabel())
         ax1.set_ylabel("# GMRES iterations {}".format(tail))
         ax2.set_ylabel("CPU time {}".format(tail))
-        ax1.set_ylim(0, None, auto=True)
-        ax2.set_ylim(0, None, auto=True)
+        ax1.set_ylim(None, None, auto=True)
+        ax2.set_ylim(None, None, auto=True)
 
         return (fig1, fig2), (ax1, ax2)
