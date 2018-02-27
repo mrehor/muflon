@@ -197,7 +197,7 @@ def test_scaling_time(scheme, matching_p, postprocessor):
 def postprocessor(request):
     t_end = 0.2 # CHANGE #2: set "t_end = 1.0"
     level = 2   # CHANGE #3: set "level = 5" for direct solvers
-    OPA = 5     # CHANGE #4: set "OPA = 2" (Order of Polynomial Approximation)
+    OPA = 5     # CHANGE #4: set "OPA = 3" (Order of Polynomial Approximation)
     OTD = 1     # CHANGE #5: set "OTD" to 1 or 2 according to chosen scheme
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
