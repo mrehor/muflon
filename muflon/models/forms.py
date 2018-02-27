@@ -396,8 +396,8 @@ class Model(object):
             iq_diff = as_vector(iq[:-1]) - as_vector((N-1)*[iq[-1],])
 
             def _clamp_value(z):
-                A = conditional(lt(z, 0.05), 1.0, 0.0)
-                B = conditional(gt(z, 0.95), 1.0, 0.0)
+                A = conditional(lt(z, 0.025), 1.0, 0.0)
+                B = conditional(gt(z, 0.975), 1.0, 0.0)
                 return B + (1.0 - A - B)*z
 
             if trunc:
@@ -442,8 +442,10 @@ class Model(object):
             q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
 
             def _clamp_interpolation_function(z):
-                A = conditional(lt(z, 0.0), 1.0, 0.0)
-                B = conditional(gt(z, 1.0), 1.0, 0.0)
+                lolim = 0.025 if trunc else 0.0
+                hilim = 0.975 if trunc else 1.0
+                A = conditional(lt(z, lolim), 1.0, 0.0)
+                B = conditional(gt(z, hilim), 1.0, 0.0)
                 return B + (1.0 - A - B)*z
 
             def _sin_interpolation_function(z):
