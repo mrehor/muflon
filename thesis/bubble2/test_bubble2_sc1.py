@@ -44,6 +44,8 @@ from dolfin import *
 from matplotlib import pyplot, gridspec
 from collections import OrderedDict
 
+from fenapack import PCDKrylovSolver
+
 from muflon import mpset
 from muflon import DiscretizationFactory
 from muflon import ModelFactory
@@ -98,7 +100,7 @@ def create_discretization(scheme, mesh, k=1, periodic_boundary=None):
     return DiscretizationFactory.create(scheme, mesh, Pk1, Pk1, Pk1, Pk,
                                         constrained_domain=periodic_boundary)
 
-def create_bcs(DS, boundary_markers, periodic_boundary=None):
+def create_bcs(DS, boundary_markers, method, periodic_boundary=None):
     zero = Constant(0.0, cell=DS.mesh().ufl_cell(), name="zero")
     bcs = {}
     bcs_nslip_v1 = DirichletBC(DS.subspace("v", 0), zero, boundary_markers, 1)
@@ -109,9 +111,11 @@ def create_bcs(DS, boundary_markers, periodic_boundary=None):
     else:
         bcs["v"] = [(bcs_nslip_v1, bcs_nslip_v2),]
     # Possible bcs fixing the pressure
-    corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=2.0)
-    bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0), corner, method="pointwise"),]
-
+    if method == "lu":
+        corner = CompiledSubDomain("near(x[0], x0) && near(x[1], x1)", x0=0.0, x1=2.0)
+        bcs["p"] = [DirichletBC(DS.subspace("p"), Constant(0.0), corner, method="pointwise"),]
+    else:
+        bcs["pcd"] = []
     return bcs
 
 def load_initial_conditions(DS, eps):
@@ -163,6 +167,78 @@ def load_initial_conditions(DS, eps):
     for i, w in enumerate(DS.solution_ptl(0)):
         DS.solution_ctl()[i].assign(w)
 
+def create_ch_solver(comm, jacobi_type="pbjacobi"):
+    assert jacobi_type in ['pbjacobi', 'bjacobi']
+    # NOTE: 'bjacobi' uses ilu for individual MPI blocks
+
+    # Set up linear solver (GMRES)
+    prefix = "CH_"
+    linear_solver = PETScKrylovSolver(comm)
+    linear_solver.set_options_prefix(prefix)
+    PETScOptions.set(prefix+"ksp_rtol", 1e-6)
+    PETScOptions.set(prefix+"ksp_type", "gmres")
+    PETScOptions.set(prefix+"ksp_gmres_restart", 150)
+    PETScOptions.set(prefix+"ksp_max_it", 1000)
+    #PETScOptions.set(prefix+"ksp_initial_guess_nonzero", True)
+    #PETScOptions.set(prefix+"ksp_pc_side", "right")
+    PETScOptions.set(prefix+"pc_type", jacobi_type)
+
+    # Apply options
+    linear_solver.set_from_options()
+
+    return linear_solver
+
+def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
+    prefix = "NS_"
+
+    # Set up linear solver (GMRES with right preconditioning using Schur fact)
+    linear_solver = PCDKrylovSolver(comm=comm)
+    linear_solver.set_options_prefix(prefix)
+    linear_solver.parameters["relative_tolerance"] = 1e-6
+    PETScOptions.set(prefix+"ksp_gmres_restart", 150)
+
+    # Set up subsolvers
+    PETScOptions.set(prefix+"fieldsplit_p_pc_python_type", "fenapack.PCDRPC_" + pcd_variant)
+    if ls == "iterative":
+        PETScOptions.set(prefix+"fieldsplit_u_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_u_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_u_pc_type", "hypre")
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_type", "boomeramg")
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_P_max", 4)
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_agg_nl", 1)
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_agg_num_paths", 2)
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_coarsen_type", "HMIS")
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_interp_type", "ext+i")
+        PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_no_CF")
+
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_type", "hypre") # "gamg"
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_hypre_type", "boomeramg")
+
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_type", "richardson")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_max_it", 1)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_type", "hypre") # "gamg"
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_hypre_type", "boomeramg")
+
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_type", "chebyshev")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_max_it", 5)
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_ksp_chebyshev_eigenvalues", "0.5, 2.0")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_pc_type", "jacobi")
+    elif ls == "direct":
+        # Debugging MUMPS
+        if mumps_debug:
+            PETScOptions.set(prefix+"fieldsplit_u_mat_mumps_icntl_4", 2)
+            PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_mat_mumps_icntl_4", 2)
+            PETScOptions.set(prefix+"fieldsplit_p_PCD_Mp_mat_mumps_icntl_4", 2)
+    else:
+        assert False
+
+    # Apply options
+    linear_solver.set_from_options()
+
+    return linear_solver
+
 def prepare_hook(DS, functionals, modulo_factor):
 
     class TailoredHook(TSHook):
@@ -208,10 +284,15 @@ def prepare_hook(DS, functionals, modulo_factor):
     return TailoredHook(mesh=mesh, phi=phi, v=v, p=p,
                             functionals=functionals, mod=modulo_factor)
 
-@pytest.mark.parametrize("case", [1,]) # lower (1) vs. higher (2) density ratio
+@pytest.mark.parametrize("case", [1, 2,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"]) # "Monolithic"
-def test_bubble(scheme, matching_p, case, postprocessor):
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled",])
+@pytest.mark.parametrize("method", ["lu",]) # "it",
+def test_bubble(method, scheme, matching_p, case, postprocessor):
+    # Check test configuration
+    if scheme == "FullyDecoupled" and method == "it":
+        pytest.skip("{} does not support iterative solvers yet".format(scheme))
+
     set_log_level(WARNING)
 
     # Read parameters
@@ -236,15 +317,16 @@ def test_bubble(scheme, matching_p, case, postprocessor):
     # Scheme-dependent variables
     k = 1 #if scheme == "FullyDecoupled" else 1
 
-    for level in range(2): # CHANGE #1: set " level in range(4)"
+    for level in range(4): # CHANGE #1: set " level in range(4)"
         dividing_factor = 0.5**level
         modulo_factor = 1 if level == 0 else 2**(level-1)*1
         eps = dividing_factor*0.04
         gamma = dividing_factor*4e-5
-        dt = dividing_factor*0.008 # CHANGE #2: use smaller time step if needed
-        # NOTE: smaller time step required by 'FullyDecoupled' scheme (case #2)
-        label = "case_{}_{}_level_{}_k_{}_dt_{}_{}".format(
-                    case, scheme, level, k, dt, basename)
+        dt = dividing_factor*0.008
+        if scheme == "FullyDecoupled" and case == 2:
+            dt *= 0.5 # CHANGE #2: smaller time step required in this particular case
+        label = "case_{}_{}_{}_level_{}_k_{}_dt_{}_{}".format(
+                    case, scheme, method, level, k, dt, basename)
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers, periodic_boundary = create_domain(level)
@@ -257,7 +339,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             load_initial_conditions(DS, eps)
 
             # Prepare boundary conditions
-            bcs = create_bcs(DS, boundary_markers, periodic_boundary)
+            bcs = create_bcs(DS, boundary_markers, method, periodic_boundary)
 
             # Set up variable model parameters
             mpset["model"]["eps"] = 2.0*(2.0**0.5)*eps
@@ -267,11 +349,19 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
             #model.parameters["THETA2"] = 0.0
-            model.parameters["rho"]["trunc"] = True
-            model.parameters["nu"]["trunc"] = True
+            if case == 1:
+                model.parameters["rho"]["itype"] = "lin"
+                model.parameters["rho"]["trunc"] = False
+                model.parameters["nu"]["itype"] = "har"
+                model.parameters["nu"]["trunc"] = False
+            else:
+                model.parameters["rho"]["itype"] = "clamp"
+                model.parameters["rho"]["trunc"] = True
+                model.parameters["nu"]["itype"] = "har"
+                model.parameters["nu"]["trunc"] = True
             #model.parameters["mobility"]["trunc"] = True
             #model.parameters["mobility"]["beta"] = 0.5
-            if scheme == "FullyDecoupled":
+            if scheme == "FullyDecoupled" or method == "lu":
                 model.parameters["mobility"]["m"] = 0
                 model.parameters["mobility"]["M0"] *= 1e-2
                 #model.parameters["full"]["factor_s"] = 2.
@@ -286,10 +376,21 @@ def test_bubble(scheme, matching_p, case, postprocessor):
             forms = model.create_forms(matching_p)
 
             # Prepare solver
-            solver = SolverFactory.create(model, forms, fix_p=False)
+            comm = mesh.mpi_comm()
+            solver = SolverFactory.create(model, forms, fix_p=(method == "it"))
+            if method == "it":
+                solver.data["solver"]["CH"]["lin"] = \
+                  create_ch_solver(comm)
+                solver.data["solver"]["NS"] = \
+                  create_pcd_solver(comm, "BRM1", "iterative")
+                # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
+                # PETScOptions.set(prefix_ch+"ksp_monitor_true_residual")
+                # solver.data["solver"]["CH"]["lin"].set_from_options()
+                # prefix_ns = solver.data["solver"]["NS"].get_options_prefix()
+                # PETScOptions.set(prefix_ns+"ksp_monitor")
+                # solver.data["solver"]["NS"].set_from_options()
 
             # Prepare time-stepping algorithm
-            comm = mesh.mpi_comm()
             pv = DS.primitive_vars_ctl()
             xfields = list(zip(pv["phi"].split(), ("phi",)))
             xfields.append((pv["p"].dolfin_repr(), "p"))
@@ -335,6 +436,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
         # Prepare results
         result.update(
+            method=method,
             ndofs=DS.num_dofs(),
             scheme=scheme,
             case=case,
@@ -379,7 +481,7 @@ def test_bubble(scheme, matching_p, case, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 0.5 # CHANGE #3: Set to "t_end = 3.0"
+    t_end = 3.0 # CHANGE #3: Set to "t_end = 3.0"
     OTD = 2     # Order of Time Discretization
     rank = MPI.rank(mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
@@ -388,9 +490,29 @@ def postprocessor(request):
 
     # Decide what should be plotted
     proc.register_fixed_variables(
-        (("t_end", t_end), ("OTD", OTD)))
-    #proc.register_fixed_variables(
-    #    (("t_end", t_end), ("OTD", OTD), ("level", 1)))
+        (("t_end", t_end), ("OTD", OTD), ("case", 1)))
+    proc.register_fixed_variables(
+       (("t_end", t_end), ("OTD", OTD), ("case", 1), ("scheme", "SemiDecoupled")))
+    proc.register_fixed_variables(
+       (("t_end", t_end), ("OTD", OTD), ("case", 1), ("scheme", "FullyDecoupled")))
+    # proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("case", 1),
+    #     ("scheme", "SemiDecoupled"), ("method", "lu")))
+    # proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("case", 1),
+    #     ("scheme", "SemiDecoupled"), ("method", "it")))
+    proc.register_fixed_variables(
+        (("t_end", t_end), ("OTD", OTD), ("case", 2)))
+    proc.register_fixed_variables(
+       (("t_end", t_end), ("OTD", OTD), ("case", 2), ("scheme", "SemiDecoupled")))
+    proc.register_fixed_variables(
+       (("t_end", t_end), ("OTD", OTD), ("case", 2), ("scheme", "FullyDecoupled")))
+    # proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("case", 2),
+    #     ("scheme", "SemiDecoupled"), ("method", "lu")))
+    # proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("case", 2),
+    #     ("scheme", "SemiDecoupled"), ("method", "it")))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -482,6 +604,7 @@ class Postprocessor(GenericBenchPostprocessor):
         pdf = matplotlib.backends.backend_pdf.PdfPages(
                   os.path.join(outdir, "fig_" + filename + ".pdf"))
         for fig in subfigs:
+            #fig.tight_layout()
             pdf.savefig(fig)
         pdf.close()
 

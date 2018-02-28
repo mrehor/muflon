@@ -17,8 +17,9 @@ Submit the following commands within a batch script
 Rising bubble benchmark
 -----------------------
 
-Submit the following command within a batch script
+Submit the following commands within a batch script
 
 .. code-block:: console
 
-  $ PYTHONHASHSEED=0 mpirun [-np 12] python3 -m pytest -svl bubble/test_bubble.py
+  $ PYTHONHASHSEED=0 mpirun [-np 15] python3 -m pytest -svl bubble2/test_bubble2_sc1.py
+  $ PYTHONHASHSEED=0 mpirun [-np 30] python3 -m pytest -svl bubble2/test_bubble2_sc2.py
