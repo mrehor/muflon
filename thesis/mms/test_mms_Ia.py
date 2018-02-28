@@ -276,10 +276,12 @@ def create_source_terms(t_src, mesh, model, msol, matching_p):
 
     return f_src, g_src
 
-def create_ch_solver(comm):
-    prefix = "CH_"
+def create_ch_solver(comm, jacobi_type="pbjacobi"):
+    assert jacobi_type in ['pbjacobi', 'bjacobi']
+    # NOTE: 'bjacobi' uses ilu for individual MPI blocks
 
     # Set up linear solver (GMRES)
+    prefix = "CH_"
     linear_solver = PETScKrylovSolver(comm)
     linear_solver.set_options_prefix(prefix)
     PETScOptions.set(prefix+"ksp_rtol", 1e-6)
@@ -288,8 +290,7 @@ def create_ch_solver(comm):
     PETScOptions.set(prefix+"ksp_max_it", 1000)
     #PETScOptions.set(prefix+"ksp_initial_guess_nonzero", True)
     #PETScOptions.set(prefix+"ksp_pc_side", "right")
-    PETScOptions.set(prefix+"pc_type", "pbjacobi")
-    #PETScOptions.set(prefix+"pc_type", "bjacobi") # uses ilu for individual MPI blocks
+    PETScOptions.set(prefix+"pc_type", jacobi_type)
 
     # Apply options
     linear_solver.set_from_options()
@@ -386,14 +387,16 @@ def prepare_hook(t_src, model, esol, degrise, err):
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"])
 @pytest.mark.parametrize("method", ["lu", "it"])
-@pytest.mark.xfail(reason="iterative solvers not implemented for fully-decoupled scheme",
-                   strict=True, raises=AssertionError)
 def test_scaling_mesh(method, scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed time step and gradually refined mesh or
     increasing element order.
     """
-    assert not (scheme == "FullyDecoupled" and method == "it")
+    # Test configuration check
+    if scheme == "FullyDecoupled" and method == "it":
+        pytest.skip("{} does not support iterative solvers yet".format(scheme))
+
+    # Run test
     set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm

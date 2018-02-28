@@ -53,14 +53,16 @@ parameters["form_compiler"]["optimize"] = True
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"])
 @pytest.mark.parametrize("method", ["lu", "it"])
-@pytest.mark.xfail(reason="iterative solvers not implemented for fully-decoupled scheme",
-                   strict=True, raises=AssertionError)
 def test_scaling_time(method, scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed element order, fixed mesh and
     gradually decreasing time step.
     """
-    assert not (scheme == "FullyDecoupled" and method == "it")
+    # Test configuration check
+    if scheme == "FullyDecoupled" and method == "it":
+        pytest.skip("{} does not support iterative solvers yet".format(scheme))
+
+    # Run test
     set_log_level(WARNING)
 
     degrise = 3 # degree rise for computation of errornorm
@@ -93,7 +95,7 @@ def test_scaling_time(method, scheme, matching_p, postprocessor):
     bcs = create_bcs(DS, boundary_markers, esol, method)
 
     # Iterate over time step
-    for m in range(5): # CHANGE #1: set "m in range(7)"
+    for m in range(7): # CHANGE #1: set "m in range(7)"
         dt = 0.1*0.5**m
         label = "{}_dt_{}_{}".format(scheme, dt, basename)
         with Timer("Prepare") as tmr_prepare:
@@ -126,7 +128,7 @@ def test_scaling_time(method, scheme, matching_p, postprocessor):
             solver = SolverFactory.create(model, forms, fix_p)
             if method == "it":
                 solver.data["solver"]["CH"]["lin"] = \
-                  create_ch_solver(comm)
+                  create_ch_solver(comm, "bjacobi")
                 solver.data["solver"]["NS"] = \
                   create_pcd_solver(comm, "BRM1", "direct")
                 # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
