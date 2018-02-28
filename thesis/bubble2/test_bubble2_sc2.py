@@ -350,6 +350,7 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
             model.parameters["THETA2"] = THETA2
+            #model.parameters["semi"]["sdstab"] = True
             if case == 1:
                 model.parameters["rho"]["itype"] = "lin"
                 model.parameters["rho"]["trunc"] = False

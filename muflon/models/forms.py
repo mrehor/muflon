@@ -1022,8 +1022,8 @@ class Incompressible(Model):
         # Create PCD operators
         # TODO: Add to docstring
         pcd_operators = {
-            "a_pc": a_00 + a_00_stab + a_01,
-                    #a_00_approx + a_00_stab + a_01,
+            "a_pc": #a_00 + a_00_stab + a_01,
+                    a_00_approx + a_00_stab + a_01,
             "mu": idt*0.5*(rho + rho0)*inner(trial["v"], test["v"])*dx, # --> idt*M
             "ap": inner(grad(trial["p"]), grad(test["p"]))*dx,      # --> Ap_hat
             "mp": (1.0/nu)*trial["p"]*test["p"]*dx,                 # --> Qp

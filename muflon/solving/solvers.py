@@ -435,6 +435,7 @@ class SemiDecoupled(Solver):
             P = PETScMatrix(self.comm())
             pcd_assembler.pc_matrix(P)
             # FIXME: Should we attach the null space also to preconditioner?
+            #        Probably not as 'set_nullspace' is related to KSP (not PC).
             # if P.empty():
             #     P = A
             # else:
