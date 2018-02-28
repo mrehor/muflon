@@ -298,7 +298,7 @@ def create_ch_solver(comm, jacobi_type="pbjacobi"):
     return linear_solver
 
 def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
-    prefix = ""
+    prefix = "NS_"
 
     # Set up linear solver (GMRES with right preconditioning using Schur fact)
     linear_solver = PCDKrylovSolver(comm=comm)
@@ -386,13 +386,13 @@ def prepare_hook(t_src, model, esol, degrise, err):
 
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"])
-@pytest.mark.parametrize("method", ["lu", "it"])
+@pytest.mark.parametrize("method", ["lu",]) # "it"
 def test_scaling_mesh(method, scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed time step and gradually refined mesh or
     increasing element order.
     """
-    # Test configuration check
+    # Check test configuration
     if scheme == "FullyDecoupled" and method == "it":
         pytest.skip("{} does not support iterative solvers yet".format(scheme))
 
@@ -421,7 +421,7 @@ def test_scaling_mesh(method, scheme, matching_p, postprocessor):
     ic = create_initial_conditions(msol)
 
     # Iterate over refinement level
-    for it in range(1, 8): # CHANGE #1: set "it in range(1, 8)"
+    for it in range(1, 7): # CHANGE #1: set "it in range(1, 8)"
         # Decide which test to perform
         if test_type == "ref":
             level = it
@@ -468,8 +468,7 @@ def test_scaling_mesh(method, scheme, matching_p, postprocessor):
 
             # Prepare solver
             comm = mesh.mpi_comm()
-            fix_p = True if method == "it" else False
-            solver = SolverFactory.create(model, forms, fix_p)
+            solver = SolverFactory.create(model, forms, fix_p=(method == "it"))
             if method == "it":
                 solver.data["solver"]["CH"]["lin"] = \
                   create_ch_solver(comm)
