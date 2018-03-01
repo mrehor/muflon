@@ -298,7 +298,7 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
 
     # Read parameters
     scriptdir = os.path.dirname(os.path.realpath(__file__))
-    prm_file = os.path.join(scriptdir, "bubble-parameters.xml")
+    prm_file = os.path.join(scriptdir, "bubble2-parameters.xml")
     mpset.read(prm_file)
 
     # Adjust parameters
@@ -326,8 +326,8 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
         dt = dividing_factor*0.008
         if scheme == "FullyDecoupled" and case == 2:
             dt *= 0.5 # CHANGE #2: smaller time step required in this particular case
-        label = "case_{}_{}_{}_level_{}_k_{}_dt_{}_{}".format(
-                    case, scheme, method, level, k, dt, basename)
+        label = "case_{}_THETA2_{}_{}_{}_level_{}_k_{}_dt_{}_{}".format(
+                    case, THETA2, scheme, method, level, k, dt, basename)
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers, periodic_boundary = create_domain(level)
@@ -357,10 +357,10 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
                 model.parameters["nu"]["itype"] = "har"
                 model.parameters["nu"]["trunc"] = False
             else:
-                model.parameters["rho"]["itype"] = "clamp"
-                model.parameters["rho"]["trunc"] = True
+                model.parameters["rho"]["itype"] = "clamp" # same as "lin"+trunc
+                #model.parameters["rho"]["trunc"] = True
                 model.parameters["nu"]["itype"] = "har"
-                model.parameters["nu"]["trunc"] = True
+                #model.parameters["nu"]["trunc"] = True
             #model.parameters["mobility"]["trunc"] = True
             #model.parameters["mobility"]["beta"] = 0.5
             if scheme == "FullyDecoupled" or method == "lu":
@@ -398,6 +398,7 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
             # Prepare time-stepping algorithm
             pv = DS.primitive_vars_ctl()
             xfields = list(zip(pv["phi"].split(), ("phi",)))
+            #xfields += list(zip(pv["chi"].split(), ("chi",)))
             xfields.append((pv["p"].dolfin_repr(), "p"))
             if scheme == "FullyDecoupled":
                 xfields += list(zip(pv["v"].split(), ("v1", "v2")))

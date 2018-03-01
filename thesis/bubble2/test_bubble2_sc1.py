@@ -297,7 +297,7 @@ def test_bubble(method, scheme, matching_p, case, postprocessor):
 
     # Read parameters
     scriptdir = os.path.dirname(os.path.realpath(__file__))
-    prm_file = os.path.join(scriptdir, "bubble-parameters.xml")
+    prm_file = os.path.join(scriptdir, "bubble2-parameters.xml")
     mpset.read(prm_file)
 
     # Adjust parameters

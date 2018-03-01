@@ -129,7 +129,7 @@ def test_scaling_time(method, scheme, matching_p, postprocessor):
                 solver.data["solver"]["CH"]["lin"] = \
                   create_ch_solver(comm, "bjacobi")
                 solver.data["solver"]["NS"] = \
-                  create_pcd_solver(comm, "BRM1", "direct")
+                  create_pcd_solver(comm, "BRM1", "iterative")
                 # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
                 # PETScOptions.set(prefix_ch+"ksp_monitor_true_residual")
                 # solver.data["solver"]["CH"]["lin"].set_from_options()
