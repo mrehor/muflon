@@ -17,8 +17,9 @@ Submit the following commands within a batch script
 
 .. code-block:: console
 
-  $ PYTHONHASHSEED=0 mpirun [-np 8] python3 -m pytest -svl mms/test_mms_Ia.py
-  $ PYTHONHASHSEED=0 mpirun [-np 8] python3 -m pytest -svl mms/test_mms_Ib.py
+  $ export PYTHONHASHSEED=0
+  $ mpiexec -np 8 python3 -m pytest -svl mms/test_mms_Ia.py
+  $ mpiexec -np 8 python3 -m pytest -svl mms/test_mms_Ib.py
 
 Walltime hh:mm:ss (safe overestimate):
 
@@ -32,10 +33,13 @@ Submit the following commands within a batch script
 
 .. code-block:: console
 
-  $ PYTHONHASHSEED=0 mpirun [-np 15] python3 -m pytest -svl bubble2/test_bubble2_sc1.py
-  $ PYTHONHASHSEED=0 mpirun [-np 30] python3 -m pytest -svl bubble2/test_bubble2_sc2.py
+  $ export PYTHONHASHSEED=0
+  $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_scheme.py --case 1
+  $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_scheme.py --case 2
+  $ mpiexec -np 60 python3 -m pytest -svl bubble2/test_bubble2_THETA2.py --case 2
 
 Walltime hh:mm:ss (safe overestimate):
 
-  + 24:00:00 (sc1)
-  + 07:00:00 (sc2)
+  + 24:00:00 (..._scheme, case 1)
+  + 24:00:00 (..._scheme, case 2)
+  + 05:00:00 (..._THETA2, case 2)

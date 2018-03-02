@@ -284,12 +284,10 @@ def prepare_hook(DS, functionals, modulo_factor):
     return TailoredHook(mesh=mesh, phi=phi, v=v, p=p,
                             functionals=functionals, mod=modulo_factor)
 
-@pytest.mark.parametrize("case", [2,]) # lower (1) vs. higher (2) density ratio
 @pytest.mark.parametrize("matching_p", [False,])
-@pytest.mark.parametrize("scheme", ["SemiDecoupled",])
-@pytest.mark.parametrize("method", ["it",])
-@pytest.mark.parametrize("THETA2", [0.0, 1.0])
-def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
+@pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled",])
+@pytest.mark.parametrize("method", ["lu",]) # "it",
+def test_bubble(case, method, scheme, matching_p, postprocessor):
     # Check test configuration
     if scheme == "FullyDecoupled" and method == "it":
         pytest.skip("{} does not support iterative solvers yet".format(scheme))
@@ -302,7 +300,7 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
     mpset.read(prm_file)
 
     # Adjust parameters
-    if case == 2:
+    if case == 2: # NOTE: 'case' is treated as a command line argument
         mpset["model"]["nu"]["2"] = 0.1
         mpset["model"]["rho"]["2"] = 1.0
         mpset["model"]["sigma"]["12"] = 1.96
@@ -318,7 +316,7 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
     # Scheme-dependent variables
     k = 1 #if scheme == "FullyDecoupled" else 1
 
-    for level in [3,]: # CHANGE #1: set " level in [3,]"
+    for level in range(4): # CHANGE #1: set " level in range(4)"
         dividing_factor = 0.5**level
         modulo_factor = 1 if level == 0 else 2**(level-1)*1
         eps = dividing_factor*0.04
@@ -326,8 +324,8 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
         dt = dividing_factor*0.008
         if scheme == "FullyDecoupled" and case == 2:
             dt *= 0.5 # CHANGE #2: smaller time step required in this particular case
-        label = "case_{}_THETA2_{}_{}_{}_level_{}_k_{}_dt_{}_{}".format(
-                    case, THETA2, scheme, method, level, k, dt, basename)
+        label = "case_{}_{}_{}_level_{}_k_{}_dt_{}_{}".format(
+                    case, scheme, method, level, k, dt, basename)
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers, periodic_boundary = create_domain(level)
@@ -349,8 +347,7 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
-            model.parameters["THETA2"] = THETA2
-            #model.parameters["semi"]["sdstab"] = True
+            #model.parameters["THETA2"] = 0.0
             if case == 1:
                 model.parameters["rho"]["itype"] = "lin"
                 model.parameters["rho"]["trunc"] = False
@@ -358,9 +355,8 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
                 model.parameters["nu"]["trunc"] = False
             else:
                 model.parameters["rho"]["itype"] = "clamp" # same as "lin"+trunc
-                #model.parameters["rho"]["trunc"] = True
                 model.parameters["nu"]["itype"] = "har"
-                #model.parameters["nu"]["trunc"] = True
+                model.parameters["nu"]["trunc"] = True
             #model.parameters["mobility"]["trunc"] = True
             #model.parameters["mobility"]["beta"] = 0.5
             if scheme == "FullyDecoupled" or method == "lu":
@@ -382,10 +378,7 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
             solver = SolverFactory.create(model, forms, fix_p=(method == "it"))
             if method == "it":
                 solver.data["solver"]["CH"]["lin"] = \
-                  create_ch_solver(comm, "bjacobi")
-                # ISSUE: With 'BRM2' we observe that the mean value of
-                #        the computed pressure is not zero!
-                # TODO: Find MWE which demonstrates this behavior.
+                  create_ch_solver(comm)
                 solver.data["solver"]["NS"] = \
                   create_pcd_solver(comm, "BRM1", "iterative")
                 # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
@@ -398,7 +391,6 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
             # Prepare time-stepping algorithm
             pv = DS.primitive_vars_ctl()
             xfields = list(zip(pv["phi"].split(), ("phi",)))
-            #xfields += list(zip(pv["chi"].split(), ("chi",)))
             xfields.append((pv["p"].dolfin_repr(), "p"))
             if scheme == "FullyDecoupled":
                 xfields += list(zip(pv["v"].split(), ("v1", "v2")))
@@ -442,7 +434,6 @@ def test_bubble(THETA2, method, scheme, matching_p, case, postprocessor):
 
         # Prepare results
         result.update(
-            THETA2=THETA2,
             method=method,
             ndofs=DS.num_dofs(),
             scheme=scheme,
@@ -497,11 +488,29 @@ def postprocessor(request):
 
     # Decide what should be plotted
     proc.register_fixed_variables(
-        (("t_end", t_end), ("OTD", OTD)))
+        (("t_end", t_end), ("OTD", OTD), ("case", 1)))
     proc.register_fixed_variables(
-       (("t_end", t_end), ("OTD", OTD), ("THETA2", 0.0)))
+       (("t_end", t_end), ("OTD", OTD), ("case", 1), ("scheme", "SemiDecoupled")))
     proc.register_fixed_variables(
-       (("t_end", t_end), ("OTD", OTD), ("THETA2", 1.0)))
+       (("t_end", t_end), ("OTD", OTD), ("case", 1), ("scheme", "FullyDecoupled")))
+    # proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("case", 1),
+    #     ("scheme", "SemiDecoupled"), ("method", "lu")))
+    # proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("case", 1),
+    #     ("scheme", "SemiDecoupled"), ("method", "it")))
+    proc.register_fixed_variables(
+        (("t_end", t_end), ("OTD", OTD), ("case", 2)))
+    proc.register_fixed_variables(
+       (("t_end", t_end), ("OTD", OTD), ("case", 2), ("scheme", "SemiDecoupled")))
+    proc.register_fixed_variables(
+       (("t_end", t_end), ("OTD", OTD), ("case", 2), ("scheme", "FullyDecoupled")))
+    # proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("case", 2),
+    #     ("scheme", "SemiDecoupled"), ("method", "lu")))
+    # proc.register_fixed_variables(
+    #    (("t_end", t_end), ("OTD", OTD), ("case", 2),
+    #     ("scheme", "SemiDecoupled"), ("method", "it")))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)

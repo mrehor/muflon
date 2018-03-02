@@ -386,15 +386,20 @@ def prepare_hook(t_src, model, esol, degrise, err):
 
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled", "FullyDecoupled"])
-@pytest.mark.parametrize("method", ["lu",]) # "it"
-def test_scaling_mesh(method, scheme, matching_p, postprocessor):
+def test_scaling_mesh(scheme, matching_p, postprocessor):
     """
     Compute convergence rates for fixed time step and gradually refined mesh or
     increasing element order.
     """
-    # Check test configuration
-    if scheme == "FullyDecoupled" and method == "it":
-        pytest.skip("{} does not support iterative solvers yet".format(scheme))
+    # Additional test configuration w.r.t. chosen scheme
+    if scheme == "SemiDecoupled":
+        OTD = 1
+        method = "it"
+    elif scheme == "FullyDecoupled":
+        OTD = 2
+        method = "lu" # iterative solvers not yet supported
+    else:
+        assert False
 
     # Run test
     set_log_level(WARNING)
@@ -410,7 +415,6 @@ def test_scaling_mesh(method, scheme, matching_p, postprocessor):
     dt = postprocessor.dt
     t_end = postprocessor.t_end
     test_type = postprocessor.test
-    OTD = 1 if scheme == "SemiDecoupled" else 2
 
     # Names and directories
     basename = postprocessor.basename
@@ -574,10 +578,6 @@ def postprocessor(request):
     proc.register_fixed_variables((("dt", dt), ("t_end", t_end)))
     proc.register_fixed_variables((("dt", dt), ("t_end", t_end), ("scheme", "SemiDecoupled")))
     proc.register_fixed_variables((("dt", dt), ("t_end", t_end), ("scheme", "FullyDecoupled")))
-    proc.register_fixed_variables((("dt", dt), ("t_end", t_end),
-                                   ("scheme", "SemiDecoupled"), ("method", "lu")))
-    proc.register_fixed_variables((("dt", dt), ("t_end", t_end),
-                                   ("scheme", "SemiDecoupled"), ("method", "it")))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
