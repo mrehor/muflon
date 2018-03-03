@@ -317,7 +317,7 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
     # Scheme-dependent variables
     k = 1 #if scheme == "FullyDecoupled" else 1
 
-    for level in [3,]: # CHANGE #1: set " level in [3,]"
+    for level in [1,]: # CHANGE #1: set " level in [3,]"
         dividing_factor = 0.5**level
         modulo_factor = 1 if level == 0 else 2**(level-1)*1
         eps = dividing_factor*0.04
@@ -432,12 +432,18 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
                         result = TS.run(dt0, dt, dt - dt0, OTD=2, it=it)
                     t_beg = dt
                     it = 1
-            try:
-                result = TS.run(t_beg, t_end, dt, OTD, it)
-            except:
-                warning("Ooops! Something went wrong: {}".format(sys.exc_info()[0]))
-                TS.logger().dump_to_file()
-                continue
+            # try:
+            result = TS.run(t_beg, t_end, dt, OTD, it)
+            # except:
+            #     warning("Ooops! Something went wrong: {}".format(sys.exc_info()[0]))
+            #     TS.logger().dump_to_file()
+            #     continue
+
+        # Get number of Krylov iterations if relevant
+        try:
+            krylov_it = solver.iters["NS"][0]
+        except AttributeError:
+            krylov_it = 0
 
         # Prepare results
         result.update(
@@ -450,6 +456,7 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
             h_min=mesh.hmin(),
             OTD=OTD,
             k=k,
+            krylov_it=krylov_it,
             t=hook.functionals["t"],
             bubble_vol=hook.functionals["bubble_vol"],
             mass=hook.functionals["mass"],
@@ -458,7 +465,7 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
             tmr_tstepping=tmr_tstepping.elapsed()[0]
         )
         print(label, result["ndofs"], result["h_min"], result["tmr_prepare"],
-              result["tmr_solve"], result["it"], result["tmr_tstepping"])
+              result["tmr_solve"], result["it"], result["tmr_tstepping"], result["krylov_it"])
 
         # Send to posprocessor
         rank = MPI.rank(comm)
@@ -470,7 +477,7 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
 
     # Pop results that we do not want to report at the moment
     postprocessor.pop_items([
-        "ndofs", "tmr_prepare", "tmr_solve", "tmr_tstepping", "it", "h_min"])
+        "scheme", "k", "dt", "tmr_prepare", "tmr_tstepping", "h_min"])
 
     # Flush plots as we now have data for all level values
     postprocessor.flush_plots()
@@ -518,7 +525,7 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericBenchPostprocessor):
-    def __init__(self, t_end, OTD, outdir):
+    def __init__(self, t_end, OTD, outdir, averaging=True):
         super(Postprocessor, self).__init__(outdir)
 
         # Hack enabling change of fixed variables at one place
@@ -527,24 +534,31 @@ class Postprocessor(GenericBenchPostprocessor):
 
         # So far hardcoded values
         self.x_var = "t"
+        self.x_var1 = "ndofs"
         self.y_var0 = "rise_vel"
         self.y_var1 = "mass"
         self.y_var2 = "bubble_vol"
+        self.y_var3 = "krylov_it"
+        self.y_var4 = "tmr_solve"
 
         # Store names
         self.basename = "t_end_{}_OTD_{}".format(t_end, OTD)
+
+        # Store other options
+        self._avg = averaging
 
     def flush_plots(self):
         if not self.plots:
             self.results = []
             return
-        coord_vars = (self.x_var, self.y_var0, self.y_var1, self.y_var2)
+        coord_vars = (self.x_var, self.x_var1, self.y_var0, self.y_var1, self.y_var2,
+                      self.y_var3, self.y_var4)
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = OrderedDict()
-            styles = {"Monolithic": ':', "SemiDecoupled": '-', "FullyDecoupled": '--'}
+            #styles = {"Monolithic": ':', "SemiDecoupled": '-', "FullyDecoupled": '--'}
             for result in self.results:
-                style = styles[result["scheme"]]
+                style = '-' #styles[result["scheme"]]
                 if not all(result[name] == value for name, value in fixed_vars):
                     continue
                 free_vars = tuple((var, val) for var, val in six.iteritems(result)
@@ -557,42 +571,68 @@ class Postprocessor(GenericBenchPostprocessor):
                 ys0 = datapoints.setdefault("ys0", [])
                 ys1 = datapoints.setdefault("ys1", [])
                 ys2 = datapoints.setdefault("ys2", [])
+
+                free_vars = tuple((var, val) for var, val in six.iteritems(result)
+                                  if var not in coord_vars
+                                  and var not in fixed_var_names
+                                  and var not in ["level", "it"])
+                datapoints = data.setdefault(free_vars, {})
+                xs_kr = datapoints.setdefault("xs_kr", [])
+                ys1_kr = datapoints.setdefault("ys1_kr", [])
+                ys2_kr = datapoints.setdefault("ys2_kr", [])
+
                 xs.append(result[self.x_var])
+                xs_kr.append(result[self.x_var1])
                 ys0.append(result[self.y_var0])
                 ys1.append(result[self.y_var1])
                 ys2.append(result[self.y_var2])
+                N = float(result["it"]) if self._avg else 1
+                ys1_kr.append(result[self.y_var3]/N)
+                ys2_kr.append(result[self.y_var4]/N)
 
             for free_vars, datapoints in six.iteritems(data):
-                xs = datapoints["xs"]
-                ys0 = datapoints["ys0"]
-                ys1 = datapoints["ys1"]
-                ys2 = datapoints["ys2"]
-                self._plot(fig, xs, ys0, ys1, ys2, free_vars, style)
+                xs = datapoints.get("xs")
+                ys0 = datapoints.get("ys0")
+                ys1 = datapoints.get("ys1")
+                ys2 = datapoints.get("ys2")
+                xs_kr = datapoints.get("xs_kr")
+                ys1_kr = datapoints.get("ys1_kr")
+                ys2_kr = datapoints.get("ys2_kr")
+                self._plot(fig, xs, xs_kr, ys0, ys1, ys2, ys1_kr, ys2_kr, free_vars, style)
             self._save_plot(fig, fixed_vars, self.outdir)
         self.results = []
 
     @staticmethod
-    def _plot(fig, xs, ys0, ys1, ys2, free_vars, style):
-        (fig1, fig2, fig3), (ax1, ax2, ax3) = fig
+    def _plot(fig, xs, xs_kr, ys0, ys1, ys2, ys1_kr, ys2_kr, free_vars, style):
+        (fig1, fig2, fig3, fig1_kr, fig2_kr), (ax1, ax2, ax3, ax1_kr, ax2_kr) = fig
         label = "_".join(map(str, itertools.chain(*free_vars)))
-        for i in range(len(xs)):
-            ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
-            ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
-            ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
-
-        for ax in (ax1, ax2, ax3):
-            ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
-                      fontsize='x-small', ncol=1)
+        if xs is not None:
+            for i in range(len(xs)):
+                ax1.plot(xs[i], ys0[i], style, linewidth=1, label=label)
+                ax2.plot(xs[i], ys1[i], style, linewidth=1, label=label)
+                ax3.plot(xs[i], ys2[i], style, linewidth=1, label=label)
+            for ax in (ax1, ax2, ax3):
+                ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
+                          fontsize='x-small', ncol=1)
+        if xs_kr is not None:
+            ax1_kr.plot(xs_kr, ys1_kr, '+--', linewidth=0.2, label=label)
+            ax2_kr.plot(xs_kr, ys2_kr, '+--', linewidth=0.2, label=label)
+            # ref = [ys2_kr[0],]
+            # for i, n in enumerate(xs_kr[:-1]):
+            #     ref.append(ref[-1]*xs_kr[i+1]/xs_kr[i])
+            # ax2_kr.plot(xs_kr, ref, '+:', linewidth=0.2, label="ref_"+label)
+            for ax in (ax1_kr, ax2_kr):
+                ax.legend(bbox_to_anchor=(0, -0.2), loc=2, borderaxespad=0,
+                          fontsize='x-small', ncol=1)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):
-        subfigs, (ax1, ax2, ax3) = fig
+        subfigs, (ax1, ax2, ax3, ax1_kr, ax2_kr) = fig
         filename = "_".join(map(str, itertools.chain(*fixed_vars)))
         import matplotlib.backends.backend_pdf
         pdf = matplotlib.backends.backend_pdf.PdfPages(
                   os.path.join(outdir, "fig_" + filename + ".pdf"))
         for fig in subfigs:
-            #fig.tight_layout()
             pdf.savefig(fig)
         pdf.close()
 
@@ -604,11 +644,18 @@ class Postprocessor(GenericBenchPostprocessor):
         ax2 = fig2.add_subplot(gs[0, 0], sharex=ax1)
         ax3 = fig3.add_subplot(gs[0, 0], sharex=ax1)
 
+        fig1_kr, fig2_kr = pyplot.figure(), pyplot.figure()
+        gs = gridspec.GridSpec(2, 2, height_ratios=[3, 1], width_ratios=[0.01, 1], hspace=0.05)
+        # Set subplots
+        ax1_kr = fig1_kr.add_subplot(gs[0, 1])
+        ax2_kr = fig2_kr.add_subplot(gs[0, 1], sharex=ax1_kr)
+
         # Set ticks
-        for ax in [ax1, ax2, ax3]:
+        for ax in [ax1, ax2, ax3, ax1_kr, ax2_kr]:
             ax.tick_params(which="both", direction="in", right=True, top=True)
 
         # Set labels
+        tail = "[p.t.s.]" if self._avg else ""
         ax1.set_xlabel("time $t$")
         ax2.set_xlabel(ax1.get_xlabel())
         ax3.set_xlabel(ax1.get_xlabel())
@@ -618,5 +665,14 @@ class Postprocessor(GenericBenchPostprocessor):
         ax1.set_ylim(None, None, auto=True)
         ax2.set_ylim(None, None, auto=True)
         ax3.set_ylim(0.15, 0.21, auto=False)
+        ax1_kr.set_xscale('log')
+        ax2_kr.set_xscale('log')
+        ax2_kr.set_yscale('log')
+        ax1_kr.set_xlabel("# DOFs")
+        ax2_kr.set_xlabel(ax1.get_xlabel())
+        ax1_kr.set_ylabel("# GMRES iterations {}".format(tail))
+        ax2_kr.set_ylabel("CPU time {}".format(tail))
+        ax1_kr.set_ylim(None, None, auto=True)
+        ax2_kr.set_ylim(None, None, auto=True)
 
-        return (fig1, fig2, fig3), (ax1, ax2, ax3)
+        return (fig1, fig2, fig3, fig1_kr, fig2_kr), (ax1, ax2, ax3, ax1_kr, ax2_kr)

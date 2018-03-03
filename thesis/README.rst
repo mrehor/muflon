@@ -36,10 +36,10 @@ Submit the following commands within a batch script
   $ export PYTHONHASHSEED=0
   $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_scheme.py --case 1
   $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_scheme.py --case 2
-  $ mpiexec -np 60 python3 -m pytest -svl bubble2/test_bubble2_THETA2.py --case 2
+  $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_THETA2.py --case 2
 
 Walltime hh:mm:ss (safe overestimate):
 
   + 24:00:00 (..._scheme, case 1)
   + 24:00:00 (..._scheme, case 2)
-  + 05:00:00 (..._THETA2, case 2)
+  + 00:30:00 (..._THETA2, case 2)
