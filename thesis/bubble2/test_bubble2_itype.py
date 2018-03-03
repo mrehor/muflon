@@ -287,9 +287,11 @@ def prepare_hook(DS, functionals, modulo_factor):
 @pytest.mark.parametrize("matching_p", [False,])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled",])
 @pytest.mark.parametrize("method", ["it",])
-@pytest.mark.parametrize("THETA2", [0.0, 1.0])
-def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
+@pytest.mark.parametrize("itype", ["har", "lin",])
+@pytest.mark.parametrize("trunc", ["minmax", "clamp_hard",])
+def test_bubble(trunc, itype, case, method, scheme, matching_p, postprocessor):
     # Check test configuration
+    assert case == 2
     if scheme == "FullyDecoupled" and method == "it":
         pytest.skip("{} does not support iterative solvers yet".format(scheme))
 
@@ -325,8 +327,8 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
         dt = dividing_factor*0.008
         if scheme == "FullyDecoupled" and case == 2:
             dt *= 0.5 # CHANGE #2: smaller time step required in this particular case
-        label = "case_{}_THETA2_{}_{}_{}_level_{}_k_{}_dt_{}_{}".format(
-                    case, THETA2, scheme, method, level, k, dt, basename)
+        label = "case_{}_{}_{}_{}_{}_level_{}_k_{}_dt_{}_{}".format(
+                    case, scheme, method, itype, trunc, level, k, dt, basename)
         with Timer("Prepare") as tmr_prepare:
             # Prepare space discretization
             mesh, boundary_markers, periodic_boundary = create_domain(level)
@@ -348,7 +350,7 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
 
             # Prepare model
             model = ModelFactory.create("Incompressible", DS, bcs)
-            model.parameters["THETA2"] = THETA2
+            #model.parameters["THETA2"] = 0.0
             #model.parameters["semi"]["sdstab"] = True
             if case == 1:
                 model.parameters["rho"]["itype"] = "lin"
@@ -358,8 +360,8 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
             else:
                 model.parameters["rho"]["itype"] = "lin"
                 model.parameters["rho"]["trunc"] = "minmax"
-                model.parameters["nu"]["itype"] = "har"
-                model.parameters["nu"]["trunc"] = "minmax"
+                model.parameters["nu"]["itype"] = itype
+                model.parameters["nu"]["trunc"] = trunc
             #model.parameters["mobility"]["cut"] = True
             #model.parameters["mobility"]["beta"] = 0.5
             if scheme == "FullyDecoupled" or method == "lu":
@@ -447,11 +449,12 @@ def test_bubble(case, THETA2, method, scheme, matching_p, postprocessor):
 
         # Prepare results
         result.update(
-            THETA2=THETA2,
             method=method,
             ndofs=DS.num_dofs(),
             scheme=scheme,
             case=case,
+            itype=itype,
+            trunc=trunc,
             level=level,
             h_min=mesh.hmin(),
             OTD=OTD,
@@ -505,9 +508,13 @@ def postprocessor(request):
     proc.register_fixed_variables(
         (("t_end", t_end), ("OTD", OTD)))
     proc.register_fixed_variables(
-       (("t_end", t_end), ("OTD", OTD), ("THETA2", 0.0)))
+        (("t_end", t_end), ("OTD", OTD), ("itype", "har")))
     proc.register_fixed_variables(
-       (("t_end", t_end), ("OTD", OTD), ("THETA2", 1.0)))
+        (("t_end", t_end), ("OTD", OTD), ("itype", "lin")))
+    proc.register_fixed_variables(
+        (("t_end", t_end), ("OTD", OTD), ("trunc", "minmax")))
+    proc.register_fixed_variables(
+        (("t_end", t_end), ("OTD", OTD), ("trunc", "clamp_hard")))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
