@@ -360,7 +360,7 @@ class SemiDecoupled(Solver):
             self.comm(), self.data["solver"]["CH"]["lin"], factory)
         solver_ch.parameters['absolute_tolerance'] = 1E-8
         solver_ch.parameters['relative_tolerance'] = 1E-16
-        solver_ch.parameters['maximum_iterations'] = 10
+        solver_ch.parameters['maximum_iterations'] = 25
         #solver_ch.parameters['relaxation_parameter'] = 1.0
         #solver_ch.parameters['error_on_nonconvergence'] = False
         #solver_ch.parameters['convergence_criterion'] = 'incremental'
