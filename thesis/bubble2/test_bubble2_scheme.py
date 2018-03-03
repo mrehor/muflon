@@ -355,7 +355,7 @@ def test_bubble(case, method, scheme, matching_p, postprocessor):
                 model.parameters["nu"]["trunc"] = "none"
             else:
                 model.parameters["rho"]["itype"] = "lin"
-                model.parameters["rho"]["itype"] = "minmax"
+                model.parameters["rho"]["trunc"] = "minmax"
                 model.parameters["nu"]["itype"] = "har"
                 model.parameters["nu"]["trunc"] = "minmax"
             #model.parameters["mobility"]["cut"] = True
