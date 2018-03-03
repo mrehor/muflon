@@ -350,14 +350,15 @@ def test_bubble(case, method, scheme, matching_p, postprocessor):
             #model.parameters["THETA2"] = 0.0
             if case == 1:
                 model.parameters["rho"]["itype"] = "lin"
-                model.parameters["rho"]["trunc"] = False
+                model.parameters["rho"]["trunc"] = "none"
                 model.parameters["nu"]["itype"] = "har"
-                model.parameters["nu"]["trunc"] = False
+                model.parameters["nu"]["trunc"] = "none"
             else:
-                model.parameters["rho"]["itype"] = "clamp" # same as "lin"+trunc
+                model.parameters["rho"]["itype"] = "lin"
+                model.parameters["rho"]["itype"] = "minmax"
                 model.parameters["nu"]["itype"] = "har"
-                model.parameters["nu"]["trunc"] = True
-            #model.parameters["mobility"]["trunc"] = True
+                model.parameters["nu"]["trunc"] = "minmax"
+            #model.parameters["mobility"]["cut"] = True
             #model.parameters["mobility"]["beta"] = 0.5
             if scheme == "FullyDecoupled" or method == "lu":
                 model.parameters["mobility"]["m"] = 0

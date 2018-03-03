@@ -110,13 +110,13 @@ class MuflonParameterSet(Parameters, Singleton):
        \                     .mobility.M0     constant mobility coefficient
        \                     .mobility.m      mobility exponent
        \                     .mobility.beta   time discretization factor
-       \                     .mobility.trunc  toggle for truncation of mobility
+       \                     .mobility.cut    toggle for truncation of mobility
        \                     .nu.i            dynamic viscosity of phase i
        \                     .nu.itype        type of interpolation for viscosity
-       \                     .nu.trunc        toggle for truncation of viscosity
+       \                     .nu.trunc        type of truncation for viscosity
        \                     .rho.i           density of phase i
        \                     .rho.itype       type of interpolation for density
-       \                     .rho.trunc       toggle for truncation of density
+       \                     .rho.trunc       type truncation for density
        \                     .sigma.ij        surface tension between phases i,j
        \                     .chq.L           characteristic length
        \                     .chq.V           characteristic velocity
@@ -135,6 +135,9 @@ class MuflonParameterSet(Parameters, Singleton):
         # Initialize dolfin's Parameters
         super(MuflonParameterSet, self).__init__(name)
 
+        # Helper variables for admissible parameter values
+        _trunc_types = ["none", "minmax", "clamp_soft", "clamp_hard"]
+
         # Discretization
         nested_prm = Parameters("discretization")
         nested_prm.add("N", 2, 2, 7)
@@ -146,7 +149,7 @@ class MuflonParameterSet(Parameters, Singleton):
         mobility_prm.add("M0", 1.0)
         mobility_prm.add("m", 0)
         mobility_prm.add("beta", 0.0, 0.0, 1.0)
-        mobility_prm.add("trunc", False)
+        mobility_prm.add("cut", False)
         char_quants = Parameters("chq")
         char_quants.add("L", 1.0)
         char_quants.add("V", 1.0)
@@ -157,10 +160,10 @@ class MuflonParameterSet(Parameters, Singleton):
         nested_prm.add(mobility_prm)
         nested_prm.add(Parameters("nu"))
         nested_prm["nu"].add("itype", "har", ["lin", "har"])
-        nested_prm["nu"].add("trunc", False)
+        nested_prm["nu"].add("trunc", "none", _trunc_types)
         nested_prm.add(Parameters("rho"))
         nested_prm["rho"].add("itype", "lin", ["lin", "har"])
-        nested_prm["rho"].add("trunc", False)
+        nested_prm["rho"].add("trunc", "none", _trunc_types)
         nested_prm.add(Parameters("sigma"))
         nested_prm.add(char_quants)
         self.add(nested_prm)

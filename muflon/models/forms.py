@@ -364,59 +364,77 @@ class Model(object):
         :type q: list
         :param phi: vector of volume fractions
         :type phi: :py:class:`ufl.tensors.ListTensor`
-        :param itype: type of interpolation: ``'lin'``, ``'log'``, ``'sin'``
+        :param itype: type of interpolation: ``'lin'``, ``'har'``
         :type itype: str
-        :param trunc: whether to truncate values above the maximum and
-                      below the minimum for ``'lin'`` type of interpolation
-        :type trunc: bool
+        :param trunc: type of truncation:  ``'none'`` (no truncation),
+                      ``'minmax'`` (truncate values above ``max(q)`` and below ``min(q)``),
+                      ``'clamp_soft'`` (clamp vol. fractions above 1 and below 0),
+                      ``'clamp_hard'`` (clamp vol. fractions above 0.975 and below 0.025)
+        :type trunc: str
         :returns: single interpolated quantity
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
         # FIXME: Take care of Dirac deltas when trunc is True and automated
         #        differentiation is used to get Jacobian in Newton solver.
         # FIXME: too many opts, consider removing "log", "sin", "odd"
+
+        def _clamp(z, lolim, hilim):
+            A = conditional(lt(z, lolim), 1.0, 0.0)
+            B = conditional(gt(z, hilim), 1.0, 0.0)
+            return B + (1.0 - A - B)*z
+
         N = len(q)
         min_idx = q.index(min(q)) # index of minimal value
         max_idx = q.index(max(q)) # index of maximal value
         cell = phi.ufl_domain().ufl_cell()
+        q = [Constant(q_i, cell=cell) for q_i in q]
+        q_min = q[min_idx]
+        q_max = q[max_idx]
+
         if itype == "lin":
-            q = [Constant(q_i, cell=cell) for q_i in q]
-            q_min = q[min_idx]
-            q_max = q[max_idx]
             q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
             interpolant = inner(q_diff, phi) + q[-1]
-            if trunc:
+            if trunc == "minmax":
                 A = conditional(lt(interpolant, q_min), 1.0, 0.0)
                 B = conditional(gt(interpolant, q_max), 1.0, 0.0)
                 interpolant = A*q_min + B*q_max + (1.0 - A - B)*interpolant
-        elif itype == "har":
-            # NOTE:
-            #   Harmonic averaging is used.
-            iq = [Constant(1.0/q_i, cell=cell) for q_i in q]
-            iq_diff = as_vector(iq[:-1]) - as_vector((N-1)*[iq[-1],])
-
-            def _clamp_value(z):
-                A = conditional(lt(z, 0.025), 1.0, 0.0)
-                B = conditional(gt(z, 0.975), 1.0, 0.0)
-                return B + (1.0 - A - B)*z
-
-            if trunc:
-                _phi = as_vector([_clamp_value(phi[i])
-                                  for i in range(len(phi))])
+            elif trunc == "clamp_soft":
+                I_phi = as_vector([_clamp(phi[i], 0.0, 1.0)
+                                       for i in range(len(phi))])
+                interpolant = inner(q_diff, I_phi) + q[-1]
+            elif trunc == "clamp_hard":
+                I_phi = as_vector([_clamp(phi[i], 0.025, 0.975)
+                                       for i in range(len(phi))])
+                interpolant = inner(q_diff, I_phi) + q[-1]
             else:
-                _phi = phi
-            denominator = inner(iq_diff, _phi) + iq[-1]
-            interpolant = 1.0 / denominator
+                assert trunc == "none"
+        elif itype == "har": # harmonic averaging
+            iq = [1.0/q_i for q_i in q]
+            iq_diff = as_vector(iq[:-1]) - as_vector((N-1)*[iq[-1],])
+            interpolant = 1.0 / (inner(iq_diff, phi) + iq[-1])
+            if trunc == "minmax":
+                A = conditional(lt(interpolant, q_min), 1.0, 0.0)
+                B = conditional(gt(interpolant, q_max), 1.0, 0.0)
+                interpolant = A*q_min + B*q_max + (1.0 - A - B)*interpolant
+            elif trunc == "clamp_soft":
+                I_phi = as_vector([_clamp(phi[i], 0.0, 1.0)
+                                       for i in range(len(phi))])
+                interpolant = 1.0 / (inner(iq_diff, I_phi) + 1.0/q[-1])
+            elif trunc == "clamp_hard":
+                I_phi = as_vector([_clamp(phi[i], 0.025, 0.975)
+                                       for i in range(len(phi))])
+                interpolant = 1.0 / (inner(iq_diff, I_phi) + 1.0/q[-1])
+            else:
+                assert trunc == "none"
         elif itype == "sharp":
-            q = [Constant(q_i, cell=cell) for q_i in q]
             q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
 
-            def _clamp_value(z):
+            def _clamp_sharp(z):
                 A = conditional(lt(z, 0.5), 1.0, 0.0)
                 B = conditional(Or(gt(z, 0.5), eq(z, 0.5)), 1.0, 0.0)
                 return B + (1.0 - A - B)*z
 
-            I_phi = as_vector([_clamp_value(phi[i])
+            I_phi = as_vector([_clamp_sharp(phi[i])
                                    for i in range(len(phi))])
             interpolant = inner(q_diff, I_phi) + q[-1]
         elif itype == "log":
@@ -428,25 +446,15 @@ class Model(object):
             interpolant = q[-1]
             for i in range(N-1):
                 interpolant *= pow(q[i]/q[-1], phi[i])
-        elif itype in ["clamp", "sin", "odd"]:
+        elif itype in ["sin", "odd"]:
             # NOTE:
             #   These approximations are only experimental:
-            #   * "clamp" type just clamps the values of phi which are
-            #      below zero / above one.
             #   * "sin" type of interpolation shrinks the region in which
             #     the quantity is supposed to switch from one value to another
             #     and usually leads to overshoots.
             #   * "odd" type of interpolation prefers to keep the averaged
             #     value of given quantity in the middle of the interface.
-            q = [Constant(q_i, cell=cell) for q_i in q]
             q_diff = as_vector(q[:-1]) - as_vector((N-1)*[q[-1],])
-
-            def _clamp_interpolation_function(z):
-                lolim = 0.025 if trunc else 0.0
-                hilim = 0.975 if trunc else 1.0
-                A = conditional(lt(z, lolim), 1.0, 0.0)
-                B = conditional(gt(z, hilim), 1.0, 0.0)
-                return B + (1.0 - A - B)*z
 
             def _sin_interpolation_function(z):
                 A = conditional(lt(z, 0.0), 1.0, 0.0)
@@ -461,9 +469,7 @@ class Model(object):
                 approx = 0.5*(pow(2.0*(z - 0.5), odd_a) + 1.0)
                 return B + (1.0 - A - B)*approx
 
-            if itype == "clamp":
-                _interpolation_function = _clamp_interpolation_function
-            elif itype == "sin":
+            if itype == "sin":
                 _interpolation_function = _sin_interpolation_function
             else:
                 _interpolation_function = _odd_interpolation_function
@@ -551,7 +557,7 @@ class Model(object):
         :returns: [degenerate [truncated]] mobility coefficient
         :rtype: :py:class:`ufl.core.expr.Expr`
         """
-        trunc = self.parameters["mobility"]["trunc"]
+        cut = self.parameters["mobility"]["cut"]
         cell = phi.ufl_domain().ufl_cell()
         M0 = Constant(M0, cell=cell) if not isinstance(M0, Constant) else M0
         if float(m) == 0.0:
@@ -561,7 +567,7 @@ class Model(object):
             # Degenerate mobility
             assert float(m) % 2 == 0
             ones = as_vector(len(phi)*[1.0,])
-            if trunc:
+            if cut:
                 # FIXME: Take care of Dirac deltas when using automated
                 #        differentiation to get Jacobian in Newton solver.
                 phi_  = as_vector([Max(Min(phi[i], 1.0), 0.0)
@@ -947,15 +953,13 @@ class Incompressible(Model):
 
         # Density and viscosity
         rho_mat = self.collect_material_params("rho")
-        irho_mat = [1.0/rm for rm in rho_mat]
         cc["rho"] = rho = self.density(rho_mat, phi)
         cc["rho0"] = rho0 = self.density(rho_mat, phi0)
-        irho0 = self.density(irho_mat, phi0, itype="lin", trunc=True)
         nu_mat = self.collect_material_params("nu")
         cc["nu"] = nu = self.viscosity(nu_mat, phi)
 
         # Explicit convective velocity
-        v_star = v0 + self._dt*f_cap*irho0
+        v_star = v0 + self._dt*f_cap/rho0
 
         # Mobility
         cc["Mo"] = Mo = self.mobility(cc["M0"], phi, phi0, cc["m"], cc["beta"])

@@ -204,12 +204,12 @@ def test_noflow(scheme, gamma, Re, nu_interp, postprocessor):
         # Prepare model
         model = ModelFactory.create("Incompressible", DS, bcs)
         model.parameters["THETA2"] = 0.0
-        model.parameters["rho"]["trunc"] = True
-        model.parameters["nu"]["trunc"] = True
-        #model.parameters["mobility"]["trunc"] = True
-        model.parameters["nu"]["itype"] = nu_interp
-        model.parameters["rho"]["itype"] = "lin"
         #model.parameters["rho"]["itype"] = "sharp"
+        model.parameters["rho"]["itype"] = "lin"
+        model.parameters["rho"]["trunc"] = "minmax"
+        model.parameters["nu"]["itype"] = nu_interp
+        model.parameters["nu"]["trunc"] = "clamp_hard" # "minmax"
+        #model.parameters["mobility"]["cut"] = True
         model.parameters["semi"]["gdstab"] = gamma
 
         # Prepare external source term

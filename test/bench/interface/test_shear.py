@@ -235,7 +235,7 @@ def prepare_hook(model, applied_force, functionals, modulo_factor, div_v=None):
 
 
 #@pytest.mark.parametrize("nu_interp", ["har", "sharp", "lin", "log", "sin", "odd"])
-@pytest.mark.parametrize("nu_interp", ["har", "sharp"])
+@pytest.mark.parametrize("nu_interp", ["har", "sharp", "lin"])
 @pytest.mark.parametrize("scheme", ["SemiDecoupled",])
 def test_shear(scheme, nu_interp, postprocessor):
     #set_log_level(WARNING)
@@ -292,11 +292,12 @@ def test_shear(scheme, nu_interp, postprocessor):
         # Prepare model
         model = ModelFactory.create("Incompressible", DS, bcs)
         model.parameters["THETA2"] = 0.0
-        model.parameters["rho"]["trunc"] = True
-        model.parameters["nu"]["trunc"] = True
-        #model.parameters["mobility"]["trunc"] = True
-        model.parameters["nu"]["itype"] = nu_interp
         #model.parameters["rho"]["itype"] = "lin"
+        #model.parameters["rho"]["trunc"] = "minmax"
+        model.parameters["nu"]["itype"] = nu_interp
+        model.parameters["nu"]["trunc"] = "minmax"
+        #model.parameters["nu"]["trunc"] = "clamp_hard"
+        #model.parameters["mobility"]["cut"] = True
 
         # Prepare external source term
         g_a = c[r"g_a"]
