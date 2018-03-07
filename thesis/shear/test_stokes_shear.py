@@ -18,23 +18,13 @@
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
 """
-This file implements the computation for a two-phase "no-flow" system enclosed
-inside a box with horizontal (possibly slightly perturbed) interface between
-the components that is supposed to stay at rest.
+This file implements a simple shear flow for two incompressible fluids
+horizontally stratified within a unit square domain.
 
-For the incompressible model some parasitic non-physical velocities occur close
-to the interface in the vertical direction if the density contrast is high and
-dynamic viscosities of both fluids occupying the domain are small. These
-spurious velocities can be suppressed by
-
-* increasing the order of finite element approximation ``k``
-* using augmented TH elements for ``SemiDecoupled`` and ``Monolithic`` schemes
-  (these elements should improve local mass conversation, see [1]_)
-* increasing ``model.parameters["full"]["factor_nu0"]`` for ``FullyDecoupled``
-  scheme
-
-.. [1] D. Boffi, N. Cavallini, F. Gardini, L. Gastaldi: Local Mass Conservation
-       of Stokes Finite Elements (2011). DOI: 10.1007/s10915-011-9549-4
+The system of PDEs solved here corresponds to the stationary Stokes
+problem with variable (spatially-dependent) viscosity and density.
+The spatial dependence of these coefficients is given by a fixed volume
+fraction that corresponds to a 1D equilibrium profile.
 """
 
 from __future__ import print_function
@@ -51,6 +41,10 @@ import numpy as np
 from matplotlib import pyplot
 from collections import OrderedDict
 
+from matplotlib import rc
+rc('font',**{'size': 20}) #, 'family':'serif'})
+#rc('text', usetex=True)
+
 from muflon.utils.testing import GenericBenchPostprocessor
 
 
@@ -59,15 +53,15 @@ def rho(phi, cc):
 
 _nu_all_ = ["PWC_sharp", "PW_harm", "PWC_harm", "harm", "log", "PWC_arit", "lin"]
 
-def nu_lin(phi, cc):
+def nu_linear(phi, cc):
     return cc[r"\nu_1"] * phi + cc[r"\nu_2"] * (1.0 - phi)
 
-def nu_harm(phi, cc):
+def nu_harmonic(phi, cc):
     denom = (1.0 / cc[r"\nu_1"]) * phi\
           + (1.0 / cc[r"\nu_2"]) * (1.0 - phi)
     return 1.0 / denom
 
-def nu_log(phi, cc):
+def nu_exponential(phi, cc):
     return cc[r"\nu_2"] * pow(cc[r"\nu_1"] / cc[r"\nu_2"], phi)
 
 def nu_PWC_sharp(phi, cc):
@@ -103,7 +97,7 @@ def nu_PWC_arit(phi, cc):
     return nu
 
 
-def create_forms(W, rho, nu, g_a, p_h, boundary_markers):
+def create_forms(W, rho, nu, F, g_a, p_h, boundary_markers):
     v, p = df.TrialFunctions(W)
     v_t, p_t = df.TestFunctions(W)
 
@@ -118,7 +112,7 @@ def create_forms(W, rho, nu, g_a, p_h, boundary_markers):
 
     n = df.FacetNormal(W.mesh())
     ds = df.Measure("ds", subdomain_data=boundary_markers)
-    L += df.inner(df.Constant((1.0, 0.0)), v_t) * ds(3) # driving force
+    L += df.inner(df.Constant((F, 0.0)), v_t) * ds(3)   # driving force
     L -= p_h * df.inner(n, v_t) * (ds(2) + ds(4))       # hydrostatic balance
 
     return a, L
@@ -229,7 +223,7 @@ def wrap_coeffs_as_constants(c):
 
 
 #@pytest.mark.parametrize("nu_interp", _nu_all_)
-@pytest.mark.parametrize("nu_interp", ["PW_harm", "PWC_sharp"])
+@pytest.mark.parametrize("nu_interp", ["linear", "exponential", "harmonic"]) #, "PWC_sharp", "PW_harm"
 def test_stokes_shear(nu_interp, postprocessor):
     #set_log_level(WARNING)
 
@@ -240,17 +234,24 @@ def test_stokes_shear(nu_interp, postprocessor):
     cc = wrap_coeffs_as_constants(c)
     nu = eval("nu_" + nu_interp) # choose viscosity interpolation
 
-    for level in range(2, 3):
+    for level in range(3, 4):
+        c[r"\eps"] = postprocessor.eps * 0.5 ** (level - 3)
+        cc[r"\eps"].assign(c[r"\eps"])
         mesh, boundary_markers, pinpoint, periodic_bnd = create_domain(level, "crossed")
         del periodic_bnd
-        W = create_mixed_space(mesh)
+        k = 1
+        W = create_mixed_space(mesh, k)
         bcs = create_bcs(W, boundary_markers, pinpoint)
+
+        df.info("\n... mesh created!")
+        df.info("h = {}".format(mesh.hmin()))
+        df.info("h_safe = {}".format(0.229 * c[r"\eps"] * k))
 
         phi = create_fixed_vfract(mesh, c)
         p_h = create_hydrostatic_pressure(mesh, cc)
 
         # Create forms
-        a, L = create_forms(W, rho(phi, cc), nu(phi, cc), c[r"g_a"],
+        a, L = create_forms(W, rho(phi, cc), nu(phi, cc), c[r"F"], c[r"g_a"],
                             p_h, boundary_markers)
 
         # Solve problem
@@ -327,14 +328,15 @@ def test_stokes_shear(nu_interp, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     r_dens = 1.0e-0
-    r_visc = 1.0e-4
+    r_visc = 1.0e-2 #0.5
+    eps = 0.05
     rank = df.MPI.rank(df.mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     outdir = os.path.join(scriptdir, __name__)
-    proc = Postprocessor(r_dens, r_visc, outdir)
+    proc = Postprocessor(r_dens, r_visc, eps, outdir)
 
     # Decide what should be plotted
-    proc.register_fixed_variables((("r_dens", r_dens),))
+    proc.register_fixed_variables((("r_dens", r_dens), ("r_visc", r_visc)))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -352,7 +354,7 @@ def postprocessor(request):
     return proc
 
 class Postprocessor(GenericBenchPostprocessor):
-    def __init__(self, r_dens, r_visc, outdir):
+    def __init__(self, r_dens, r_visc, eps, outdir):
         super(Postprocessor, self).__init__(outdir)
 
         x2 = np.arange(0.0, 1.0, .01)
@@ -362,13 +364,15 @@ class Postprocessor(GenericBenchPostprocessor):
         self.y_vars = [r"$\phi$", r"$v_1$", r"$p$", r"$\nu$",
                       r"$D_{12}$", r"$T_{12}$"]
 
-        self.c = self._create_coefficients(r_dens, r_visc)
+        self.c = self._create_coefficients(r_dens, r_visc, eps)
         self.esol = self._prepare_exact_solution(x2, self.c)
         self.basename = "shear_rd_{}_rv_{}".format(r_dens, r_visc)
+        self.plot_ref = True
+        self.eps = eps
 
 
     @staticmethod
-    def _create_coefficients(r_dens, r_visc):
+    def _create_coefficients(r_dens, r_visc, eps):
         c = OrderedDict()
         c[r"r_dens"] = r_dens
         c[r"r_visc"] = r_visc
@@ -378,8 +382,9 @@ class Postprocessor(GenericBenchPostprocessor):
         c[r"\rho_2"] = r_dens * c[r"\rho_1"]
         c[r"\nu_1"] = 1.0
         c[r"\nu_2"] = r_visc * c[r"\nu_1"]
-        c[r"\eps"] = 0.1
+        c[r"\eps"] = eps
         c[r"g_a"] = 1.0
+        c[r"F"] = 2.0 * c[r"\nu_1"] * c[r"\nu_2"] / (c[r"\nu_1"] + c[r"\nu_2"])
 
         # Characteristic quantities
         c[r"L_0"] = 1.0
@@ -388,8 +393,8 @@ class Postprocessor(GenericBenchPostprocessor):
 
         df.begin("\nDimensionless numbers")
         At = (c[r"\rho_1"] - c[r"\rho_2"]) / (c[r"\rho_1"] + c[r"\rho_2"])
-        Re_1 = c[r"\rho_1"] / c[r"\nu_1"]
-        Re_2 = c[r"\rho_2"] / c[r"\nu_2"]
+        Re_1 = c[r"\rho_1"] * c[r"V_0"] * c[r"L_0"] / c[r"\nu_1"]
+        Re_2 = c[r"\rho_2"] * c[r"V_0"] * c[r"L_0"] / c[r"\nu_2"]
         df.info("r_dens = {}".format(r_dens))
         df.info("r_visc = {}".format(r_visc))
         df.info("Re_1 = {}".format(Re_1))
@@ -404,6 +409,7 @@ class Postprocessor(GenericBenchPostprocessor):
         c[r"\nu_2"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
         c[r"\eps"] /= c[r"L_0"]
         c[r"g_a"] /= c[r"V_0"]**2.0 * c[r"L_0"]
+        c[r"F"] /= c[r"\rho_0"] * c[r"V_0"]**2.0
 
         return c
 
@@ -414,8 +420,8 @@ class Postprocessor(GenericBenchPostprocessor):
     def _prepare_exact_solution(y, c):
         # Velocity
         v1_ref = np.piecewise(y, [y <= 0.5, y > 0.5], [
-            lambda y: 1.0 / c[r"\nu_1"] * y,
-            lambda y: 1.0 / c[r"\nu_2"] * (y - 0.5) + 0.5 / c[r"\nu_1"]])
+            lambda y: c[r"F"] / c[r"\nu_1"] * y,
+            lambda y: c[r"F"] / c[r"\nu_2"] * (y - 0.5) + 0.5 * c[r"F"] / c[r"\nu_1"]])
 
         # Pressure
         p_ref = - 0.25 * (2.0 * y - c[r"\eps"] * np.log(np.cosh((1.0 - 2.0 * y) / c[r"\eps"])))
@@ -432,8 +438,8 @@ class Postprocessor(GenericBenchPostprocessor):
 
         # Shear strain
         D12_ref = 0.5 * np.piecewise(y, [y <= 0.5, y > 0.5], [
-            lambda y: 1.0 / c[r"\nu_1"],
-            lambda y: 1.0 / c[r"\nu_2"]])
+            lambda y: c[r"F"] / c[r"\nu_1"],
+            lambda y: c[r"F"] / c[r"\nu_2"]])
 
         # Shear stress
         T12_ref = 2.0 * nu_ref * D12_ref
@@ -464,16 +470,27 @@ class Postprocessor(GenericBenchPostprocessor):
             ax.set_xlabel(axes[0].get_xlabel())
         for i, label in enumerate(self.y_vars):
             axes[i].set_ylabel(label)
-            if self.esol[label] is not None:
+            if self.plot_ref and self.esol[label] is not None:
                 axes[i].plot(self.x_var, self.esol[label],
-                             'r.', markersize=3, label='ref')
+                             'k.--', linewidth=0.2, markersize=3,
+                             label='sharp', zorder=1)
+                # if label == r"$v_1$":
+                #     twax = axes[i].twinx()
+                #     twax.set_ylabel(r"$\phi$")
+                #     twax.tick_params(axis="y", direction="in")
+                #     twax.plot(self.x_var, self.esol[r"$\phi$"],
+                #              ':', linewidth=1.0, color='tab:gray',
+                #              label='volume fraction', zorder=0)
+                #     twax.legend(loc=0, fontsize='x-small')
 
         axes[0].set_xlim(0.0, 1.0, auto=False)
         axes[0].set_ylim(-0.1, 1.1, auto=False)
         #axes[1].set_yscale("log")
-        #axes[3].set_yscale("log")
+        if self.c[r"r_visc"] <= 0.1 or self.c[r"r_visc"] >= 10.0:
+            axes[3].set_yscale("log")
         axes[4].set_yscale("log")
-        axes[5].set_ylim(0.999, 1.001, auto=False)
+        axes[5].set_ylim(0.95 * self.c[r"F"],
+                         1.05 * self.c[r"F"], auto=False)
 
         for ax in axes:
             ax.tick_params(which="both", direction="in", right=True, top=True)
@@ -488,7 +505,7 @@ class Postprocessor(GenericBenchPostprocessor):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
             for result in self.results:
-                style = '-'
+                style = {'linear': '-.', 'exponential': ':', 'harmonic': '-'}
                 if not all(result[name] == value for name, value in fixed_vars):
                     continue
                 free_vars = tuple((var, val) for var, val in six.iteritems(result)
@@ -513,11 +530,14 @@ class Postprocessor(GenericBenchPostprocessor):
     def _plot(fig, xs, ys, free_vars, style):
         subfigs, axes = fig
         assert len(ys) == len(axes)
-        label = "_".join(map(str, itertools.chain(*free_vars)))
+        #label = "_".join(map(str, itertools.chain(*free_vars)))
+        #st = "-"
+        label = dict(free_vars)['nu_interp']
+        st = style[label]
         for i, ax in enumerate(axes):
             var = ax.get_ylabel()
             for j in range(len(ys[i])):
-                ax.plot(xs, ys[i][j], style, linewidth=1, label=label)
+                ax.plot(xs, ys[i][j], st, linewidth=1, label=label)
             ax.legend(loc=0, fontsize='x-small', ncol=1)
 
     @staticmethod

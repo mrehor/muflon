@@ -10,6 +10,16 @@ Computational environment used:
   - MUFLON dev
   - FENaPack dev
 
+Simple shear flow
+-----------------
+
+Run the following commands and wait a couple of seconds
+
+.. code-block:: console
+
+  $ python3 -m pytest -svl shear/test_stokes_shear.py
+
+
 Method of Manufactured Solutions (MMS)
 --------------------------------------
 
