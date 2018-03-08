@@ -73,24 +73,24 @@ def nu_PWC_sharp(phi, cc):
     return nu
 
 def nu_PW_harm(phi, cc):
-    A = df.conditional(df.gt(phi, 0.95), 1.0, 0.0)
-    B = df.conditional(df.lt(phi, 0.05), 1.0, 0.0)
+    A = df.conditional(df.gt(phi, 0.975), 1.0, 0.0)
+    B = df.conditional(df.lt(phi, 0.025), 1.0, 0.0)
     nu = A * cc[r"\nu_1"]\
        + B * cc[r"\nu_2"]\
        + (1.0 - A - B) * 1.0 / ((1.0 / cc[r"\nu_1"] - 1.0 / cc[r"\nu_2"]) * phi + 1.0 / cc[r"\nu_2"])
     return nu
 
 def nu_PWC_harm(phi, cc):
-    A = df.conditional(df.gt(phi, 0.95), 1.0, 0.0)
-    B = df.conditional(df.lt(phi, 0.05), 1.0, 0.0)
+    A = df.conditional(df.gt(phi, 0.975), 1.0, 0.0)
+    B = df.conditional(df.lt(phi, 0.025), 1.0, 0.0)
     nu = A * cc[r"\nu_1"]\
        + B * cc[r"\nu_2"]\
        + (1.0 - A - B) * 2.0 / (1.0 / cc[r"\nu_1"] + 1.0 / cc[r"\nu_2"])
     return nu
 
 def nu_PWC_arit(phi, cc):
-    A = df.conditional(df.gt(phi, 0.95), 1.0, 0.0)
-    B = df.conditional(df.lt(phi, 0.05), 1.0, 0.0)
+    A = df.conditional(df.gt(phi, 0.975), 1.0, 0.0)
+    B = df.conditional(df.lt(phi, 0.025), 1.0, 0.0)
     nu = A * cc[r"\nu_1"]\
        + B * cc[r"\nu_2"]\
        + (1.0 - A - B) * 0.5 * (cc[r"\nu_1"] + cc[r"\nu_2"])
@@ -223,7 +223,8 @@ def wrap_coeffs_as_constants(c):
 
 
 #@pytest.mark.parametrize("nu_interp", _nu_all_)
-@pytest.mark.parametrize("nu_interp", ["linear", "exponential", "harmonic"]) #, "PWC_sharp", "PW_harm"
+@pytest.mark.parametrize("nu_interp", ["PWC_arit", "linear", "exponential",
+                                       "harmonic",]) #, "PWC_sharp", "PW_harm"
 def test_stokes_shear(nu_interp, postprocessor):
     #set_log_level(WARNING)
 
@@ -472,7 +473,7 @@ class Postprocessor(GenericBenchPostprocessor):
             axes[i].set_ylabel(label)
             if self.plot_ref and self.esol[label] is not None:
                 axes[i].plot(self.x_var, self.esol[label],
-                             'k.--', linewidth=0.2, markersize=3,
+                             'k.--', linewidth=0.2, markersize=5,
                              label='sharp', zorder=1)
                 # if label == r"$v_1$":
                 #     twax = axes[i].twinx()
@@ -505,7 +506,8 @@ class Postprocessor(GenericBenchPostprocessor):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
             data = {}
             for result in self.results:
-                style = {'linear': '-.', 'exponential': ':', 'harmonic': '-'}
+                style = {'linear': '-.', 'exponential': ':', 'harmonic': '-',
+                         'discontinuous': '--'}
                 if not all(result[name] == value for name, value in fixed_vars):
                     continue
                 free_vars = tuple((var, val) for var, val in six.iteritems(result)
@@ -533,11 +535,19 @@ class Postprocessor(GenericBenchPostprocessor):
         #label = "_".join(map(str, itertools.chain(*free_vars)))
         #st = "-"
         label = dict(free_vars)['nu_interp']
+        if label == "PWC_arit":
+            label = "discontinuous"
         st = style[label]
+        color = {
+            'discontinuous': 'tab:orange',
+            'linear': 'tab:blue',
+            'exponential': 'tab:red',
+            'harmonic': 'tab:green'
+            }[label]
         for i, ax in enumerate(axes):
             var = ax.get_ylabel()
             for j in range(len(ys[i])):
-                ax.plot(xs, ys[i][j], st, linewidth=1, label=label)
+                ax.plot(xs, ys[i][j], st, linewidth=1.5, label=label, color=color)
             ax.legend(loc=0, fontsize='x-small', ncol=1)
 
     @staticmethod
