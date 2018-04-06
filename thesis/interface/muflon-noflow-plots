@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright (C) 2017 Martin Řehoř
+#
+# This file is part of MUFLON.
+#
+# MUFLON is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# MUFLON is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
+
+"""
+This script is used to plot results obtained for no-flow problem
+
+Usage:
+
+.. code-block:: console
+
+  $ ./muflon-noflow-plots <postprocessor> <result1> [<result2>, [...]]
+"""
+
+import sys
+
+from muflon.utils.testing import read_postprocessor
+from dolfin import mpi_comm_world, MPI
+
+# Font settings
+from matplotlib import rc
+rc('font',**{'size': 17}) #, 'family':'serif'})
+#rc('text', usetex=True)
+
+import itertools
+
+from numpy import log10
+
+counter = 0
+def _plot_with_customized_labels(fig, xs, ys, free_vars, style):
+    global counter
+    counter %= 3
+    counter += 1
+    subfigs, axes = fig
+    assert len(ys) == len(axes)
+    #label = "_".join(map(str, itertools.chain(*free_vars)))
+    if free_vars[0][0] == 'gamma':
+        prmname = r"$\gamma_{\mathrm{gd}}$"
+        if free_vars[0][1] == 0.0:
+            label = r"{} = ${:g}$".format(prmname, free_vars[0][1])
+        else:
+            label = r"{} = $10^{:g}$".format(prmname, log10(free_vars[0][1]))
+    elif free_vars[0][0] == 'r_dens':
+        prmname = r"$\hat{\varrho}_1 - \hat{\varrho}_2$"
+        label = r"{} = ${:.2f}$".format(prmname, 1.0 - free_vars[0][1])
+    else:
+        prmname = free_vars[0][0]
+        label = r"{} = $10^{:g}$".format(prmname, log10(free_vars[0][1]))
+    for i, ax in enumerate(axes):
+        var = ax.get_ylabel()
+        var = r"$||\nabla (\mathbf{v} - \mathbf{v}_h)||_{L^2}$" \
+              if var == r"$||\mathbf{v} - \mathbf{v}_h||_{H^1_0}$" else var
+        s = style[var][counter]
+        for j in range(len(ys[i])):
+            ax.plot(xs[i], ys[i][j], s, linewidth=1.3, label=label,
+                    markerfacecolor="None", markersize=8)
+        ax.legend(loc=0, fontsize='x-small', ncol=1)
+
+def main(argv):
+    proc = read_postprocessor(argv[0])
+    # FIXME: Remove the following hack
+    proc.outdir="."
+    # NOTE: Uncomment the above line when plotting the results that
+    #       were computed elsewhere (e.g. on cluster)
+    rank = 0
+    proc.fixvars = [
+        (("r_visc", 1.0), ("Re", 1e+00)),
+        (("r_visc", 1.0), ("Re", 1e+02)),
+        (("r_visc", 1.0), ("Re", 1e+04)),
+        #(("r_visc", 1.0), ("Re", 1e+06)),
+    ]
+    proc.create_plots(rank)
+    for arg in argv[1:]:
+        proc.read_results(rank, arg)
+    proc.pop_items(["level", "h", "nu_interp", "gamma"])
+    proc._plot = _plot_with_customized_labels
+    proc.flush_plots()
+
+if __name__ == "__main__":
+    if MPI.size(mpi_comm_world()) > 1:
+        raise RuntimeError("This script can be run only in serial")
+    main(sys.argv[1:])

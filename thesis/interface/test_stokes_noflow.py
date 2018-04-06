@@ -40,6 +40,7 @@ spurious velocities can be suppressed by
 from __future__ import print_function
 
 import pytest
+import sys
 import os
 import gc
 import six
@@ -55,11 +56,12 @@ from muflon.utils.testing import GenericBenchPostprocessor
 
 from test_stokes_shear import rho
 from test_stokes_shear import _nu_all_
-from test_stokes_shear import nu_lin, nu_harm, nu_log, nu_PW_harm
+from test_stokes_shear import nu_linear, nu_harmonic, nu_exponential, nu_PW_harm
 from test_stokes_shear import nu_PWC_harm, nu_PWC_arit, nu_PWC_sharp
 from test_stokes_shear import create_fixed_vfract
 from test_stokes_shear import create_mixed_space
 from test_stokes_shear import create_domain
+from test_stokes_shear import create_hydrostatic_pressure
 from test_stokes_shear import wrap_coeffs_as_constants
 
 
@@ -98,23 +100,31 @@ def create_bcs(W, boundary_markers, periodic_boundary=None, pinpoint=None):
     return bcs
 
 
-def compute_errornorms(v):
+def compute_errornorms(v, div_v, p, p_ref):
     deg = v.ufl_element().degree()
+
     v_ref = df.Expression(("0.0", "0.0"), degree=deg+3)
     v_errL2 = df.errornorm(v_ref, v, norm_type="L2")
     v_errH10 = df.errornorm(v_ref, v, norm_type="H10")
-    return v_errL2, v_errH10
+
+    #div_errL2 = df.assemble(div_v * div_v * df.dx) ** 0.5
+    div_ref = df.Expression("0.0", degree=deg+3)
+    div_errL2 = df.errornorm(div_ref, div_v, norm_type="L2")
+
+    p_errL2 = df.errornorm(p_ref, p, norm_type="L2")
+
+    return v_errL2, v_errH10, div_errL2, p_errL2
 
 
 #@pytest.mark.parametrize("nu_interp", _nu_all_)
-@pytest.mark.parametrize("nu_interp", ["PW_harm",]) #"lin", "PWC_sharp"
-@pytest.mark.parametrize("Re", [1.0e+4,]) #1.0, 1.0e+2,
-@pytest.mark.parametrize("gamma", [0.0, 1.0e+0, 1.0e+2, 1.0e+4])
+@pytest.mark.parametrize("nu_interp", ["harmonic",])
+@pytest.mark.parametrize("Re", [1.0, 1.0e+2, 1.0e+4]) #, 1.0e+6
+@pytest.mark.parametrize("gamma", [0.0,]) # 1.0e+0, 1.0e+2, 1.0e+4])
 def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
     #set_log_level(WARNING)
 
     basename = postprocessor.basename
-    label = "{}_{}_gamma_{}_Re_{}".format(basename, nu_interp, gamma, Re)
+    label = "{}_{}_gamma_{}_Re_{:.0e}".format(basename, nu_interp, gamma, Re)
 
     c = postprocessor.get_coefficients()
     c[r"\nu_1"] = c[r"\rho_1"] / Re
@@ -125,8 +135,9 @@ def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
     cc = wrap_coeffs_as_constants(c)
     nu = eval("nu_" + nu_interp) # choose viscosity interpolation
 
-    for level in range(1, 5):
+    for level in range(1, 4):
         mesh, boundary_markers, pinpoint, periodic_bnd = create_domain(level)
+        periodic_bnd = None
         W = create_mixed_space(mesh, periodic_boundary=periodic_bnd)
         bcs = create_bcs(W, boundary_markers,
                          periodic_boundary=periodic_bnd,
@@ -141,21 +152,29 @@ def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
         # Solve problem
         w = df.Function(W)
         A, b = df.assemble_system(a, L, bcs)
-        solver = df.LUSolver()
+        solver = df.LUSolver("mumps")
+        df.PETScOptions.set("fieldsplit_u_mat_mumps_icntl_14", 500)
         solver.set_operator(A)
-        solver.solve(w.vector(), b)
+        try:
+            solver.solve(w.vector(), b)
+        except:
+            df.warning("Ooops! Something went wrong: {}".format(sys.exc_info()[0]))
+            continue
 
         # Pre-process results
         v, p = w.split(True)
         v.rename("v", "velocity")
         p.rename("p", "pressure")
 
-        v_errL2, v_errH10 = compute_errornorms(v)
-
         V_dv = df.FunctionSpace(mesh, "DG", W.sub(0).ufl_element().degree()-1)
         div_v = df.project(df.div(v), V_dv)
         div_v.rename("div_v", "velocity-divergence")
         D_22 = df.project(v.sub(1).dx(1), V_dv)
+
+        p_h = create_hydrostatic_pressure(mesh, cc)
+        #p_ref = df.project(p_h, W.sub(1).ufl_element())
+        p_ref = df.project(p_h, df.FunctionSpace(mesh, df.FiniteElement("CG", mesh.ufl_cell(), 4)))
+        v_errL2, v_errH10, div_errL2, p_errL2 = compute_errornorms(v, div_v, p, p_ref)
 
         if nu_interp[:2] == "PW":
             V_nu = df.FunctionSpace(mesh, "DG", phi.ufl_element().degree())
@@ -164,13 +183,12 @@ def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
         nu_0 = df.project(nu(phi, cc), V_nu)
         T_22 = df.project(2.0 * nu(phi, cc) * v.sub(1).dx(1), V_nu)
 
-        #p_ref = df.project(p_h, df.FunctionSpace(mesh, W.sub(1).ufl_element()))
-
         # Save results
         make_cut = postprocessor._make_cut
         rs = dict(
             ndofs=W.dim(),
-            #level=level,
+            level=level,
+            h=mesh.hmin(),
             r_dens=c[r"r_dens"],
             r_visc=c[r"r_visc"],
             gamma=gamma,
@@ -183,8 +201,10 @@ def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
         rs[r"$D_{22}$"] = make_cut(D_22)
         rs[r"$T_{22}$"] = make_cut(T_22)
         rs[r"$\nu$"] = make_cut(nu_0)
-        rs[r"$\mathbf{v}$-$L^2$"] = v_errL2
-        rs[r"$\mathbf{v}$-$H^1_0$"] = v_errH10
+        rs[r"$||\mathbf{v} - \mathbf{v}_h||_{L^2}$"] = v_errL2
+        rs[r"$||\nabla (\mathbf{v} - \mathbf{v}_h)||_{L^2}$"] = v_errH10
+        rs[r"$||\mathrm{div} \mathbf{v}_h||_{L^2}$"] = div_errL2
+        rs[r"$||\mathbf{p} - \mathbf{p}_h||_{L^2}$"] = p_errL2
         print(label, level)
 
         # Send to posprocessor
@@ -209,6 +229,7 @@ def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
     postprocessor.save_results(filename)
 
     # Flush plots as we now have data for all level values
+    postprocessor.pop_items(["level", "h"])
     postprocessor.flush_plots()
 
     # Cleanup
@@ -218,7 +239,7 @@ def test_stokes_noflow(gamma, Re, nu_interp, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    r_dens = 1.0e-1
+    r_dens = 1.0e-2
     r_visc = 1.0e-0
     rank = df.MPI.rank(df.mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
@@ -226,7 +247,7 @@ def postprocessor(request):
     proc = Postprocessor(r_dens, r_visc, outdir)
 
     # Decide what should be plotted
-    proc.register_fixed_variables((("r_visc", r_visc),))
+    proc.register_fixed_variables((("r_dens", r_dens), ("r_visc", r_visc),))
 
     # Dump empty postprocessor into a file for later use
     filename = "proc_{}.pickle".format(proc.basename)
@@ -254,18 +275,20 @@ class Postprocessor(GenericBenchPostprocessor):
         self.x_var2 = "ndofs"
         self.y_var1 = [r"$\phi$", r"$v_2$", r"$p$", r"$\nu$",
                        r"$D_{22}$", r"$T_{22}$"]
-        self.y_var2 = [r"$\mathbf{v}$-$L^2$", r"$\mathbf{v}$-$H^1_0$"]
+        self.y_var2 = [r"$||\mathbf{v} - \mathbf{v}_h||_{L^2}$",
+                       r"$||\nabla (\mathbf{v} - \mathbf{v}_h)||_{L^2}$",
+                       r"$||\mathrm{div} \mathbf{v}_h||_{L^2}$",
+                       r"$||\mathbf{p} - \mathbf{p}_h||_{L^2}$"]
         self._style = {}
         for var in self.y_var1:
-            self._style[var] = '-'
+            self._style[var] = 5*['-',]
         for var in self.y_var2:
-            self._style[var] = '+--'
+            self._style[var] = ['+--', 's-', 'd-', 'x-', '>-']
 
         self.c = self._create_coefficients(r_dens, r_visc)
         self.esol = self._prepare_exact_solution(x2, self.c)
-        #self.basename = "noflow_rd_{}_rv_{}".format(r_dens, r_visc)
-        self.basename = "noflow_rv_{}".format(r_visc)
-
+        self.basename = "noflow_rd_{}_rv_{}".format(r_dens, r_visc)
+        #self.basename = "noflow_rv_{}".format(r_visc)
 
     @staticmethod
     def _create_coefficients(r_dens, r_visc):
@@ -278,7 +301,7 @@ class Postprocessor(GenericBenchPostprocessor):
         c[r"\rho_2"] = r_dens * c[r"\rho_1"]
         c[r"\nu_1"] = 1.0
         c[r"\nu_2"] = r_visc * c[r"\nu_1"]
-        c[r"\eps"] = 0.1
+        c[r"\eps"] = 0.05
         c[r"g_a"] = 1.0
 
         # Characteristic quantities
@@ -303,7 +326,7 @@ class Postprocessor(GenericBenchPostprocessor):
         c[r"\nu_1"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
         c[r"\nu_2"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
         c[r"\eps"] /= c[r"L_0"]
-        c[r"g_a"] /= c[r"V_0"]**2.0 * c[r"L_0"]
+        c[r"g_a"] /= c[r"V_0"]**2.0 / c[r"L_0"]
 
         return c
 
@@ -316,7 +339,7 @@ class Postprocessor(GenericBenchPostprocessor):
         v_ref = np.array(len(y) * [0.0,])
 
         # Pressure
-        p_ref = - 0.25 * (2.0 * y - c[r"\eps"] * np.log(np.cosh((1.0 - 2.0 * y) / c[r"\eps"])))
+        p_ref = - 0.25 * (2.0 * y - c[r"\eps"] * np.log(np.cosh((2.0 * y - 1.0) / c[r"\eps"])))
         p_ref += 0.25 * (2.0 - c[r"\eps"] * np.log(np.cosh((1.0) / c[r"\eps"])))
         p_ref = c[r"g_a"] * ((c[r"\rho_1"] - c[r"\rho_2"]) * p_ref + c[r"\rho_2"] * (1.0 - y))
 
@@ -377,10 +400,12 @@ class Postprocessor(GenericBenchPostprocessor):
             figs_dof.append(pyplot.figure())
             axes_dof.append(figs_dof[-1].gca(sharex=axes_dof[0]))
 
-        axes_dof[0].set_xlabel(r"number of DOF")
+        axes_dof[0].set_xlabel(r"# DOFs")
         for ax in axes_dof[1:]:
             ax.set_xlabel(axes_dof[0].get_xlabel())
         for i, label in enumerate(self.y_var2):
+            # label = r"$||\mathbf{v} - \mathbf{v}_h||_{H^1_0}$" \
+            #   if label == r"$||\nabla (\mathbf{v} - \mathbf{v}_h)||_{L^2}$" else label
             axes_dof[i].set_ylabel(label)
             axes_dof[i].set_yscale("log")
 
@@ -395,7 +420,7 @@ class Postprocessor(GenericBenchPostprocessor):
             return
         for fixed_vars, fig in six.iteritems(self.plots):
             fixed_var_names = next(six.moves.zip(*fixed_vars))
-            data = {}
+            data = OrderedDict()
             for result in self.results:
                 style = self._style
                 if not all(result[name] == value for name, value in fixed_vars):
@@ -435,9 +460,10 @@ class Postprocessor(GenericBenchPostprocessor):
         label = "_".join(map(str, itertools.chain(*free_vars)))
         for i, ax in enumerate(axes):
             var = ax.get_ylabel()
-            s = style[var]
+            s = style[var][0]
             for j in range(len(ys[i])):
-                ax.plot(xs[i], ys[i][j], s, linewidth=1, label=label)
+                ax.plot(xs[i], ys[i][j], s, linewidth=1, label=label,
+                        markerfacecolor="None", markersize=8)
             ax.legend(loc=0, fontsize='x-small', ncol=1)
 
     @staticmethod

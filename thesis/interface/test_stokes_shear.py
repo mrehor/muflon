@@ -41,9 +41,9 @@ import numpy as np
 from matplotlib import pyplot
 from collections import OrderedDict
 
-from matplotlib import rc
-rc('font',**{'size': 20}) #, 'family':'serif'})
-#rc('text', usetex=True)
+# from matplotlib import rc
+# rc('font',**{'size': 20}) #, 'family':'serif'})
+# #rc('text', usetex=True)
 
 from muflon.utils.testing import GenericBenchPostprocessor
 
@@ -120,7 +120,7 @@ def create_forms(W, rho, nu, F, g_a, p_h, boundary_markers):
 
 def create_hydrostatic_pressure(mesh, cc):
     x = df.MeshCoordinates(mesh)
-    p_h = - 0.25 * (2.0 * x[1] - cc[r"\eps"] * df.ln(df.cosh((1.0 - 2.0 * x[1]) / cc[r"\eps"])))
+    p_h = - 0.25 * (2.0 * x[1] - cc[r"\eps"] * df.ln(df.cosh((2.0 * x[1] - 1.0) / cc[r"\eps"])))
     p_h +=  0.25 * (2.0 - cc[r"\eps"] * df.ln(df.cosh(1.0 / cc[r"\eps"])))
     p_h = cc[r"g_a"] * ((cc[r"\rho_1"] - cc[r"\rho_2"]) * p_h + cc[r"\rho_2"] * (1.0 - x[1]))
 
@@ -329,7 +329,7 @@ def test_stokes_shear(nu_interp, postprocessor):
 @pytest.fixture(scope='module')
 def postprocessor(request):
     r_dens = 1.0e-0
-    r_visc = 1.0e-2 #0.5
+    r_visc = 1.0e-3 #0.5
     eps = 0.05
     rank = df.MPI.rank(df.mpi_comm_world())
     scriptdir = os.path.dirname(os.path.realpath(__file__))
@@ -409,7 +409,7 @@ class Postprocessor(GenericBenchPostprocessor):
         c[r"\nu_1"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
         c[r"\nu_2"] /= c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
         c[r"\eps"] /= c[r"L_0"]
-        c[r"g_a"] /= c[r"V_0"]**2.0 * c[r"L_0"]
+        c[r"g_a"] /= c[r"V_0"]**2.0 / c[r"L_0"]
         c[r"F"] /= c[r"\rho_0"] * c[r"V_0"]**2.0
 
         return c
@@ -425,7 +425,7 @@ class Postprocessor(GenericBenchPostprocessor):
             lambda y: c[r"F"] / c[r"\nu_2"] * (y - 0.5) + 0.5 * c[r"F"] / c[r"\nu_1"]])
 
         # Pressure
-        p_ref = - 0.25 * (2.0 * y - c[r"\eps"] * np.log(np.cosh((1.0 - 2.0 * y) / c[r"\eps"])))
+        p_ref = - 0.25 * (2.0 * y - c[r"\eps"] * np.log(np.cosh((2.0 * y - 1.0) / c[r"\eps"])))
         p_ref += 0.25 * (2.0 - c[r"\eps"] * np.log(np.cosh((1.0) / c[r"\eps"])))
         p_ref = c[r"g_a"] * ((c[r"\rho_1"] - c[r"\rho_2"]) * p_ref + c[r"\rho_2"] * (1.0 - y))
 
@@ -473,7 +473,7 @@ class Postprocessor(GenericBenchPostprocessor):
             axes[i].set_ylabel(label)
             if self.plot_ref and self.esol[label] is not None:
                 axes[i].plot(self.x_var, self.esol[label],
-                             'k.--', linewidth=0.2, markersize=5,
+                             'k.--', linewidth=1.0, markersize=5,
                              label='sharp', zorder=1)
                 # if label == r"$v_1$":
                 #     twax = axes[i].twinx()
@@ -546,9 +546,10 @@ class Postprocessor(GenericBenchPostprocessor):
             }[label]
         for i, ax in enumerate(axes):
             var = ax.get_ylabel()
+            legloc = 3 if var == r"$\nu$" else 0
             for j in range(len(ys[i])):
                 ax.plot(xs, ys[i][j], st, linewidth=1.5, label=label, color=color)
-            ax.legend(loc=0, fontsize='x-small', ncol=1)
+            ax.legend(loc=legloc, fontsize='x-small', ncol=1)
 
     @staticmethod
     def _save_plot(fig, fixed_vars, outdir=""):

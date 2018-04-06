@@ -492,10 +492,10 @@ class Postprocessor(GenericBenchPostprocessor):
         cn = dict()
         cn[r"\rho_1"] = c[r"\rho_1"] / c[r"\rho_0"]
         cn[r"\rho_2"] = c[r"\rho_2"] / c[r"\rho_0"]
-        cn[r"\nu_1"] = c[r"\nu_1"] / c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
-        cn[r"\nu_2"] = c[r"\nu_2"] / c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"]
+        cn[r"\nu_1"] = c[r"\nu_1"] / (c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"])
+        cn[r"\nu_2"] = c[r"\nu_2"] / (c[r"\rho_0"] * c[r"V_0"] * c[r"L_0"])
         cn[r"\eps"] = c[r"\eps"] / c[r"L_0"]
-        cn[r"g_a"] = c[r"g_a"] / c[r"V_0"]**2.0 * c[r"L_0"]
+        cn[r"g_a"] = c[r"g_a"] / (c[r"V_0"]**2.0 / c[r"L_0"])
 
         # Velocity
         v1_ref = np.piecewise(y, [y <= 0.5, y > 0.5], [
