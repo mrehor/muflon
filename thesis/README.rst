@@ -7,8 +7,8 @@ as such, should be run on a cluster.
 Computational environment used:
 
   - FEniCS 2017.2.0 (DOLFIN and FFC 2017.2.0.post0)
-  - MUFLON dev
-  - FENaPack dev
+  - MUFLON 2017.2.0
+  - FENaPack 2017.2.0
 
 Simple shear flow and no-flow
 -----------------------------
@@ -20,6 +20,10 @@ Run the following commands and wait a couple of seconds
   $ python3 -m pytest -svl interface/test_stokes_shear.py
   $ python3 -m pytest -svl interface/test_stokes_noflow.py
 
+Results are available in the following directories:
+
+  + interface/test_stokes_shear
+  + interface/test_stokes_noflow
 
 Method of Manufactured Solutions (MMS)
 --------------------------------------
@@ -34,8 +38,8 @@ Submit the following commands within a batch script
 
 Walltime hh:mm:ss (safe overestimate):
 
-  + 01:00:00 (test_mms_Ia)
-  + 04:00:00 (test_mms_Ib)
+  + 01:30:00 (test_mms_Ia)
+  + 03:30:00 (test_mms_Ib)
 
 Rising bubble benchmark
 -----------------------
@@ -48,9 +52,17 @@ Submit the following commands within a batch script
   $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_scheme.py --case 1
   $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_scheme.py --case 2
   $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_THETA2.py --case 2
+  $ mpiexec -np 15 python3 -m pytest -svl bubble2/test_bubble2_mobility.py --case 1
+  $ mpiexec -np 12 python3 -m pytest -svl bubble2/test_bubble2_itype.py --case 2
+  $ mpiexec -np 30 python3 -m pytest -svl bubble2/test_bubble2_krylov.py --case 1
+  $ mpiexec -np 30 python3 -m pytest -svl bubble2/test_bubble2_krylov.py --case 2
 
 Walltime hh:mm:ss (safe overestimate):
 
-  + 24:00:00 (..._scheme, case 1)
-  + 24:00:00 (..._scheme, case 2)
-  + 00:30:00 (..._THETA2, case 2)
+  + 30:00:00 (..._scheme, case 1)
+  + 30:00:00 (..._scheme, case 2)
+  + 03:00:00 (..._THETA2, case 2)
+  + 01:30:00 (..._mobility, case 1)
+  + 04:00:00 (..._itype, case 2)
+  + 02:00:00 (..._krylov, case 1)
+  + 03:00:00 (..._krylov, case 2)
