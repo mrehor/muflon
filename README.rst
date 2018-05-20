@@ -2,10 +2,16 @@
 MUFLON - MUltiphase FLow simulatiON
 ***********************************
 
-The MUFLON library implements diffuse interface models for computer
-simulations of incompressible multiphase flows described in [1]_.
+A FEniCS Project-based library for simulating multi-phase flows.
 
-MUFLON is based on the FEniCS project <https://www.fenicsproject.org>.
+Description
+===========
+
+MUFLON implements some diffuse interface models for computer
+simulations of incompressible multi-phase flows described in [1]_.
+
+The models are expressed in the Unified Form Language (UFL) of the
+`FEniCS Project <https://www.fenicsproject.org>`_.
 
 .. [1] Řehoř M., *Diffuse interface models in theory of interacting continua*.
        PhD Thesis, 2018.
@@ -15,6 +21,10 @@ Dependencies
 
 Matching version of FEniCS (version |version|)
 compiled with PETSc and petsc4py is needed to use MUFLON.
+
+In order to use MUFLON with iterative solvers, matching version of
+`FENaPack <https://github.com/blechta/fenapack>`_ (version |version|)
+is required.
 
 
 Usage
@@ -26,7 +36,7 @@ To install MUFLON from source do
 
   $ pip3 install [--user|--prefix=...] [-e] .
 
-in the source/repository root dir. Editable install using ``-e``
+in the source/repository root directory. Editable install using ``-e``
 allows to use MUFLON directly from source directory while
 editing it which is suitable for development.
 
@@ -37,7 +47,7 @@ Demos can be run by navigating to a particular demo directory and typing
   $ NP=4
   $ mpirun -n $NP python3 demo_foo-bar.py [-h]
 
-Full documentation is available at <http://msekce.karlin.mff.cuni.cz/~rehor/muflon>.
+Documentation is available at <http://msekce.karlin.mff.cuni.cz/~rehor/muflon>.
 
 .. note::
    For parallel runs with ``python3`` it may be necessary to export
@@ -47,10 +57,8 @@ Full documentation is available at <http://msekce.karlin.mff.cuni.cz/~rehor/mufl
 
      $ PYTHONHASHSEED=0 mpirun -n $NP python3 demo_foo-bar.py [-h]
 
-.. TODO: Remove the following include directives later
+.. TODO: add CI and remove the following include directive
 .. include:: ../../test/README.rst
-.. include:: ../../test/bench/README.rst
-.. include:: ../README.rst
 
 
 Author
@@ -79,19 +87,22 @@ along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 Acknowledgement
 ===============
 
-The author acknowledges the support of Project LL1202 in the
-programme ERC-CZ funded by the Ministry of Education, Youth and
-Sports of the Czech Republic.
+The author acknowledges the support of
 
-This work was supported by The Ministry of Education, Youth and Sports from the
-Large Infrastructures for Research, Experimental Development and Innovations
+- `Project MORE <http://more.karlin.mff.cuni.cz/>`_ --
+  project LL1202 in the programme ERC-CZ funded by
+  the Ministry of Education, Youth and Sports of the Czech Republic.
+- `GLASS SERVICE, a.s. <https://gsl.cz/>`_ --
+  advanced solutions supplier in the field of glass melting, conditioning and forming.
+
+This work was also partly supported by The Ministry of Education, Youth and Sports
+from the Large Infrastructures for Research, Experimental Development and Innovations
 project „IT4Innovations National Supercomputing Center – LM2015070“.
 
 
 Links
 =====
 
-- Homepage http://gitlab.karlin.mff.cuni.cz/rehor/muflon
-- Testing **TODO:** add CI
+- Homepage https://github.com/mrehor/muflon
 - Documentation http://msekce.karlin.mff.cuni.cz/~rehor/muflon
-- Bug reports http://gitlab.karlin.mff.cuni.cz/rehor/muflon/issues
+- Bug reports https://github.com/mrehor/muflon/issues

@@ -33,4 +33,4 @@ Try basic imports: ::
 
 Print something: ::
 
-  print("Hello world!")
+  print("This and other demos will be included soon!")
