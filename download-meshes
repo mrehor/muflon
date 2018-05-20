@@ -1,0 +1,20 @@
+#!/bin/bash
+
+mkdir -p data/
+cd data/
+
+rc=0
+
+wget -N -O step_domain.xml.gz \
+    http://msekce.karlin.mff.cuni.cz/~rehor/muflon/data/step_domain.xml.gz
+rc+=$?
+
+wget -N -O step_domain_fine.xml.gz \
+    http://msekce.karlin.mff.cuni.cz/~rehor/muflon/data/step_domain_fine.xml.gz
+rc+=$?
+
+wget -N -O step3D_domain.xml.gz \
+    http://msekce.karlin.mff.cuni.cz/~rehor/muflon/data/step3D_domain.xml.gz
+rc+=$?
+
+exit $rc
