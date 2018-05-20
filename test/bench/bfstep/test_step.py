@@ -302,8 +302,8 @@ def test_scaling_mesh(nu, pcd_variant, ls, postprocessor):
               create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False)
             prefix = solver.data["solver"]["NS"].get_options_prefix()
 
-            PETScOptions.set(prefix+"ksp_monitor")
-            solver.data["solver"]["NS"].set_from_options()
+            #PETScOptions.set(prefix+"ksp_monitor")
+            #solver.data["solver"]["NS"].set_from_options()
 
             # Prepare time-stepping algorithm
             pv = DS.primitive_vars_ctl()

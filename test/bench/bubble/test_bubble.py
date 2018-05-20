@@ -24,8 +24,7 @@ bubble following [1]_.
 Note that the values of :math:`\gamma` and :math:`\epsilon`, introduced in [1]_
 as the notation for the constant mobility and characteristic length scale of
 the interface thickness respectively, must be recomputed using the relations
-:math:`M_0 = 8 \gamma \sigma_{12}` and :math:`\varepsilon = 2\sqrt{2}\epsilon`
-respectively.
+:math:`M_0 = 8 \gamma \sigma_{12}` and :math:`\varepsilon = 2\sqrt{2}\epsilon`.
 
 .. [1] Aland, S., Voigt, A.: Benchmark computations of diffuse interface models
        for two-dimensional bubble dynamics. International Journal for Numerical

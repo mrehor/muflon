@@ -21,6 +21,19 @@
 This file implements the computation for a two-phase "no-flow" system enclosed
 inside a box with horizontal interface between the components that is supposed
 to stay at rest.
+
+The code contains some attempts to use techniques based on Leray decomposition
+to suppress spurious velocity oscillations, see [1]_.
+
+This example was later replaced by simpler `test_noflow.py` (used to produce
+the results which appeared in [2]_).
+
+.. [1] Minjeaud S., An adaptive pressure correction method
+       without spurious velocities for diffuse-interface models of incompressible
+       flows, Journal of Computational Physics, Vol 236, pp. 143--156, 2013.
+
+   [2] Řehoř M., *Diffuse interface models in theory of interacting continua*.
+       PhD Thesis, 2018.
 """
 
 from __future__ import print_function
@@ -43,7 +56,6 @@ from muflon.common.timer import Timer
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["optimize"] = True
 #parameters["form_compiler"]["quadrature_degree"] = 4
-parameters["plotting_backend"] = "matplotlib"
 
 def create_domain(level):
     # Prepare mesh

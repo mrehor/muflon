@@ -24,17 +24,13 @@ the components that is supposed to stay at rest.
 
 For the incompressible model some parasitic non-physical velocities occur close
 to the interface in the vertical direction if the density contrast is high and
-dynamic viscosities of both fluids occupying the domain are small. These
-spurious velocities can be suppressed by
+dynamic viscosities of both fluids occupying the domain are small.
+The numerical error in the velocity is related to the fact the currently used
+discretization lacks “pressure-robustness”, see [1]_.
 
-* increasing the order of finite element approximation ``k``
-* using augmented TH elements for ``SemiDecoupled`` and ``Monolithic`` schemes
-  (these elements should improve local mass conversation, see [1]_)
-* increasing ``model.parameters["full"]["factor_nu0"]`` for ``FullyDecoupled``
-  scheme
-
-.. [1] D. Boffi, N. Cavallini, F. Gardini, L. Gastaldi: Local Mass Conservation
-       of Stokes Finite Elements (2011). DOI: 10.1007/s10915-011-9549-4
+.. [1] John, V., A. Linke, C. Merdon, M. Neilan, and L. G. Rebholz (2017).
+       On the divergence constraint in mixed finite element methods for
+       incompressible flows. SIAM Review 59 (3), 492–544.
 """
 
 from __future__ import print_function

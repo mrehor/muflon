@@ -24,8 +24,7 @@ bubble following [1]_.
 Note that the values of :math:`\gamma` and :math:`\epsilon`, introduced in [1]_
 as the notation for the constant mobility and characteristic length scale of
 the interface thickness respectively, must be recomputed using the relations
-:math:`M_0 = 8 \gamma \sigma_{12}` and :math:`\varepsilon = 2\sqrt{2}\epsilon`
-respectively.
+:math:`M_0 = 8 \gamma \sigma_{12}` and :math:`\varepsilon = 2\sqrt{2}\epsilon`.
 
 .. [1] Aland, S., Voigt, A.: Benchmark computations of diffuse interface models
        for two-dimensional bubble dynamics. International Journal for Numerical
@@ -198,10 +197,12 @@ def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
     # Set up subsolvers
     PETScOptions.set(prefix+"fieldsplit_p_pc_python_type", "fenapack.PCDRPC_" + pcd_variant)
     if ls == "iterative":
+        #PETScOptions.set("help")
         PETScOptions.set(prefix+"fieldsplit_u_ksp_type", "richardson")
         PETScOptions.set(prefix+"fieldsplit_u_ksp_max_it", 1)
         PETScOptions.set(prefix+"fieldsplit_u_pc_type", "hypre") # "gamg"
         PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_type", "boomeramg")
+        # #PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_relax_type_all", "SOR/Jacobi")
         # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_P_max", 4)
         # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_agg_nl", 1)
         # PETScOptions.set(prefix+"fieldsplit_u_pc_hypre_boomeramg_agg_num_paths", 2)
@@ -211,12 +212,12 @@ def create_pcd_solver(comm, pcd_variant, ls, mumps_debug=False):
 
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_type", "richardson")
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_ksp_max_it", 1)
-        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_type", "gamg") # "hypre"
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_type", "hypre") # "gamg"
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Rp_pc_hypre_type", "boomeramg")
 
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_type", "richardson")
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_ksp_max_it", 1)
-        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_type", "gamg")
+        PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_type", "hypre")
         # NOTE: hypre for BRM2 variant does not converge
         PETScOptions.set(prefix+"fieldsplit_p_PCD_Ap_pc_hypre_type", "boomeramg")
 
@@ -363,7 +364,7 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
             if ls == "direct":
                 forms["pcd"]["a_pc"] = None
             elif ls == "iterative":
-                model.parameters["semi"]["sdstab"] = True
+                model.parameters["semi"]["sdstab"] = False #True
             else:
                 assert False
 
@@ -378,9 +379,9 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
             # prefix_ch = solver.data["solver"]["CH"]["lin"].get_options_prefix()
             # PETScOptions.set(prefix_ch+"ksp_monitor_true_residual")
             # solver.data["solver"]["CH"]["lin"].set_from_options()
-            prefix_ns = solver.data["solver"]["NS"].get_options_prefix()
-            PETScOptions.set(prefix_ns+"ksp_monitor")
-            solver.data["solver"]["NS"].set_from_options()
+            # prefix_ns = solver.data["solver"]["NS"].get_options_prefix()
+            # PETScOptions.set(prefix_ns+"ksp_monitor")
+            # solver.data["solver"]["NS"].set_from_options()
 
             # Prepare time-stepping algorithm
             pv = DS.primitive_vars_ctl()
@@ -463,7 +464,7 @@ def test_bubble(ls, pcd_variant, matching_p, case, postprocessor):
 
 @pytest.fixture(scope='module')
 def postprocessor(request):
-    t_end = 0.5 # CHANGE #3: Set to "t_end = 3.0"
+    t_end = 0.2 # CHANGE #3: Set to "t_end = 3.0"
     OTD = 2     # Order of Time Discretization
 
     rank = MPI.rank(mpi_comm_world())

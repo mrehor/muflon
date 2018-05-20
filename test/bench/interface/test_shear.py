@@ -18,23 +18,8 @@
 # along with MUFLON. If not, see <http://www.gnu.org/licenses/>.
 
 """
-This file implements the computation for a two-phase "no-flow" system enclosed
-inside a box with horizontal (possibly slightly perturbed) interface between
-the components that is supposed to stay at rest.
-
-For the incompressible model some parasitic non-physical velocities occur close
-to the interface in the vertical direction if the density contrast is high and
-dynamic viscosities of both fluids occupying the domain are small. These
-spurious velocities can be suppressed by
-
-* increasing the order of finite element approximation ``k``
-* using augmented TH elements for ``SemiDecoupled`` and ``Monolithic`` schemes
-  (these elements should improve local mass conversation, see [1]_)
-* increasing ``model.parameters["full"]["factor_nu0"]`` for ``FullyDecoupled``
-  scheme
-
-.. [1] D. Boffi, N. Cavallini, F. Gardini, L. Gastaldi: Local Mass Conservation
-       of Stokes Finite Elements (2011). DOI: 10.1007/s10915-011-9549-4
+This file implements a simple shear flow for two incompressible fluids
+horizontally stratified within a unit square domain.
 """
 
 from __future__ import print_function
